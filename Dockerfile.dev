@@ -1,0 +1,66 @@
+FROM php:8.4-fpm
+
+# System deps
+RUN apt-get update && apt-get install -y \
+    nginx \
+    supervisor \
+    git \
+    curl \
+    unzip \
+    libpq-dev \
+    libzip-dev \
+    libpng-dev \
+    libwebp-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
+    libicu-dev \
+    libexif-dev \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# PHP extensions
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
+    && docker-php-ext-install -j$(nproc) \
+        pdo_pgsql \
+        pgsql \
+        gd \
+        zip \
+        bcmath \
+        pcntl \
+        intl \
+        exif \
+        opcache
+
+# Redis/Valkey extension
+RUN pecl install redis && docker-php-ext-enable redis
+
+# Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Node.js (for Vite asset compilation)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /var/www/html
+
+# Nginx config
+COPY docker/nginx/default.conf /etc/nginx/sites-available/default
+RUN ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default \
+    && rm -f /etc/nginx/sites-enabled/000-default* \
+    && rm -f /etc/nginx/sites-available/000-default*
+
+# PHP-FPM config
+COPY docker/php/php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
+COPY docker/php/php.ini /usr/local/etc/php/conf.d/app.ini
+
+# Supervisor config
+COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 80
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

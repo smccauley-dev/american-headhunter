@@ -1,0 +1,22 @@
+<?php
+
+use App\Jobs\Documents\CleanupUnattachedDocuments;
+use App\Jobs\ExpireListingsJob;
+use Illuminate\Foundation\Inspiring;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
+
+Artisan::command('inspire', function () {
+    $this->comment(Inspiring::quote());
+})->purpose('Display an inspiring quote');
+
+// Auto-expire listings whose season_end has passed. Runs nightly at 00:30.
+Schedule::job(new ExpireListingsJob)->dailyAt('00:30');
+
+// Remove unattached documents (created by in-flight apply submissions that never committed).
+// Threshold is DOCUMENT_REAPER_TTL_MINUTES (default 120 min). Runs every two hours.
+Schedule::job(new CleanupUnattachedDocuments)->everyTwoHours();
+
+// Purge consumed and long-expired MFA challenge rows (SEC-041).
+// Runs at 03:00 daily — off-peak, after the 00:30 listing expiry job.
+Schedule::command('mfa:prune-challenges')->dailyAt('03:00');

@@ -1,0 +1,134 @@
+name: american-headhunter
+
+services:
+
+  # ─── Application ────────────────────────────────────────────────────────────
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "${APP_PORT:-80}:80"
+    volumes:
+      - .:/var/www/html
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey_sessions:
+        condition: service_started
+      valkey_cache:
+        condition: service_started
+      valkey_queue:
+        condition: service_started
+      valkey_auction:
+        condition: service_started
+      valkey_ratelimit:
+        condition: service_started
+    networks:
+      - ah_network
+
+  # ─── PostgreSQL 16 (PostGIS) — all 14 databases on one server ───────────────
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "${DB_ROOT_PASSWORD:-secret}"
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./docker/postgres/init-postgis.sh:/docker-entrypoint-initdb.d/02-init-postgis.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ah_network
+
+  # ─── Valkey Cluster 1 — Sessions ────────────────────────────────────────────
+
+  valkey_sessions:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "${VALKEY_SESSIONS_HOST_PORT:-16379}:6379"
+    volumes:
+      - valkey_sessions_data:/data
+    command: valkey-server --save 60 1 --loglevel warning
+    networks:
+      - ah_network
+
+  # ─── Valkey Cluster 2 — App Cache ───────────────────────────────────────────
+
+  valkey_cache:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "${VALKEY_CACHE_HOST_PORT:-16380}:6379"
+    volumes:
+      - valkey_cache_data:/data
+    command: valkey-server --save 60 1 --loglevel warning
+    networks:
+      - ah_network
+
+  # ─── Valkey Cluster 3 — Job Queue ───────────────────────────────────────────
+
+  valkey_queue:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "${VALKEY_QUEUE_HOST_PORT:-16381}:6379"
+    volumes:
+      - valkey_queue_data:/data
+    command: valkey-server --save 60 1 --loglevel warning
+    networks:
+      - ah_network
+
+  # ─── Valkey Cluster 4 — Auction State ───────────────────────────────────────
+
+  valkey_auction:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "${VALKEY_AUCTION_HOST_PORT:-16382}:6379"
+    volumes:
+      - valkey_auction_data:/data
+    command: valkey-server --save 60 1 --loglevel warning
+    networks:
+      - ah_network
+
+  # ─── Valkey Cluster 5 — Rate Limiting ───────────────────────────────────────
+
+  valkey_ratelimit:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "${VALKEY_RATELIMIT_HOST_PORT:-16383}:6379"
+    volumes:
+      - valkey_ratelimit_data:/data
+    command: valkey-server --save 60 1 --loglevel warning
+    networks:
+      - ah_network
+
+  # ─── Mailpit — local email capture ──────────────────────────────────────────
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
+      - "1025:1025"
+    networks:
+      - ah_network
+
+networks:
+  ah_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  valkey_sessions_data:
+  valkey_cache_data:
+  valkey_queue_data:
+  valkey_auction_data:
+  valkey_ratelimit_data:

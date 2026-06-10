@@ -1,0 +1,1819 @@
+<!DOCTYPE html>
+<html
+    lang="en"
+    dir="ltr"
+    class="fi"
+>
+    <head>
+        
+
+        <meta charset="utf-8" />
+        <meta name="csrf-token" content="1CZPhHnhqPGVMZXTLTOAZFWlirN73ez8MwrvD7Bq" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+        
+        
+        <title>
+            Login
+             - 
+            American Headhunter
+        </title>
+
+        
+
+        <style>
+            [x-cloak=''],
+            [x-cloak='x-cloak'],
+            [x-cloak='1'] {
+                display: none !important;
+            }
+
+            [x-cloak='inline-flex'] {
+                display: inline-flex !important;
+            }
+
+            @media (max-width: 1023px) {
+                [x-cloak='-lg'] {
+                    display: none !important;
+                }
+            }
+
+            @media (min-width: 1024px) {
+                [x-cloak='lg'] {
+                    display: none !important;
+                }
+            }
+        </style>
+
+        <link
+            href="http://localhost/fonts/filament/filament/inter/index.css?v=5.6.5.0"
+            rel="stylesheet"
+            data-navigate-track
+        />
+    
+<style>
+    :root {
+         --danger-50:oklch(0.97717647058824 0.01395454545455 38.189);  --danger-100:oklch(0.95035294117647 0.03272727272727 38.189);  --danger-200:oklch(0.90547058823529 0.06318181818182 38.189);  --danger-300:oklch(0.84047058823529 0.10604545454546 38.189);  --danger-400:oklch(0.75352941176471 0.15027272727273 38.189);  --danger-500:oklch(0.68270588235294 0.17009090909091 38.189);  --danger-600:oklch(0.59782352941176 0.16913636363636 38.189);  --danger-700:oklch(0.51494117647059 0.14940909090909 38.189);  --danger-800:oklch(0.44611764705882 0.12331818181818 38.189);  --danger-900:oklch(0.39458823529412 0.09963636363636 38.189);  --danger-950:oklch(0.27788235294118 0.07136363636364 38.189);  --gray-50:oklch(0.985 0 0);  --gray-100:oklch(0.967 0.001 286.375);  --gray-200:oklch(0.92 0.004 286.32);  --gray-300:oklch(0.871 0.006 286.286);  --gray-400:oklch(0.705 0.015 286.067);  --gray-500:oklch(0.552 0.016 285.938);  --gray-600:oklch(0.442 0.017 285.786);  --gray-700:oklch(0.37 0.013 285.805);  --gray-800:oklch(0.274 0.006 286.033);  --gray-900:oklch(0.21 0.006 285.885);  --gray-950:oklch(0.141 0.005 285.823);  --info-50:oklch(0.97 0.014 254.604);  --info-100:oklch(0.932 0.032 255.585);  --info-200:oklch(0.882 0.059 254.128);  --info-300:oklch(0.809 0.105 251.813);  --info-400:oklch(0.707 0.165 254.624);  --info-500:oklch(0.623 0.214 259.815);  --info-600:oklch(0.546 0.245 262.881);  --info-700:oklch(0.488 0.243 264.376);  --info-800:oklch(0.424 0.199 265.638);  --info-900:oklch(0.379 0.146 265.522);  --info-950:oklch(0.282 0.091 267.935);  --primary-50:oklch(0.97717647058824 0 175.283);  --primary-100:oklch(0.95035294117647 0 175.283);  --primary-200:oklch(0.90547058823529 0 175.283);  --primary-300:oklch(0.84047058823529 0 175.283);  --primary-400:oklch(0.75352941176471 0 175.283);  --primary-500:oklch(0.68270588235294 0 175.283);  --primary-600:oklch(0.59782352941176 0 175.283);  --primary-700:oklch(0.51494117647059 0 175.283);  --primary-800:oklch(0.44611764705882 0 175.283);  --primary-900:oklch(0.39458823529412 0 175.283);  --primary-950:oklch(0.27788235294118 0 175.283);  --success-50:oklch(0.97717647058824 0.01395454545455 125.083);  --success-100:oklch(0.95035294117647 0.03272727272727 125.083);  --success-200:oklch(0.90547058823529 0.06318181818182 125.083);  --success-300:oklch(0.84047058823529 0.10604545454546 125.083);  --success-400:oklch(0.75352941176471 0.15027272727273 125.083);  --success-500:oklch(0.68270588235294 0.17009090909091 125.083);  --success-600:oklch(0.59782352941176 0.16913636363636 125.083);  --success-700:oklch(0.51494117647059 0.14940909090909 125.083);  --success-800:oklch(0.44611764705882 0.12331818181818 125.083);  --success-900:oklch(0.39458823529412 0.09963636363636 125.083);  --success-950:oklch(0.27788235294118 0.07136363636364 125.083);  --warning-50:oklch(0.97717647058824 0.01395454545455 82.566);  --warning-100:oklch(0.95035294117647 0.03272727272727 82.566);  --warning-200:oklch(0.90547058823529 0.06318181818182 82.566);  --warning-300:oklch(0.84047058823529 0.10604545454546 82.566);  --warning-400:oklch(0.75352941176471 0.15027272727273 82.566);  --warning-500:oklch(0.68270588235294 0.17009090909091 82.566);  --warning-600:oklch(0.59782352941176 0.16913636363636 82.566);  --warning-700:oklch(0.51494117647059 0.14940909090909 82.566);  --warning-800:oklch(0.44611764705882 0.12331818181818 82.566);  --warning-900:oklch(0.39458823529412 0.09963636363636 82.566);  --warning-950:oklch(0.27788235294118 0.07136363636364 82.566);     }
+
+    </style>
+
+        <link
+            href="http://localhost/css/filament/filament/app.css?v=5.6.5.0"
+            rel="stylesheet"
+            data-navigate-track
+        />
+        <link rel="preload" href="http://localhost/fonts/filament/filament/inter/inter-latin-wght-normal-NRMW37G5.woff2" as="font" type="font/woff2" crossorigin />
+
+        
+        
+        
+        
+        
+
+        <style>
+            :root {
+                --font-family: 'Inter Variable';
+                --mono-font-family: 'ui-monospace';
+                --serif-font-family: 'ui-serif';
+                --sidebar-width: 20rem;
+                --collapsed-sidebar-width: 4.5rem;
+                --default-theme-mode: system;
+            }
+
+            html.fi {
+                --livewire-progress-bar-color: var(--primary-500);
+            }
+        </style>
+
+        
+        
+
+                    <script>
+                localStorage.setItem('theme', 'light')
+            </script>
+        
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=Instrument+Mono&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet">
+<style>
+/* ── American Headhunter Admin Theme ─────────────────────────────── */
+
+/* === FULL PAGE BACKGROUND === */
+/* Login layout: dark forest. Main admin panel: parchment. */
+.fi-simple-layout,
+.fi-simple-main-ctn {
+    background-color: #0a1512 !important;
+}
+.fi-simple-main-ctn {
+    min-height: 100vh !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 40px 16px !important;
+}
+body.fi-body:not(:has(.fi-simple-layout)) {
+    background-color: #f4ecdc !important;
+}
+
+/* ============================================================
+   ADMIN MAIN LAYOUT — Parchment / Ink Theme
+   ============================================================ */
+
+/* ── Topbar ─────────────────────────────────────────────────── */
+.fi-topbar-ctn {
+    background-color: #e8dcc4 !important;
+    border-bottom: 1px solid #a89874 !important;
+    box-shadow: none !important;
+}
+.fi-topbar {
+    background-color: #e8dcc4 !important;
+}
+.fi-topbar .fi-icon-btn {
+    color: rgba(10, 21, 18, 0.5) !important;
+}
+.fi-topbar .fi-icon-btn:hover {
+    color: #0a1512 !important;
+    background-color: rgba(10, 21, 18, 0.06) !important;
+}
+/* Global search field — square parchment, matches themed form inputs */
+.fi-global-search-field,
+.fi-global-search-field .fi-input-wrp {
+    border-radius: 0 !important;
+    background-color: #faf7f2 !important;
+    border: 1px solid #c9b896 !important;
+    box-shadow: none !important;
+    --tw-ring-shadow: none !important;
+}
+.fi-global-search-field input {
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: #0a1512 !important;
+}
+.fi-global-search-field input::placeholder {
+    color: rgba(10, 21, 18, 0.35) !important;
+}
+.fi-global-search-field svg,
+.fi-global-search-field .fi-icon {
+    color: rgba(10, 21, 18, 0.35) !important;
+}
+
+/* ── Sidebar — dark ink, contrasts with parchment content ───── */
+.fi-sidebar,
+.fi-sidebar-header-ctn,
+.fi-sidebar-header,
+.fi-sidebar-nav {
+    background-color: #0a1512 !important;
+}
+.fi-sidebar {
+    border-right: 1px solid rgba(184, 147, 74, 0.2) !important;
+}
+.fi-sidebar-header {
+    border-bottom: 1px solid rgba(184, 147, 74, 0.15) !important;
+}
+
+/* ── Nav groups & items ──────────────────────────────────────── */
+.fi-sidebar-group-label {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 10px !important;
+    letter-spacing: 0.18em !important;
+    text-transform: uppercase !important;
+    color: #b8934a !important;
+    font-weight: 400 !important;
+}
+.fi-sidebar-item-btn {
+    color: #f4ecdc !important;
+    border-radius: 0 !important;
+    transition: background-color 0.12s ease, color 0.12s ease !important;
+}
+.fi-sidebar-item-btn span,
+.fi-sidebar-item-btn-label,
+.fi-sidebar-item-label {
+    color: #f4ecdc !important;
+}
+.fi-sidebar-item-btn svg {
+    color: #c84c21 !important;
+}
+.fi-sidebar-item-btn:hover {
+    background-color: rgba(244, 236, 220, 0.07) !important;
+    color: #f4ecdc !important;
+}
+.fi-sidebar-item-btn:hover span,
+.fi-sidebar-item-btn:hover .fi-sidebar-item-btn-label,
+.fi-sidebar-item-btn:hover .fi-sidebar-item-label {
+    color: #f4ecdc !important;
+}
+.fi-sidebar-item-btn:hover svg {
+    color: #c84c21 !important;
+}
+.fi-sidebar-item.fi-active .fi-sidebar-item-btn {
+    background-color: rgba(244, 236, 220, 0.08) !important;
+    color: #f4ecdc !important;
+    border-left: 2px solid #c84c21 !important;
+}
+.fi-sidebar-item.fi-active .fi-sidebar-item-btn span,
+.fi-sidebar-item.fi-active .fi-sidebar-item-btn-label,
+.fi-sidebar-item.fi-active .fi-sidebar-item-label {
+    color: #f4ecdc !important;
+}
+.fi-sidebar-item.fi-active .fi-sidebar-item-btn svg {
+    color: #c84c21 !important;
+}
+.fi-sidebar-group-collapse-btn {
+    color: #b8934a !important;
+}
+.fi-sidebar-group-collapse-btn svg {
+    color: #b8934a !important;
+}
+
+/* ── Brand mark — sidebar: parchment mark on dark bg ─────────── */
+.ah-admin-mark {
+    background: #e8dcc4 !important;
+    border-color: #e8dcc4 !important;
+}
+.ah-admin-mark-wrap::before,
+.ah-admin-mark-wrap::after {
+    border-color: #e8dcc4 !important;
+}
+.ah-admin-mark-letters {
+    color: #0a1512 !important;
+}
+.ah-admin-brand-name {
+    color: #e8dcc4 !important;
+}
+.ah-admin-brand-sub {
+    color: rgba(232, 220, 196, 0.45) !important;
+}
+
+/* ── Brand mark — topbar: ink mark on parchment bg ───────────── */
+/* Higher specificity (2 classes) beats sidebar rules (1 class) above */
+.fi-topbar-start .ah-admin-mark {
+    background: #0a1512 !important;
+    border-color: #0a1512 !important;
+}
+.fi-topbar-start .ah-admin-mark-wrap::before,
+.fi-topbar-start .ah-admin-mark-wrap::after {
+    border-color: #0a1512 !important;
+}
+.fi-topbar-start .ah-admin-mark-letters {
+    color: #e8dcc4 !important;
+}
+.fi-topbar-start .ah-admin-brand-name {
+    color: #0a1512 !important;
+}
+.fi-topbar-start .ah-admin-brand-sub {
+    color: rgba(10, 21, 18, 0.45) !important;
+}
+
+/* ── Main content area ───────────────────────────────────────── */
+.fi-main,
+.fi-main-ctn {
+    background-color: #e8dcc4 !important;
+}
+
+/* ── Page header (title + breadcrumbs) ───────────────────────── */
+.fi-header {
+    background-color: #e8dcc4 !important;
+    border-bottom: 1px solid rgba(168, 152, 116, 0.6) !important;
+    padding-top: 24px !important;
+    padding-bottom: 19px !important;
+}
+.fi-header-heading {
+    font-family: 'Fraunces', Georgia, serif !important;
+    color: #0a1512 !important;
+    font-weight: 500 !important;
+}
+.fi-breadcrumbs-item-label {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 10px !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    color: rgba(10, 21, 18, 0.5) !important;
+}
+.fi-breadcrumbs-separator-icon {
+    color: rgba(10, 21, 18, 0.3) !important;
+}
+
+/* Sections inside a fi-ta-ctn (e.g. IP Allowlist toolbar box) — no card border */
+.fi-ta-ctn .fi-section {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+.fi-ta-ctn .fi-section::before {
+    display: none !important;
+}
+
+/* ── Sections / Cards — Field Record style ───────────────────── */
+.fi-section {
+    background-color: #f4ecdc !important;
+    border-radius: 0 !important;
+    border: 1px solid #0a1512 !important;
+    box-shadow: 8px 8px 0 #0a1512 !important;
+    position: relative !important;
+}
+/* Inner dashed border (inset 8px, exact match to field-card::before) */
+.fi-section::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 8px !important; left: 8px !important;
+    right: 8px !important; bottom: 8px !important;
+    border: 1px dashed #a89874 !important;
+    pointer-events: none !important;
+    z-index: 0 !important;
+}
+.fi-section-header,
+.fi-section-content-ctn,
+.fi-section-content,
+.fi-section-footer {
+    position: relative !important;
+    z-index: 1 !important;
+}
+.fi-section-header {
+    background-color: transparent !important;
+    border-bottom: none !important;
+    /* Inset divider line using gradient — matches 24px section padding-inline */
+    background-image: linear-gradient(#a89874, #a89874) !important;
+    background-position: center bottom !important;
+    background-size: calc(100% - 48px) 1px !important;
+    background-repeat: no-repeat !important;
+}
+/* Also kill Filament's own full-width border-top on the content container */
+.fi-section.fi-section-has-header:not(.fi-collapsed) > .fi-section-content-ctn {
+    border-top: none !important;
+    border-top-width: 0 !important;
+}
+/* Section heading — "FIELD RECORD" label style (mono, small, uppercase) */
+.fi-section-header-heading {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0.15em !important;
+    text-transform: uppercase !important;
+    color: rgba(10, 21, 18, 0.7) !important;
+}
+.fi-section-header-description {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 10px !important;
+    letter-spacing: 0.08em !important;
+    color: rgba(10, 21, 18, 0.4) !important;
+}
+.fi-section-content {
+    background-color: transparent !important;
+}
+
+/* ── Description field — Crimson Pro body serif, sage tone ─────── */
+.ah-description-entry .fi-in-text-entry,
+.ah-description-entry .fi-in-entry-content,
+.ah-description-entry .fi-in-entry-content p,
+.ah-description-entry .fi-in-entry-content-ctn {
+    font-family: 'Crimson Pro', Georgia, serif !important;
+    font-size: 16px !important;
+    font-weight: 300 !important;
+    line-height: 1.65 !important;
+    color: #6b7856 !important;
+}
+
+/* ── Field rows — dotted dividers (field-row pattern) ────────── */
+.fi-in-entry {
+    border-bottom: 1px dotted #a89874 !important;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+}
+.fi-in-entry:last-child,
+.fi-in-entry:last-of-type {
+    border-bottom: none !important;
+}
+
+/* ── Infolist entries ────────────────────────────────────────── */
+.fi-in-entry-label {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 13px !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    color: rgba(10, 21, 18, 0.7) !important;
+    font-weight: 400 !important;
+    margin-bottom: 4px !important;
+}
+.fi-in-text-entry,
+.fi-in-text-entry-content,
+.fi-in-entry-content-ctn,
+.fi-in-entry-content-ctn p,
+.fi-in-entry-content-ctn span {
+    color: #0a1512 !important;
+    font-size: 14px !important;
+}
+/* Page header title */
+.fi-header .fi-header-heading,
+h1.fi-header-heading {
+    color: #0a1512 !important;
+}
+/* All text in main content */
+.fi-main p,
+.fi-main span:not(.fi-badge-label),
+.fi-main td,
+.fi-main th {
+    color: #0a1512 !important;
+}
+/* Badge entries (status) */
+.fi-badge {
+    border-radius: 0 !important;
+}
+
+/* ── Fix: allow pages to scroll naturally without double-height ghost space ── */
+/* fi-main{height:100%} resolves to 100dvh via fi-layout→body min-height     */
+/* chain. Content overflows that fixed height with overflow:visible, while    */
+/* Filament's layout elements still occupy viewport height — creating a       */
+/* scroll area = content + viewport (double). Setting auto breaks the chain.  */
+.fi-main { height: auto !important; }
+/* Ensure the sidebar still stretches full-height via fi-layout */
+.fi-layout { min-height: 100dvh !important; height: auto !important; }
+/* fi-page-content is display:grid — grid stretches items to track height,
+   giving the form a definite height. fi-sc-actions{height:100%} inside the
+   form then resolves to the full form height but sits AFTER the schema in
+   block flow, overflowing past the form bottom by ~form height and doubling
+   the body scroll area. Auto restores natural stack height. */
+.fi-sc-actions { height: auto !important; }
+
+/* ── Table container — field card treatment ─────────────────── */
+.fi-ta-ctn {
+    background-color: #f4ecdc !important;
+    border-radius: 0 !important;
+    border: 1px solid #0a1512 !important;
+    box-shadow: 8px 8px 0 #0a1512 !important;
+    --tw-shadow: none !important;
+    --tw-ring-shadow: none !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+.fi-ta-ctn::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 8px !important; left: 8px !important;
+    right: 8px !important; bottom: 8px !important;
+    border: 1px dashed #a89874 !important;
+    pointer-events: none !important;
+    z-index: 1 !important;
+}
+/* Ensure table content sits above the ::before dashed border */
+.fi-ta-ctn > * {
+    position: relative !important;
+    z-index: 2 !important;
+}
+/* Inset toolbar and table content to align with the dashed border */
+.fi-ta-header-toolbar,
+.fi-ta-content-ctn,
+.fi-ta-footer-ctn {
+    margin-left: 8px !important;
+    margin-right: 8px !important;
+}
+
+/* Table rows — parchment background, #a89874 dividers */
+.fi-ta-record {
+    background-color: #f4ecdc !important;
+}
+.fi-ta-row:hover .fi-ta-record {
+    background-color: rgba(10, 21, 18, 0.04) !important;
+}
+.fi-ta-content-ctn > :not(:last-child) {
+    border-color: #a89874 !important;
+}
+
+/* Toolbar — transparent on parchment */
+.fi-ta-header-toolbar {
+    background-color: transparent !important;
+    border-color: #a89874 !important;
+    margin-top: 8px !important;
+}
+
+/* Column header row */
+.fi-ta-content-ctn .fi-ta-content-header {
+    background-color: rgba(10, 21, 18, 0.04) !important;
+    border-color: #a89874 !important;
+}
+
+/* Strip elements (reorder, selection, filter indicators) */
+.fi-ta-reorder-indicator,
+.fi-ta-selection-indicator,
+.fi-ta-filter-indicators,
+.fi-ta-group-header {
+    background-color: rgba(10, 21, 18, 0.04) !important;
+    border-color: #a89874 !important;
+}
+
+/* ── Pagination — sandwich layout: [PREVIOUS] [1] [2] [3] [NEXT] ─ */
+.fi-ta-footer-ctn,
+.fi-ta-footer {
+    background-color: transparent !important;
+    border-color: #a89874 !important;
+}
+.fi-ta-footer td,
+.fi-ta-footer th {
+    border: none !important;
+}
+/* Remove divide-x separators from footer rows */
+.fi-ta-footer-ctn * {
+    border-left: none !important;
+    border-right: none !important;
+}
+/* Override fi-ta-footer-ctn * for pagination buttons that need borders */
+.fi-pagination .fi-pagination-previous-btn,
+.fi-pagination .fi-pagination-next-btn {
+    border-left: 1px solid rgba(10, 21, 18, 0.15) !important;
+    border-right: 1px solid rgba(10, 21, 18, 0.15) !important;
+}
+/* Switch from 3-col grid to flex row */
+.fi-pagination {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 0.375rem !important;
+}
+/* PREVIOUS on left (order 1) */
+.fi-pagination .fi-pagination-previous-btn {
+    display: inline-flex !important;
+    order: 1 !important;
+    flex-shrink: 0 !important;
+    border-radius: 0 !important;
+    border: 1px solid rgba(10, 21, 18, 0.15) !important;
+    color: rgba(10, 21, 18, 0.55) !important;
+    background-color: transparent !important;
+}
+.fi-pagination .fi-pagination-previous-btn:hover {
+    background-color: rgba(10, 21, 18, 0.06) !important;
+    color: #0a1512 !important;
+}
+/* Page number list — always visible, no surrounding box */
+.fi-pagination .fi-pagination-items {
+    display: flex !important;
+    order: 2 !important;
+    align-items: center !important;
+    gap: 0.25rem !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+}
+/* NEXT on right (order 3) */
+.fi-pagination .fi-pagination-next-btn {
+    display: inline-flex !important;
+    order: 3 !important;
+    flex-shrink: 0 !important;
+    border-radius: 0 !important;
+    border: 1px solid rgba(10, 21, 18, 0.15) !important;
+    color: rgba(10, 21, 18, 0.55) !important;
+    background-color: transparent !important;
+}
+.fi-pagination .fi-pagination-next-btn:hover {
+    background-color: rgba(10, 21, 18, 0.06) !important;
+    color: #0a1512 !important;
+}
+/* Per-page select — pushed to far right */
+.fi-pagination .fi-pagination-records-per-page-select-ctn {
+    order: 4 !important;
+    margin-left: auto !important;
+}
+/* Overview text (e.g. "1–10 of 25") — hidden */
+.fi-pagination .fi-pagination-overview {
+    display: none !important;
+}
+/* Hide icon-only prev/next chevrons inside the items list — text buttons handle nav */
+.fi-pagination-item[rel="prev"],
+.fi-pagination-item[rel="next"],
+.fi-pagination-item[rel="first"],
+.fi-pagination-item[rel="last"] {
+    display: none !important;
+}
+/* Page number buttons — match global button height and font */
+.fi-pagination-item-btn {
+    border-radius: 0 !important;
+    height: 36px !important;
+    min-width: 32px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 0.5rem !important;
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 0.12em !important;
+    color: rgba(10, 21, 18, 0.55) !important;
+    background-color: transparent !important;
+    border: 1px solid transparent !important;
+}
+.fi-pagination-item-btn:hover {
+    background-color: rgba(10, 21, 18, 0.06) !important;
+    color: #0a1512 !important;
+}
+/* Active page — terracotta fill (matches active sidebar/tab convention) */
+.fi-pagination-item.fi-active .fi-pagination-item-btn,
+.fi-pagination-item-btn[aria-current="page"],
+.fi-pagination-item-btn[aria-current="true"] {
+    background-color: #c84c21 !important;
+    color: #f4ecdc !important;
+    border-color: #c84c21 !important;
+}
+/* Per-page select widget */
+.fi-pagination-records-per-page-select {
+    border-radius: 0 !important;
+    border: none !important;
+    background-color: transparent !important;
+    color: #0a1512 !important;
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 11px !important;
+    box-shadow: none !important;
+}
+/* Remove prefix divider border inside the per-page select input wrapper */
+.fi-pagination-records-per-page-select-ctn .fi-input-wrp,
+.fi-pagination-records-per-page-select-ctn .fi-input-wrp-prefix,
+.fi-pagination-records-per-page-select-ctn .fi-input-wrp-content-ctn {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* ── Main panel forms — parchment theme ─────────────────────── */
+
+/* Field labels */
+.fi-main .fi-fo-field-label-content {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 13px !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    color: rgba(10, 21, 18, 0.7) !important;
+    font-weight: 400 !important;
+}
+.fi-main .fi-fo-field-wrp-error-message {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 10px !important;
+}
+/* Helper / hint text */
+.fi-main .fi-fo-field-wrp > p,
+.fi-main [class*="fi-fo-"][class*="helper"],
+.fi-main .fi-hint {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 10px !important;
+    color: rgba(10, 21, 18, 0.4) !important;
+    letter-spacing: 0.05em !important;
+}
+
+/* Text inputs & textareas */
+.fi-main .fi-input-wrp {
+    border-radius: 0 !important;
+    border: 1px solid #c9b896 !important;
+    background-color: #faf7f2 !important;
+    box-shadow: none !important;
+}
+.fi-main .fi-input-wrp:focus-within {
+    border-color: #a89874 !important;
+    box-shadow: none !important;
+}
+.fi-main input.fi-input,
+.fi-main textarea.fi-input {
+    background-color: transparent !important;
+    color: #0a1512 !important;
+    font-size: 14px !important;
+}
+.fi-main input.fi-input::placeholder,
+.fi-main textarea.fi-input::placeholder {
+    color: rgba(10, 21, 18, 0.3) !important;
+}
+
+/* Select */
+.fi-main .fi-fo-select-wrp .fi-input-wrp,
+.fi-main .fi-select-input {
+    background-color: #faf7f2 !important;
+    color: #0a1512 !important;
+}
+
+/* File upload drop zone */
+.fi-main .fi-fo-file-upload-input-ctn {
+    border-radius: 0 !important;
+    border: 1px dashed #a89874 !important;
+    background-color: #faf7f2 !important;
+}
+.fi-main .fi-fo-file-upload-input-ctn:hover {
+    border-color: #0a1512 !important;
+    background-color: rgba(10, 21, 18, 0.03) !important;
+}
+
+/* Toggle — sage when on */
+.fi-main .fi-toggle:checked,
+.fi-main input[type="checkbox"]:checked ~ .fi-toggle {
+    background-color: #6b7856 !important;
+}
+
+/* Repeater items */
+.fi-main .fi-fo-repeater-item {
+    background-color: #faf7f2 !important;
+    border-radius: 0 !important;
+    border: 1px solid #c9b896 !important;
+}
+.fi-main .fi-fo-repeater-item-header {
+    background-color: transparent !important;
+    border-bottom: 1px solid #a89874 !important;
+}
+.fi-main .fi-fo-repeater-item-header-label {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 10px !important;
+    letter-spacing: 0.12em !important;
+    color: rgba(10, 21, 18, 0.6) !important;
+}
+
+/* ── Modal window — parchment / field-card treatment ────────── */
+.fi-modal > .fi-modal-window-ctn > .fi-modal-window {
+    background-color: #f4ecdc !important;
+    border-radius: 0 !important;
+    border: 1px solid #0a1512 !important;
+    box-shadow: 8px 8px 0 #0a1512 !important;
+}
+.fi-modal-header {
+    background-color: transparent !important;
+    border-bottom: 1px solid #a89874 !important;
+}
+.fi-modal-heading {
+    font-family: 'Fraunces', Georgia, serif !important;
+    color: #0a1512 !important;
+    font-weight: 500 !important;
+}
+.fi-modal-footer {
+    background-color: transparent !important;
+    border-top: 1px solid #a89874 !important;
+}
+/* Full DOM path + every likely container to guarantee padding above buttons */
+.fi-modal > .fi-modal-window-ctn > .fi-modal-window > .fi-modal-footer,
+.fi-modal-window > .fi-modal-footer,
+.fi-modal-footer,
+.fi-modal-footer-actions {
+    padding-top: 0.625rem !important;
+}
+/* Modal close button */
+.fi-modal-close-btn {
+    color: rgba(10, 21, 18, 0.4) !important;
+}
+.fi-modal-close-btn:hover {
+    color: #0a1512 !important;
+}
+/* Modal form labels */
+.fi-modal .fi-fo-field-label-content {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 10px !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    color: rgba(10, 21, 18, 0.5) !important;
+}
+/* Modal form inputs */
+.fi-modal .fi-input-wrp {
+    border-radius: 0 !important;
+    border: 1px solid #c9b896 !important;
+    background-color: #faf7f2 !important;
+    box-shadow: none !important;
+}
+.fi-modal input.fi-input,
+.fi-modal textarea.fi-input {
+    background-color: transparent !important;
+    color: #0a1512 !important;
+}
+
+/* ── Relation manager tabs ───────────────────────────────────── */
+/* .fi-sc-tabs is the outer container (the white pill) */
+.fi-sc-tabs {
+    background-color: transparent !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+}
+/* .fi-tabs is the <nav> inside it */
+.fi-tabs {
+    background-color: transparent !important;
+    border-radius: 0 !important;
+    border: none !important;
+    border-bottom: 1px solid #a89874 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+}
+.fi-tabs-item {
+    background-color: transparent !important;
+    border-radius: 0 !important;
+    color: rgba(10, 21, 18, 0.45) !important;
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 10px !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    border-bottom: 2px solid transparent !important;
+    padding-bottom: 10px !important;
+    margin-bottom: -1px !important;
+    box-shadow: none !important;
+}
+.fi-tabs-item.fi-active {
+    color: #0a1512 !important;
+    border-bottom-color: #c84c21 !important;
+    background-color: transparent !important;
+}
+.fi-tabs-item:hover {
+    background-color: transparent !important;
+    color: rgba(10, 21, 18, 0.7) !important;
+}
+.fi-tabs-item-label {
+    color: inherit !important;
+}
+
+/* ── Relation manager — allow shadow to overflow ─────────────── */
+.fi-resource-relation-manager {
+    overflow: visible !important;
+}
+
+/* ── Icon buttons — global (square, muted ink) ───────────────── */
+.fi-icon-btn {
+    border-radius: 0 !important;
+    color: rgba(10, 21, 18, 0.45) !important;
+    background-color: transparent !important;
+}
+.fi-icon-btn:hover {
+    background-color: rgba(10, 21, 18, 0.07) !important;
+    color: #0a1512 !important;
+}
+
+/* ── Section collapse button ─────────────────────────────────── */
+.fi-section-collapse-btn {
+    border-radius: 0 !important;
+    color: rgba(10, 21, 18, 0.4) !important;
+}
+.fi-section-collapse-btn:hover {
+    background-color: rgba(10, 21, 18, 0.06) !important;
+}
+
+/* ── Table column manager & filter dropdown panels ───────────── */
+.fi-ta-col-manager-modal,
+.fi-ta-filters-modal {
+    background-color: #f4ecdc !important;
+    border-radius: 0 !important;
+    border: 1px solid #0a1512 !important;
+    box-shadow: 8px 8px 0 #0a1512 !important;
+}
+.fi-ta-col-manager-heading,
+.fi-ta-filters-heading {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 10px !important;
+    letter-spacing: 0.15em !important;
+    text-transform: uppercase !important;
+    color: rgba(10, 21, 18, 0.5) !important;
+}
+.fi-ta-col-manager-item {
+    border-bottom: 1px dotted #a89874 !important;
+    background-color: transparent !important;
+}
+.fi-ta-col-manager-label {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 11px !important;
+    color: #0a1512 !important;
+}
+
+/* ── Dropdown lists (user menu, nav dropdowns, search results) ── */
+.fi-dropdown-list {
+    background-color: #f4ecdc !important;
+    border-radius: 0 !important;
+    border: 1px solid #0a1512 !important;
+    box-shadow: 8px 8px 0 #0a1512 !important;
+}
+.fi-dropdown-list-item-label {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 11px !important;
+    color: #0a1512 !important;
+}
+
+/* ── All buttons — base reset (applies to every fi-btn variant) ── */
+.fi-btn {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    height: 36px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    padding-left: 0.875rem !important;
+    padding-right: 0.875rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.5rem !important;
+    white-space: nowrap !important;
+    line-height: 1 !important;
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+}
+.fi-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+    flex-shrink: 0 !important;
+}
+
+/* ── Ghost style — any button that is not a filled variant ──────── */
+/* Uses :not() so View, Cancel, and any unnamed secondary variants   */
+/* are caught regardless of whether fi-color-gray is present         */
+.fi-btn:not(.fi-color-primary):not(.fi-color-danger):not(.fi-color-success):not(.fi-color-warning) {
+    background-color: #fafafa !important;
+    color: rgba(10, 21, 18, 0.65) !important;
+    border: 1px solid rgba(10, 21, 18, 0.2) !important;
+}
+.fi-btn:not(.fi-color-primary):not(.fi-color-danger):not(.fi-color-success):not(.fi-color-warning) > span,
+.fi-btn:not(.fi-color-primary):not(.fi-color-danger):not(.fi-color-success):not(.fi-color-warning) .fi-btn-label {
+    color: rgba(10, 21, 18, 0.65) !important;
+}
+.fi-btn:not(.fi-color-primary):not(.fi-color-danger):not(.fi-color-success):not(.fi-color-warning):hover {
+    background-color: rgba(10, 21, 18, 0.06) !important;
+    color: #0a1512 !important;
+}
+
+/* ── Buttons — primary (ink) everywhere ─────────────────────── */
+.fi-btn.fi-color-primary {
+    --text: #e8dcc4 !important;
+    background-color: #0a1512 !important;
+    color: #e8dcc4 !important;
+    border: none !important;
+}
+.fi-btn.fi-color-primary > span,
+.fi-btn.fi-color-primary .fi-btn-label {
+    color: #e8dcc4 !important;
+}
+.fi-btn.fi-color-primary:hover {
+    background-color: #1c302a !important;
+}
+
+/* ── Danger buttons — Delete (global) ───────────────────────── */
+.fi-btn.fi-color-danger {
+    background-color: #c84c21 !important;
+    color: #f4ecdc !important;
+    border-radius: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+}
+.fi-btn.fi-color-danger > span,
+.fi-btn.fi-color-danger .fi-btn-label {
+    color: #f4ecdc !important;
+}
+.fi-btn.fi-color-danger:hover {
+    background-color: #8a3216 !important;
+}
+
+/* === CARD (parchment, square corners, corner marks) === */
+.fi-simple-main {
+    background: #faf7f2 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 40px !important;
+    max-width: 440px !important;
+    width: 100% !important;
+    position: relative !important;
+}
+.fi-simple-main::before,
+.fi-simple-main::after {
+    content: '';
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid #0a1512;
+    pointer-events: none;
+}
+.fi-simple-main::before { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+.fi-simple-main::after  { bottom: 12px; right: 12px; border-left: none; border-top: none; }
+
+/* === HEADER / LOGO AREA === */
+.fi-simple-header {
+    text-align: center !important;
+    align-items: center !important;
+    margin-bottom: 28px !important;
+    padding-bottom: 24px !important;
+    border-bottom: 1px solid rgba(10, 21, 18, 0.1) !important;
+    gap: 8px !important;
+}
+.fi-simple-header-heading {
+    font-family: 'Fraunces', Georgia, serif !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    font-style: italic !important;
+    color: rgba(10, 21, 18, 0.4) !important;
+    letter-spacing: 0.01em !important;
+    margin-top: 0 !important;
+}
+.fi-logo,
+.fi-sidebar-header,
+.fi-sidebar-header > a,
+.fi-sidebar-header > div {
+    overflow: visible !important;
+}
+.fi-logo {
+    display: flex !important;
+    justify-content: center !important;
+    height: auto !important;
+}
+
+/* === AH MARK (inside brandLogo) — structure shared by sidebar + login === */
+.ah-admin-logo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 0 4px;
+    overflow: visible;
+}
+/* Wrapper carries the corner brackets — positioned within its own bounds, no overflow needed */
+.ah-admin-mark-wrap {
+    position: relative;
+    padding: 5px;
+    display: inline-flex;
+}
+.ah-admin-mark-wrap::before,
+.ah-admin-mark-wrap::after {
+    content: '';
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    pointer-events: none;
+}
+.ah-admin-mark-wrap::before {
+    top: 0;
+    left: 0;
+    border-top: 1.5px solid;
+    border-left: 1.5px solid;
+}
+.ah-admin-mark-wrap::after {
+    bottom: 0;
+    right: 0;
+    border-bottom: 1.5px solid;
+    border-right: 1.5px solid;
+}
+.ah-admin-mark {
+    width: 52px;
+    height: 52px;
+    border: 1.5px solid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+.ah-admin-mark-letters {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1;
+}
+.ah-admin-brand-name {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    line-height: 1;
+}
+.ah-admin-brand-sub {
+    font-family: 'Instrument Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+}
+/* Login page logo — color overrides (sidebar !important rules handle the sidebar) */
+.fi-simple-main .ah-admin-mark {
+    border-color: #0a1512 !important;
+    background: #0a1512 !important;
+}
+.fi-simple-main .ah-admin-mark-wrap::before,
+.fi-simple-main .ah-admin-mark-wrap::after {
+    border-color: #0a1512 !important;
+}
+.fi-simple-main .ah-admin-mark-letters {
+    font-family: 'Fraunces', Georgia, serif !important;
+    font-size: 20px !important;
+    font-weight: 600 !important;
+    color: #e8dcc4 !important;
+    letter-spacing: -0.02em !important;
+    line-height: 1 !important;
+}
+.fi-simple-main .ah-admin-brand-name {
+    font-family: 'Fraunces', Georgia, serif !important;
+    font-size: 22px !important;
+    font-weight: 500 !important;
+    color: #0a1512 !important;
+    letter-spacing: -0.02em !important;
+    line-height: 1 !important;
+}
+.fi-simple-main .ah-admin-brand-sub {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 9px !important;
+    letter-spacing: 0.22em !important;
+    color: #6b7856 !important;
+    text-transform: uppercase !important;
+}
+
+/* === LOGIN PAGE SCOPED STYLES (fi-simple-main = login card only) === */
+
+/* FORM LABELS — Filament uses .fi-fo-field-label-content for the text node */
+.fi-simple-main .fi-fo-field-label-content {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 13px !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    color: rgba(10, 21, 18, 0.7) !important;
+    font-weight: 400 !important;
+}
+.fi-simple-main .fi-fo-field-label-required-mark {
+    color: #c84c21 !important;
+}
+
+/* FORM INPUTS — match main admin parchment field style */
+.fi-simple-main .fi-input-wrp {
+    border-radius: 0 !important;
+    background-color: #faf7f2 !important;
+    box-shadow: none !important;
+    border: 1px solid #c9b896 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: stretch !important;
+}
+.fi-simple-main .fi-input-wrp:focus-within {
+    border-color: #a89874 !important;
+    box-shadow: none !important;
+}
+.fi-simple-main input.fi-input {
+    background-color: transparent !important;
+    color: #0a1512 !important;
+    font-size: 14px !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    -webkit-text-fill-color: #0a1512 !important;
+}
+.fi-simple-main input.fi-input::placeholder {
+    color: rgba(10, 21, 18, 0.3) !important;
+    -webkit-text-fill-color: rgba(10, 21, 18, 0.3) !important;
+}
+/* Prevent browser autofill from flashing blue */
+.fi-simple-main input.fi-input:-webkit-autofill,
+.fi-simple-main input.fi-input:-webkit-autofill:hover,
+.fi-simple-main input.fi-input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px #faf7f2 inset !important;
+    -webkit-text-fill-color: #0a1512 !important;
+}
+
+/* PASSWORD REVEAL ICON — suppress native browser toggle */
+.fi-simple-main input[type="password"]::-ms-reveal,
+.fi-simple-main input[type="password"]::-ms-clear {
+    display: none !important;
+}
+.fi-simple-main .fi-input-wrp-suffix {
+    border-left: none !important;
+    border-inline-start: none !important;
+    border-right: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    padding-inline-start: 4px !important;
+    padding-inline-end: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+}
+.fi-simple-main .fi-icon-btn {
+    color: rgba(10, 21, 18, 0.4) !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+.fi-simple-main .fi-icon-btn:hover {
+    color: #0a1512 !important;
+    background: transparent !important;
+}
+
+/* SUBMIT BUTTON */
+/* Override --text CSS var at source so color: var(--text) reads cream regardless of specificity */
+.fi-simple-main .fi-btn {
+    --text: #faf7f2 !important;
+    --bg: #0a1512 !important;
+}
+.fi-simple-main .fi-btn.fi-color-primary,
+.fi-simple-main .fi-btn.fi-ac-btn-action,
+.fi-simple-main button[type="submit"].fi-btn {
+    background-color: #0a1512 !important;
+    color: #faf7f2 !important;
+    border-radius: 0 !important;
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 0.15em !important;
+    text-transform: uppercase !important;
+    border: none !important;
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    box-shadow: none !important;
+    height: 44px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    line-height: 1 !important;
+    transition: background-color 0.2s ease !important;
+}
+/* Keep button ink-colored and same size during loading/disabled state */
+.fi-simple-main .fi-btn.fi-color-primary:disabled,
+.fi-simple-main .fi-btn.fi-ac-btn-action:disabled,
+.fi-simple-main button[type="submit"].fi-btn:disabled {
+    background-color: #0a1512 !important;
+    opacity: 1 !important;
+}
+/* Constrain spinner SVG to font-size so it can't push the button taller */
+.fi-simple-main button[type="submit"].fi-btn svg,
+.fi-simple-main .fi-btn.fi-color-primary svg,
+.fi-simple-main .fi-btn.fi-color-primary * svg,
+.fi-simple-main button[type="submit"].fi-btn * svg {
+    width: 11px !important;
+    height: 11px !important;
+    flex-shrink: 0 !important;
+}
+.fi-simple-main .fi-btn.fi-color-primary > span,
+.fi-simple-main .fi-btn.fi-ac-btn-action > span,
+.fi-simple-main button[type="submit"].fi-btn > span {
+    color: #faf7f2 !important;
+}
+.fi-simple-main .fi-btn.fi-color-primary:hover,
+.fi-simple-main .fi-btn.fi-ac-btn-action:hover,
+.fi-simple-main button[type="submit"].fi-btn:hover {
+    background-color: #c84c21 !important;
+    --bg: #c84c21 !important;
+}
+.fi-simple-main .fi-btn.fi-color-primary:hover > span,
+.fi-simple-main .fi-btn.fi-ac-btn-action:hover > span,
+.fi-simple-main button[type="submit"].fi-btn:hover > span {
+    color: #faf7f2 !important;
+}
+.fi-simple-main .fi-btn.fi-color-primary:focus,
+.fi-simple-main .fi-btn.fi-ac-btn-action:focus,
+.fi-simple-main button[type="submit"].fi-btn:focus {
+    --tw-ring-color: rgba(10, 21, 18, 0.25) !important;
+    outline: none !important;
+}
+
+/* VALIDATION ERRORS */
+.fi-simple-main .fi-fo-field-wrp-error-message {
+    font-family: 'Instrument Mono', monospace !important;
+    font-size: 11px !important;
+}
+
+/* === UNAUTHORIZED USE NOTICE === */
+.ah-login-notice {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(10, 21, 18, 0.1);
+}
+.ah-login-notice-text {
+    font-family: 'Instrument Mono', monospace;
+    font-size: 10px;
+    line-height: 1.6;
+    color: rgba(10, 21, 18, 0.45);
+    letter-spacing: 0.03em;
+    margin: 0 0 10px;
+    text-align: center;
+}
+.ah-login-notice-links {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+.ah-login-notice-link {
+    font-family: 'Instrument Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #6b7856;
+    text-decoration: none;
+}
+.ah-login-notice-link:hover {
+    color: #0a1512;
+    text-decoration: underline;
+}
+
+/* ── Modal footer buttons — min-width only (height/display from global) ─ */
+.fi-modal-footer .fi-btn {
+    min-width: 80px !important;
+}
+
+/* ── Form page action buttons (Create/Edit footer, schema actions) ─── */
+.fi-sc-actions .fi-btn {
+    min-width: 80px !important;
+}
+/* Align the actions row itself to the start and give breathing room */
+.fi-sc-actions .fi-ac {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+}
+
+/* === COORDINATES FOOTER === */
+.ah-login-footer {
+    text-align: center;
+    padding: 20px 0 0;
+    font-family: 'Instrument Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: rgba(250, 247, 242, 0.2);
+    text-transform: uppercase;
+    pointer-events: none;
+}
+
+</style>
+    <!-- Livewire Styles --><style >[wire\:loading][wire\:loading], [wire\:loading\.delay][wire\:loading\.delay], [wire\:loading\.list-item][wire\:loading\.list-item], [wire\:loading\.inline-block][wire\:loading\.inline-block], [wire\:loading\.inline][wire\:loading\.inline], [wire\:loading\.block][wire\:loading\.block], [wire\:loading\.flex][wire\:loading\.flex], [wire\:loading\.table][wire\:loading\.table], [wire\:loading\.grid][wire\:loading\.grid], [wire\:loading\.inline-flex][wire\:loading\.inline-flex] {display: none;}[wire\:loading\.delay\.none][wire\:loading\.delay\.none], [wire\:loading\.delay\.shortest][wire\:loading\.delay\.shortest], [wire\:loading\.delay\.shorter][wire\:loading\.delay\.shorter], [wire\:loading\.delay\.short][wire\:loading\.delay\.short], [wire\:loading\.delay\.default][wire\:loading\.delay\.default], [wire\:loading\.delay\.long][wire\:loading\.delay\.long], [wire\:loading\.delay\.longer][wire\:loading\.delay\.longer], [wire\:loading\.delay\.longest][wire\:loading\.delay\.longest] {display: none;}[wire\:offline][wire\:offline] {display: none;}[wire\:dirty]:not(textarea):not(input):not(select) {display: none;}:root {--livewire-progress-bar-color: #2299dd;}[x-cloak] {display: none !important;}[wire\:cloak] {display: none !important;}dialog#livewire-error::backdrop {background-color: rgba(0, 0, 0, .6);}</style>
+</head>
+
+    <body
+        class="fi-body fi-panel-admin"
+    >
+        
+
+        <div class="fi-simple-layout">
+        
+
+        
+        <div class="fi-simple-main-ctn">
+            <main
+                class="fi-simple-main fi-width-lg"
+            >
+                <div wire:snapshot="{&quot;data&quot;:{&quot;data&quot;:[{&quot;email&quot;:null,&quot;password&quot;:null},{&quot;s&quot;:&quot;arr&quot;}],&quot;userUndertakingMultiFactorAuthentication&quot;:null,&quot;mountedActions&quot;:[[],{&quot;s&quot;:&quot;arr&quot;}],&quot;defaultAction&quot;:null,&quot;defaultActionArguments&quot;:null,&quot;defaultActionContext&quot;:null,&quot;defaultTableAction&quot;:null,&quot;defaultTableActionRecord&quot;:null,&quot;defaultTableActionArguments&quot;:null,&quot;componentFileAttachments&quot;:[[],{&quot;s&quot;:&quot;arr&quot;}],&quot;areSchemaStateUpdateHooksDisabledForTesting&quot;:false,&quot;discoveredSchemaNames&quot;:[[&quot;form&quot;,&quot;content&quot;],{&quot;s&quot;:&quot;arr&quot;}]},&quot;memo&quot;:{&quot;id&quot;:&quot;ut8FhEoXqgKv92nGtsky&quot;,&quot;name&quot;:&quot;App\\Filament\\Admin\\Pages\\Auth\\Login&quot;,&quot;path&quot;:&quot;admin\/login&quot;,&quot;method&quot;:&quot;GET&quot;,&quot;release&quot;:&quot;a-a-a&quot;,&quot;children&quot;:[],&quot;scripts&quot;:[],&quot;assets&quot;:[],&quot;errors&quot;:[],&quot;locale&quot;:&quot;en&quot;,&quot;islands&quot;:[]},&quot;checksum&quot;:&quot;ba86fcec8ae3670e14bdccb7c8d24d3806282ec9f41cae9bdaae11b4d301c634&quot;}" wire:effects="{&quot;partials&quot;:[],&quot;url&quot;:{&quot;defaultAction&quot;:{&quot;as&quot;:&quot;action&quot;,&quot;use&quot;:&quot;replace&quot;,&quot;alwaysShow&quot;:false,&quot;except&quot;:null},&quot;defaultActionArguments&quot;:{&quot;as&quot;:&quot;actionArguments&quot;,&quot;use&quot;:&quot;replace&quot;,&quot;alwaysShow&quot;:false,&quot;except&quot;:null},&quot;defaultActionContext&quot;:{&quot;as&quot;:&quot;actionContext&quot;,&quot;use&quot;:&quot;replace&quot;,&quot;alwaysShow&quot;:false,&quot;except&quot;:null},&quot;defaultTableAction&quot;:{&quot;as&quot;:&quot;tableAction&quot;,&quot;use&quot;:&quot;replace&quot;,&quot;alwaysShow&quot;:false,&quot;except&quot;:null},&quot;defaultTableActionRecord&quot;:{&quot;as&quot;:&quot;tableActionRecord&quot;,&quot;use&quot;:&quot;replace&quot;,&quot;alwaysShow&quot;:false,&quot;except&quot;:null},&quot;defaultTableActionArguments&quot;:{&quot;as&quot;:&quot;tableActionArguments&quot;,&quot;use&quot;:&quot;replace&quot;,&quot;alwaysShow&quot;:false,&quot;except&quot;:null}},&quot;listeners&quot;:[&quot;refresh-page&quot;]}" wire:id="ut8FhEoXqgKv92nGtsky" wire:name="App\Filament\Admin\Pages\Auth\Login" class="fi-simple-page">
+    
+
+    <div class="fi-simple-page-content">
+        <!--[if BLOCK]><![endif]-->            <header class="fi-simple-header">
+    <!--[if BLOCK]><![endif]-->        <!--[if BLOCK]><![endif]-->        <div
+            style="height: auto;" class="fi-logo"
+        >
+            
+                <div class="ah-admin-logo">
+                    <div class="ah-admin-mark-wrap">
+                        <div class="ah-admin-mark">
+                            <span class="ah-admin-mark-letters">AH</span>
+                        </div>
+                    </div>
+                    <div class="ah-admin-brand-name">American Headhunter</div>
+                    <div class="ah-admin-brand-sub">Admin · Field Operations</div>
+                </div>
+            
+        </div>
+    <!--[if ENDBLOCK]><![endif]-->
+            
+
+<!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->    <!--[if ENDBLOCK]><![endif]-->
+    <!--[if BLOCK]><![endif]-->        <h1 class="fi-simple-header-heading">
+            Sign in
+        </h1>
+    <!--[if ENDBLOCK]><![endif]-->
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]--></header>
+        <!--[if ENDBLOCK]><![endif]-->
+        <div class="fi-sc  fi-sc-has-gap fi-grid" style="--cols-default: repeat(1, minmax(0, 1fr));" x-data="filamentSchema({ livewireId: 'ut8FhEoXqgKv92nGtsky' })" x-on:form-validation-error.window="handleFormValidationError">
+                                                                                                                
+        <div
+                                        x-data="filamentSchemaComponent({
+                    path: '',
+                    containerPath: '',
+                    $wire,
+                })"
+                                                        class="fi-grid-col" style="--col-span-default: span 1 / span 1;"        >
+                            <div
+                    class="fi-sc-component"
+                >
+                    <form
+    class="fi-sc-form" id="form" wire:submit="authenticate"
+>
+    
+
+    
+        <div class="fi-sc  fi-sc-has-gap fi-grid" style="--cols-default: repeat(1, minmax(0, 1fr));">
+                                                
+        <div
+                                        x-data="filamentSchemaComponent({
+                    path: '',
+                    containerPath: '',
+                    $wire,
+                })"
+                                                        class="fi-grid-col" style="--col-span-default: span 1 / span 1;"        >
+                            <div
+                    class="fi-sc-component"
+                >
+                    
+        <div class="fi-sc  fi-sc-has-gap fi-grid" style="--cols-default: repeat(1, minmax(0, 1fr));" x-data="filamentSchema({ livewireId: 'ut8FhEoXqgKv92nGtsky' })" x-on:form-validation-error.window="handleFormValidationError">
+                                                
+        <div
+                            wire:partial="schema-component::form.email"
+                                        x-data="filamentSchemaComponent({
+                    path: 'data.email',
+                    containerPath: 'data',
+                    $wire,
+                })"
+                                                        class="fi-grid-col" style="--col-span-default: span 1 / span 1;" wire:key="ut8FhEoXqgKv92nGtsky.form.email"        >
+                            <div
+                    class="fi-sc-component"
+                >
+                    <div
+    data-field-wrapper
+    class="fi-fo-field"
+>
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+    <!--[if BLOCK]><![endif]-->        <div
+            class="fi-fo-field-label-col"
+        >
+            
+
+            <div
+                class="fi-fo-field-label-ctn "
+            >
+                
+
+                <!--[if BLOCK]><![endif]-->                    <label
+                                                    for="form.email"
+                                                class="fi-fo-field-label"
+                    >
+                        
+
+                        <!--[if BLOCK]><![endif]-->                            <span class="fi-fo-field-label-content">
+                                Email address<!--[if BLOCK]><![endif]--><sup class="fi-fo-field-label-required-mark">*</sup>
+                                <!--[if ENDBLOCK]><![endif]-->                            </span>
+                        <!--[if ENDBLOCK]><![endif]-->
+                        
+                    </label>
+                <!--[if ENDBLOCK]><![endif]-->
+                
+            </div>
+
+            
+        </div>
+    <!--[if ENDBLOCK]><![endif]-->
+    <!--[if BLOCK]><![endif]-->        <div class="fi-fo-field-content-col">
+            
+
+            <!--[if BLOCK]><![endif]-->                <div
+        class="fi-input-wrp fi-fo-text-input" x-on:focus-input.stop="$el.querySelector('input')?.focus()"
+>
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+    <div
+                class="fi-input-wrp-content-ctn"
+    >
+        <input
+            class="fi-input" autocomplete="on" autofocus="autofocus" id="form.email" required="required" type="email" wire:model="data.email"
+        />
+    </div>
+
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]--></div>
+
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+            <!--[if ENDBLOCK]><![endif]-->
+            
+
+            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->        </div>
+    <!--[if ENDBLOCK]><![endif]--></div>
+                </div>
+                    </div>
+
+                                                                        
+        <div
+                            wire:partial="schema-component::form.password"
+                                        x-data="filamentSchemaComponent({
+                    path: 'data.password',
+                    containerPath: 'data',
+                    $wire,
+                })"
+                                                        class="fi-grid-col" style="--col-span-default: span 1 / span 1;" wire:key="ut8FhEoXqgKv92nGtsky.form.password"        >
+                            <div
+                    class="fi-sc-component"
+                >
+                    <div
+    data-field-wrapper
+    class="fi-fo-field"
+>
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+    <!--[if BLOCK]><![endif]-->        <div
+            class="fi-fo-field-label-col"
+        >
+            
+
+            <div
+                class="fi-fo-field-label-ctn "
+            >
+                
+
+                <!--[if BLOCK]><![endif]-->                    <label
+                                                    for="form.password"
+                                                class="fi-fo-field-label"
+                    >
+                        
+
+                        <!--[if BLOCK]><![endif]-->                            <span class="fi-fo-field-label-content">
+                                Password<!--[if BLOCK]><![endif]--><sup class="fi-fo-field-label-required-mark">*</sup>
+                                <!--[if ENDBLOCK]><![endif]-->                            </span>
+                        <!--[if ENDBLOCK]><![endif]-->
+                        
+                    </label>
+                <!--[if ENDBLOCK]><![endif]-->
+                
+            </div>
+
+            
+        </div>
+    <!--[if ENDBLOCK]><![endif]-->
+    <!--[if BLOCK]><![endif]-->        <div class="fi-fo-field-content-col">
+            
+
+            <!--[if BLOCK]><![endif]-->                <div
+        class="fi-input-wrp fi-fo-text-input" x-data="{ isPasswordRevealed: false }" x-on:focus-input.stop="$el.querySelector('input')?.focus()"
+>
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+    <div
+                class="fi-input-wrp-content-ctn"
+    >
+        <input
+            class="fi-input fi-revealable" autocomplete="current-password" id="form.password" required="required" wire:model="data.password" x-bind:type="isPasswordRevealed ? 'text' : 'password'"
+        />
+    </div>
+
+    <!--[if BLOCK]><![endif]-->        <div
+                        class="fi-input-wrp-suffix"
+        >
+            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+            
+
+            <!--[if BLOCK]><![endif]-->                <div
+                    class="fi-input-wrp-actions"
+                                    >
+                    <!--[if BLOCK]><![endif]-->                        
+        
+        <button                                                class="fi-icon-btn fi-size-sm fi-ac-icon-btn-action" title="Show password" aria-label="Show password" type="button" wire:loading.attr="disabled" x-show="! isPasswordRevealed" x-on:click="isPasswordRevealed = true"        >
+            <svg class="fi-icon fi-size-md" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+  <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/>
+  <path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41ZM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" clip-rule="evenodd"/>
+</svg>            
+                    </button>
+
+        
+        
+                                            
+        
+        <button                                                class="fi-icon-btn fi-size-sm fi-ac-icon-btn-action" title="Hide password" aria-label="Hide password" type="button" wire:loading.attr="disabled" x-cloak="x-cloak" x-show="isPasswordRevealed" x-on:click="isPasswordRevealed = false"        >
+            <svg class="fi-icon fi-size-md" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+  <path fill-rule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.091 1.092a4 4 0 0 0-5.557-5.557Z" clip-rule="evenodd"/>
+  <path d="m10.748 13.93 2.523 2.523a9.987 9.987 0 0 1-3.27.547c-4.258 0-7.894-2.66-9.337-6.41a1.651 1.651 0 0 1 0-1.186A10.007 10.007 0 0 1 2.839 6.02L6.07 9.252a4 4 0 0 0 4.678 4.678Z"/>
+</svg>            
+                    </button>
+
+        
+        
+                    <!--[if ENDBLOCK]><![endif]-->                </div>
+            <!--[if ENDBLOCK]><![endif]-->        </div>
+    <!--[if ENDBLOCK]><![endif]--></div>
+
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+            <!--[if ENDBLOCK]><![endif]-->
+            
+
+            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->        </div>
+    <!--[if ENDBLOCK]><![endif]--></div>
+                </div>
+                    </div>
+
+                                            </div>
+
+                        </div>
+                    </div>
+
+                                            </div>
+
+        
+
+    
+        <div class="fi-sc  fi-sc-has-gap fi-grid" style="--cols-default: repeat(1, minmax(0, 1fr));">
+                                                
+        <div
+                            wire:partial="schema-component::content.form-actions"
+                                        x-data="filamentSchemaComponent({
+                    path: '',
+                    containerPath: '',
+                    $wire,
+                })"
+                                                        class="fi-grid-col" style="--col-span-default: span 1 / span 1;" wire:key="ut8FhEoXqgKv92nGtsky.content.form-actions"        >
+                            <div
+                    class="fi-sc-component"
+                >
+                    <div
+        class="fi-sc-actions" id="content.form-actions"
+>
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+    <!--[if BLOCK]><![endif]-->    <div
+        class="fi-ac fi-width-full"
+    >
+        <!--[if BLOCK]><![endif]-->            <!--[if BLOCK]><![endif]-->                
+        
+        
+        <button                                                                x-data="filamentFormButton"
+                x-bind:class="{ 'fi-processing': isProcessing }"
+                        class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-700 fi-text-color-950 hover:fi-text-color-800 dark:fi-text-color-0 dark:hover:fi-text-color-0 fi-btn fi-size-md  fi-ac-btn-action" type="submit" wire:loading.attr="disabled" wire:target="authenticate" x-bind:disabled="isProcessing"        >
+                                                <svg
+        fill="none"
+        viewBox="0 0 24 24"
+        xmlns="http://www.w3.org/2000/svg"
+        class="fi-icon fi-loading-indicator fi-size-md" wire:loading.delay.default="" wire:target="authenticate"
+    >
+        <path
+            clip-rule="evenodd"
+            d="M12 19C15.866 19 19 15.866 19 12C19 8.13401 15.866 5 12 5C8.13401 5 5 8.13401 5 12C5 15.866 8.13401 19 12 19ZM12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"
+            fill-rule="evenodd"
+            fill="currentColor"
+            opacity="0.2"
+        ></path>
+        <path
+            d="M2 12C2 6.47715 6.47715 2 12 2V5C8.13401 5 5 8.13401 5 12H2Z"
+            fill="currentColor"
+        ></path>
+    </svg>                    <svg
+        fill="none"
+        viewBox="0 0 24 24"
+        xmlns="http://www.w3.org/2000/svg"
+        class="fi-icon fi-loading-indicator fi-size-md" x-cloak="x-cloak" x-show="isProcessing"
+    >
+        <path
+            clip-rule="evenodd"
+            d="M12 19C15.866 19 19 15.866 19 12C19 8.13401 15.866 5 12 5C8.13401 5 5 8.13401 5 12C5 15.866 8.13401 19 12 19ZM12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"
+            fill-rule="evenodd"
+            fill="currentColor"
+            opacity="0.2"
+        ></path>
+        <path
+            d="M2 12C2 6.47715 6.47715 2 12 2V5C8.13401 5 5 8.13401 5 12H2Z"
+            fill="currentColor"
+        ></path>
+    </svg>            
+                                                <span x-show="! isProcessing">
+                        Sign in                    </span>
+                            
+                            <span
+                    x-cloak
+                    x-show="isProcessing"
+                    x-text="processingMessage"
+                ></span>
+            
+            
+                    </button>
+
+        
+        
+            <!--[if ENDBLOCK]><![endif]-->        <!--[if ENDBLOCK]><![endif]-->    </div>
+<!--[if ENDBLOCK]><![endif]-->
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]--></div>
+                </div>
+                    </div>
+
+                                            </div>
+
+        
+</form>
+                </div>
+                    </div>
+
+                                                                        
+        <div
+                                    class="fi-grid-col fi-hidden" style="--col-span-default: span 1 / span 1;"        >
+                    </div>
+
+                                                                        <div class="ah-login-notice"><p class="ah-login-notice-text">This system is for authorized users only. Unauthorized access or use is prohibited and may result in criminal or civil penalties.</p><div class="ah-login-notice-links"><a href="/authorized-use-policy" class="ah-login-notice-link" target="_blank" rel="noopener">Authorized Use Policy</a><a href="/security-policy" class="ah-login-notice-link" target="_blank" rel="noopener">Security Policy</a></div></div>                                    </div>
+    </div>
+
+    <!--[if BLOCK]><![endif]-->        <!--[if BLOCK]><![endif]-->    <div
+        wire:partial="action-modals"
+        x-data="filamentActionModals({
+                    livewireId: 'ut8FhEoXqgKv92nGtsky',
+                })"
+        style="height: 0"
+    >
+        <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->    </div>
+
+    <!--[if ENDBLOCK]><![endif]-->    <!--[if ENDBLOCK]><![endif]-->
+    <div class="ah-login-footer">30.88° N · 100.47° W · Est. 2025</div>
+</div>
+            </main>
+        </div>
+
+        
+
+        
+    </div>
+
+        <div wire:key="lw-4279770003-0-2" wire:snapshot="{&quot;data&quot;:{&quot;isFilamentNotificationsComponent&quot;:true,&quot;notifications&quot;:[[],{&quot;class&quot;:&quot;Filament\\Notifications\\Collection&quot;,&quot;s&quot;:&quot;wrbl&quot;}]},&quot;memo&quot;:{&quot;id&quot;:&quot;sGGCMXdXZ65bv2hunAnY&quot;,&quot;name&quot;:&quot;Filament\\Livewire\\Notifications&quot;,&quot;path&quot;:&quot;admin\/login&quot;,&quot;method&quot;:&quot;GET&quot;,&quot;release&quot;:&quot;a-a-a&quot;,&quot;children&quot;:[],&quot;scripts&quot;:[],&quot;assets&quot;:[],&quot;errors&quot;:[],&quot;locale&quot;:&quot;en&quot;,&quot;islands&quot;:[]},&quot;checksum&quot;:&quot;e96eeda40e924672099e8651899899d88d0be48c2e60bfe4642391bea3120441&quot;}" wire:effects="{&quot;partials&quot;:[],&quot;listeners&quot;:[&quot;notificationsSent&quot;,&quot;notificationSent&quot;,&quot;notificationClosed&quot;]}" wire:id="sGGCMXdXZ65bv2hunAnY" wire:name="Filament\Livewire\Notifications">
+    <div
+        class="fi-no fi-align-right fi-vertical-align-start"
+        role="status"
+    >
+        <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->    </div>
+
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]--></div>
+
+        
+
+        <script>
+        window.filamentData = []    </script>
+
+            
+            <script
+                src="http://localhost/js/filament/actions/actions.js?v=5.6.5.0"
+                
+                
+                
+                
+                
+                
+            ></script>
+        
+                
+            <script
+                src="http://localhost/js/filament/notifications/notifications.js?v=5.6.5.0"
+                
+                
+                
+                
+                
+                
+            ></script>
+        
+                
+            <script
+                src="http://localhost/js/filament/schemas/schemas.js?v=5.6.5.0"
+                
+                
+                
+                
+                
+                
+            ></script>
+        
+                
+            <script
+                src="http://localhost/js/filament/support/support.js?v=5.6.5.0"
+                
+                
+                
+                
+                
+                
+            ></script>
+        
+                
+            <script
+                src="http://localhost/js/filament/tables/tables.js?v=5.6.5.0"
+                
+                
+                
+                
+                
+                
+            ></script>
+        
+                
+            <script
+                src="http://localhost/js/filament/filament/echo.js?v=5.6.5.0"
+                
+                
+                
+                
+                
+                
+            ></script>
+        
+                
+            <script
+                src="http://localhost/js/filament/filament/app.js?v=5.6.5.0"
+                
+                
+                
+                
+                
+                
+            ></script>
+        
+    
+<style>
+    :root {
+            }
+
+    </style>
+
+        
+        
+        
+        
+
+        
+    <!-- Livewire Scripts -->
+<script src="http://localhost/livewire-b8821adb/livewire.js?id=ab6b028c"   data-csrf="1CZPhHnhqPGVMZXTLTOAZFWlirN73ez8MwrvD7Bq" data-module-url="http://localhost/livewire-b8821adb" data-update-uri="http://localhost/livewire-b8821adb/update" data-navigate-once="true"></script>
+</body>
+</html>
