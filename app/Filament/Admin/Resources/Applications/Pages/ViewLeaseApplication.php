@@ -13,14 +13,18 @@ use App\Models\Lease\LeaseApplicationMessage;
 use App\Models\Lease\LeaseApplicationReviewHistory;
 use App\Models\Lease\LeaseHunter;
 use App\Models\Property\Property;
+use App\Services\Documents\DocumentService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\ApplicationService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Lease\LeaseService;
+use App\Services\Platform\EntitlementService;
 use App\Services\Property\PropertyService;
+use App\Support\Entitlements;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -417,6 +421,12 @@ class ViewLeaseApplication extends ViewRecord
                         ->label('Send signing link to applicant')
                         ->helperText('Posts a message with the signing URL so the lessee knows to review and sign.')
                         ->default(true),
+                    FileUpload::make('custom_contract_pdf')
+                        ->label('Custom Contract PDF (Ranch+ / Estate only)')
+                        ->acceptedFileTypes(['application/pdf'])
+                        ->maxSize(10240)
+                        ->nullable()
+                        ->helperText('Upload the landowner\'s custom contract PDF. If uploaded and the landowner has a Ranch+ or Estate plan, Dropbox Sign embedded signing will be used instead of in-platform signing. Leave empty to use standard in-platform signing.'),
                 ])
                 ->action(function (LeaseApplication $record, array $data): void {
                     // 1. Approve the application
@@ -466,15 +476,30 @@ class ViewLeaseApplication extends ViewRecord
                         ? trim("{$lesseeProfile->first_name} {$lesseeProfile->last_name}") ?: 'Hunter'
                         : 'Hunter';
 
-                    // 6. Create the in-platform esignature request
+                    // 6. Optionally resolve a custom contract PDF (Ranch+ / Estate landowners)
+                    $customPdf = null;
+                    if (! empty($data['custom_contract_pdf'])) {
+                        try {
+                            $tmpFile   = \Livewire\Features\SupportFileUploads\TemporaryUploadedFile::createFromLivewire($data['custom_contract_pdf']);
+                            $customPdf = app(DocumentService::class)->storeUploadedFile($tmpFile, $property->owner_user_id, 'lease_contract');
+                        } catch (\Throwable $e) {
+                            Notification::make()
+                                ->title('Could not store uploaded PDF — using in-platform signing')
+                                ->warning()
+                                ->send();
+                        }
+                    }
+
+                    // 7. Create the signing request (routes to Dropbox Sign if customPdf + entitlement present)
                     $esigRequest = app(EsignatureService::class)->createRequest(
                         $lease,
                         auth()->id(),
                         ['user_id' => $property->owner_user_id, 'name' => $lessorName, 'email' => $lessorUser?->email ?? ''],
                         ['user_id' => $record->applicant_user_id, 'name' => $lesseeName, 'email' => $lesseeUser?->email ?? ''],
+                        $customPdf,
                     );
 
-                    // 7. Optionally sign as lessor immediately (admin acting on landowner's behalf)
+                    // 8. Optionally sign as lessor immediately (admin acting on landowner's behalf)
                     $activated = false;
                     if (! empty($data['sign_as_lessor'])) {
                         $activated = app(EsignatureService::class)->recordSignature(
@@ -485,7 +510,7 @@ class ViewLeaseApplication extends ViewRecord
                         );
                     }
 
-                    // 8. Notify the applicant with their signing link
+                    // 9. Notify the applicant with their signing link
                     if (! empty($data['notify_applicant']) && ! $activated) {
                         $signingUrl = route('member.leases.sign', $lease->id);
                         app(ApplicationMessageService::class)->send(
