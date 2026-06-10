@@ -335,33 +335,44 @@ Work added after the Phase 3 milestone — extends the admin panel with RBAC, se
 
 ---
 
-## PHASE 3.10 — Admin: Platform User Management
+## PHASE 3.10 — Admin: Platform User Management ✅ COMPLETE (2026-06-10)
 
 The goal: a full admin resource for managing all non-staff platform users (hunters, landowners, club admins, outfitters, consultants, sellers). Extends the Phase 3.9 admin panel with the customer-facing user management tools needed before lease work progresses.
 
 ### 3.10.1 Schema Additions
 
-- [ ] `property_managers` migration (DB 2) — tracks co-owners, managers, operators per property; role CHECK (`co_owner`, `manager`, `operator`); unique partial index on active grants; `PropertyService::canManageProperty()` is the authority gate
-- [ ] `user_admin_notes` migration (DB 1) — append-only staff notes per user; `(id, user_id, author_user_id, note, created_at)` — no `updated_at`, no `deleted_at`
+- [x] `property_managers` migration (DB 2) — tracks co-owners, managers, operators per property; role CHECK (`co_owner`, `manager`, `operator`); unique partial index on active grants; `PropertyService::canManageProperty()` is the authority gate
+- [x] `user_admin_notes` migration (DB 1) — append-only staff notes per user; `(id, user_id, author_user_id, note, created_at)` — no `updated_at`, no `deleted_at`
 
 ### 3.10.2 Models
 
-- [ ] `App\Models\Property\PropertyManager` — `property` connection; `scopeActive()`; cross-DB `getUser()` via UserService
-- [ ] `App\Models\Identity\UserAdminNote` — `identity` connection; `ImmutableModel` pattern (append-only); `scopeForUser($userId)`
+- [x] `App\Models\Property\PropertyManager` — `property` connection; `scopeActive()`; cross-DB `getUser()` via UserService
+- [x] `App\Models\Identity\UserAdminNote` — `identity` connection; `ImmutableModel` pattern (append-only); `scopeForUser($userId)`
 
 ### 3.10.3 Admin Resource
 
-- [ ] `AdminAuth::canManageUsers()` — new gate method; `security_admin`, `global_admin`, `super_admin`
-- [ ] `CustomerUserResource` — List/View/Edit; scoped to non-admin account types only
-  - **List page** — avatar, name/email, account_type badge, status badge, trust score (color-coded), last login, registered date; filters: account_type / status / state / veteran; searchable by name + email
-  - **Edit page — Identity tab** — avatar upload (→ DocumentService → `user_profiles.avatar_document_id`), name, email, phone, account_type (primary portal routing), status; separate `user_roles` CheckboxList (multi-role capabilities)
-  - **Edit page — Profile tab** — bio, state, zip, DOB, gender, notification preferences JSONB, hunting profile JSONB
-  - **Edit page — Security tab** — Force Password Reset button, Admin Set Password (super_admin only), Invalidate Sessions button, MFA status (read-only), Login History last 20 (read-only table)
-  - **Edit page — Compliance tab** — background check status, OFAC status + Re-screen button, identity verification, veteran verification (approve/reject), trust score + history + Admin Adjustment modal
-  - **Edit page — Admin Notes tab** — append-only staff notes list; Add Note modal (→ `user_admin_notes`)
-  - **Edit page — Audit Log tab** — read-only DB 9 events scoped to this user_id
-  - **Edit page — Properties & Leases tab** — read-only: properties owned, properties managed (`property_managers`), leases as lessor/lessee, lease hunter entries, club ownership, club memberships (all cross-DB via services)
-  - **View page** — infolist mirror of all tabs; header actions: Edit / Suspend / Unsuspend / Ban
+- [x] `AdminAuth::canManageUsers()` — new gate method; `security_admin`, `global_admin`, `super_admin`
+- [x] `CustomerUserResource` — List/View/Edit; scoped to non-admin account types only
+  - **List page** — name/email, account_type badge, status badge, trust score (color-coded), last login, registered date; filters: account_type / status / state; searchable by name + email
+  - **Edit page — Identity tab** — avatar upload (→ DocumentService → `user_profiles.avatar_document_id`), name, email, phone, account_type (primary portal routing), status; `user_roles` CheckboxList
+  - **Edit page — Profile tab** — bio, state, zip, DOB, gender; veteran + first responder toggles with conditional branch/rank/service-range/bio fields
+  - **Edit page — Security tab** — Public Profile toggle, username (super_admin only), Force Password Reset button, Admin Set Password (super_admin only), MFA status display + enable/disable per method + Clear TOTP Token + Disable All MFA buttons, Login History last 20
+  - **Edit page — Compliance tab** — trust score + event history, background check status, OFAC latest result, identity verifications list
+  - **Edit page — Admin Notes tab** — append-only staff notes list; new note textarea (saved on form submit → `user_admin_notes`)
+  - **Edit page — Audit Log tab** — read-only DB 9 events scoped to this user_id with before/after diff rows
+  - **Edit page — Properties & Leases tab** — properties owned (direct + via PropertyManager), property manager/operator roles, leases as lessor/lessee, club ownership + memberships (all cross-DB)
+  - **View page** — infolist: Identity, Profile, Platform Roles, MFA Status with badge per factor; header actions: Edit / Reset MFA / Disable TOTP / Disable Email OTP / Disable SMS / Regenerate Recovery Codes / Revoke All Tokens / Suspend / Ban
+  - **Header actions (Edit page):** Suspend / Unsuspend / Ban (super_admin only) with audit log writes
+
+### Phase 3.10 Milestone ✅ (2026-06-10)
+
+- [x] Admin can view, search, and filter all non-staff platform users
+- [x] Admin can edit identity, profile, veteran/first-responder detail, and account status
+- [x] MFA methods can be enabled, disabled, and reset per-user from the Security tab
+- [x] Admin Notes are append-only and visible to all staff
+- [x] Audit log tab shows per-user event history with field-level diffs
+- [x] Properties, leases, and club memberships visible cross-DB on the Properties & Leases tab
+- [x] **MILESTONE: Full platform user management operational**
 
 ---
 
@@ -401,7 +412,7 @@ The goal: the full lease pipeline — application, negotiation, approval, e-sign
 - [x] All 6 Eloquent models created: `Document`, `DocumentThumbnail`, `EsignatureRequest`, `EsignatureSigner`, `QrCode`, `PrintJob` under `App\Models\Documents\`
 - [x] `php artisan migrate:single documents` — 6/6 zero errors; all tables verified in `ah_documents`
 
-### 4.3 Lease and Document Services [~] Partial
+### 4.3 Lease and Document Services ✅ (2026-06-10)
 
 - [x] `App\Services\Lease\LeaseService` — read (lease detail with cross-DB assembly, active leases by lessee/lessor), writes (create from application, activate, terminate, expire), Valkey caching
 - [x] `App\Services\Lease\ApplicationService` — submit (with hunter PII snapshots), approve, reject, override, withdraw, listing snapshot denormalization, audit logging
@@ -409,7 +420,7 @@ The goal: the full lease pipeline — application, negotiation, approval, e-sign
 - [x] `App\Services\Documents\DocumentService` — register, store uploaded file, mark ready/quarantined, soft delete, QR code create and token resolution
 - [x] `LeaseDetailDTO` — cross-DB assembly DTO
 - [x] All lease models: `Lease`, `LeaseApplication`, `LeaseApplicationHunter`, `LeaseApplicationMessage`, `LeaseApplicationReviewHistory`, `LeaseHunter`, `LeaseRenewal`, `LeaseNote`, `Club`, `ClubMember`, `ClubLease`, `CheckIn`, `SignatureEvent`, `EsignatureRequest`
-- [ ] `App\Services\Lease\EsignatureService` — Dropbox Sign API integration; envelope creation, signer tracking, webhook handling (priority queue) — **deferred, build after 4.5**
+- [x] `App\Services\Lease\EsignatureService` — **in-platform signing** (not Dropbox Sign); creates `EsignatureRequest` + `EsignatureSigner` records in DB 11; records permanent `SignatureEvent` events in DB 3; activates lease on final signature via `activateIfComplete()`; Dropbox Sign path added in Phase 4.5.5 for custom contracts
 - [ ] `App\Services\Lease\CheckInService` — GPS + QR check-in/out validation, overdue detection — **deferred, build in 4.6**
 - [ ] `App\Services\Documents\QrCodeService` — standalone QR service; QR code logic currently in DocumentService — **evaluate whether dedicated service is needed**
 
@@ -424,14 +435,96 @@ The goal: the full lease pipeline — application, negotiation, approval, e-sign
 - [x] `Apply/Status.tsx` (471 lines) — status page with message thread UI
 - [x] `Apply/MyApplications.tsx` (186 lines) — application dashboard
 
-### 4.5 Lease Approval & E-Signature (Admin + Customer)
+### 4.5 Lease Approval & In-Platform E-Signature ✅ (2026-06-10)
 
-- [ ] Filament: `LeaseApplicationResource` — review queue, approve/counter/reject actions
-- [ ] `POST /api/admin/applications/{id}/approve` — generates lease PDF, creates Dropbox Sign envelope, notifies signers
-- [ ] `POST /api/admin/applications/{id}/counter` — creates counter-offer in `lease_negotiations`
-- [ ] `POST /api/webhooks/dropbox-sign` — processes signature events on `priority` queue; on all-signed: activates lease, creates lease room in DB 7, writes `AuditService` event
-- [ ] Customer portal: e-signature redirect flow (Dropbox Sign embedded signing or redirect)
-- [ ] Commit: "Lease approval and e-signature workflow"
+- [x] `LeaseApplicationResource` — list + view pages; navigation group: Marketplace
+- [x] **Approve action** — modal with start/end date, total price, sign-as-lessor checkbox, notify-applicant checkbox; creates `Lease`, `LeaseHunter`, calls `EsignatureService::createRequest()`, optionally records lessor signature immediately, sends signing link to lessee via `ApplicationMessageService`
+- [x] **Reject action** — requires reason; optional applicant notification via message
+- [x] **Override action** — available after approve/reject; records from/to status + reason in `lease_application_review_history`; optional applicant notification
+- [x] **Sign as Lessor action** — visible when lease is `pending_signatures` and lessor has not yet signed; records in-platform signature, activates lease if lessee already signed
+- [x] **Send Message action** — posts to application message thread; applicant receives email notification
+- [x] **Edit Notes action** — saves internal staff notes (not visible to applicant) via `ApplicationMessageService::saveNotes()`
+- [x] **View page sections** — Application Details, Listing & Applicant sidebar, Lease & Signing Status (signer rows with timestamps), Hunter Roster (full PII including DL + hunting license), Communications thread, Review History timeline, Review metadata
+- [x] `EsignatureService::createRequest()` — provider `in_platform`; creates `EsignatureRequest` + two `EsignatureSigner` rows (lessor order 1, lessee order 2); writes `SignatureEvent` (sent)
+- [x] `EsignatureService::recordSignature()` — marks signer signed, writes `SignatureEvent` (signed), calls `activateIfComplete()` on all-signed
+- [x] `activateIfComplete()` — marks request completed, writes `SignatureEvent` (completed), calls `LeaseService::activate()`, approves primary `LeaseHunter`, writes audit event
+
+---
+
+### 4.5.5 Custom Lease Contracts — Ranch+ Tier (Dropbox Sign)
+
+The goal: landowners on **Ranch or Estate** tier can attach a custom PDF contract (e.g., attorney-drafted) to a lease at approval time. The platform sends it via Dropbox Sign for embedded in-browser signing. On completion, the signed PDF is downloaded and stored in `ah-documents`. The in-platform signing flow (Phase 4.5) is unchanged for standard leases.
+
+#### Design decisions (resolved 2026-06-10)
+
+- **Upload timing:** Approval-time — admin attaches the custom PDF when approving an application in `ViewLeaseApplication`, not at the listing level
+- **Signing experience:** Embedded — lessee signs inside the member portal without leaving the site
+- **Signed PDF storage:** Yes — downloaded from Dropbox Sign after completion and stored in `ah-documents` bucket; `EsignatureRequest.signed_document_id` updated
+- **Local dev webhook testing:** Artisan simulation command (`php artisan dropboxsign:simulate {lease_id}`) fires the webhook payload in-process against the webhook controller with a valid HMAC. ngrok used once before launch for real end-to-end validation only.
+
+#### DB changes
+
+- [ ] `property_listings.custom_contract_document_id UUID NULL` — migration (DB 2); references DB 11 `documents.id`; NULL = in-platform signing; NOT NULL = Dropbox Sign with this PDF. **Note:** column added at listing level for future use even though upload is at approval time — admin sets it during approval, not the landowner.
+- [ ] Verify `esignature_requests.external_envelope_id` column exists in DB 11 migration — stores Dropbox Sign `signature_request_id` for webhook lookup
+- [ ] DB 12 entitlement seed migration — `custom_lease_template` (boolean `true`) added to Ranch and Estate plan versions
+
+#### New constants
+
+- [ ] `Entitlements::CUSTOM_LEASE_TEMPLATE = 'custom_lease_template'` added to `app/Support/Entitlements.php`
+
+#### New files
+
+- [ ] `app/Services/Lease/DropboxSignService.php` — Dropbox Sign API wrapper
+  - `createEmbeddedEnvelope(Document $pdf, array $lessor, array $lessee): array` — POST `/v3/signature_request/send_with_reusable_form` or `/v3/signature_request/send`; returns `signature_request_id` + per-signer embedded signing URLs
+  - `getEmbeddedSigningUrl(string $signatureId): string` — GET `/v3/embedded/sign_url/{id}`; used to generate lessee's in-browser signing URL
+  - `downloadSignedPdf(string $signatureRequestId): string` — GET `/v3/signature_request/{id}/files`; returns raw PDF bytes
+  - `verifyWebhookSignature(string $payload, string $headerSig): bool` — HMAC-SHA256 verification using `DROPBOX_SIGN_WEBHOOK_SECRET`
+- [ ] `app/Http/Controllers/Api/DropboxSignWebhookController.php`
+  - `handle(Request $request): Response` — verifies HMAC; dispatches `ProcessDropboxSignWebhook` job on `priority` queue; returns 200 immediately
+- [ ] `app/Jobs/Lease/ProcessDropboxSignWebhook.php` — `priority` queue; extracts `signature_request_id`; looks up `EsignatureRequest` by `external_envelope_id`; marks all signers `signed`; calls `DropboxSignService::downloadSignedPdf()` → `DocumentService::storeRawFile()` → updates `EsignatureRequest.signed_document_id`; calls `activateIfComplete()`
+- [ ] `app/Console/Commands/DropboxSignSimulate.php` — dev-only Artisan command; builds `signature_request_all_signed` payload; generates valid HMAC; calls `DropboxSignWebhookController::handle()` in-process; `DropboxSignService::downloadSignedPdf()` returns stub PDF in non-production environments
+
+#### Modified files
+
+- [ ] `app/Services/Lease/EsignatureService.php` — `createRequest()` accepts optional `Document $customPdf`; if provided AND lessor has `custom_lease_template` entitlement → calls `DropboxSignService::createEmbeddedEnvelope()`; stores `provider = 'dropbox_sign'`, `external_envelope_id = signature_request_id`; otherwise falls through to existing in-platform path
+- [ ] `app/Filament/Admin/Resources/Applications/Pages/ViewLeaseApplication.php` — Approve action form gains optional `FileUpload::make('custom_contract_pdf')` field (visible only when `EntitlementService::can($lessor, CUSTOM_LEASE_TEMPLATE)`); uploaded file passed to `EsignatureService::createRequest()`
+- [ ] `routes/api.php` — `POST /api/webhooks/dropbox-sign` — no auth middleware; HMAC-verified internally
+- [ ] `.env.example` — add `DROPBOX_SIGN_API_KEY`, `DROPBOX_SIGN_WEBHOOK_SECRET`, `DROPBOX_SIGN_TEST_MODE=true`
+
+#### Signing flow (custom contract path)
+
+```
+1. Admin approves application in ViewLeaseApplication
+   → uploads custom PDF in Approve modal (Ranch+ lessor only)
+   → EsignatureService::createRequest() detects custom PDF
+   → DropboxSignService::createEmbeddedEnvelope() → Dropbox Sign API
+   → EsignatureRequest created: provider=dropbox_sign, external_envelope_id=ds_request_id
+   → EsignatureSigner rows created with embedded_signing_url per signer
+
+2. Lessee visits /member/leases/{id}/sign
+   → EsignatureService::getEmbeddedSigningUrl($lessee)
+   → DropboxSignService::getEmbeddedSigningUrl($signatureId) → short-lived URL
+   → Lessee signs in embedded iframe — no redirect away from platform
+
+3. Both parties sign → Dropbox Sign fires webhook POST /api/webhooks/dropbox-sign
+   → HMAC verified
+   → ProcessDropboxSignWebhook dispatched on priority queue
+   → Signed PDF downloaded → stored in ah-documents → signed_document_id updated
+   → EsignatureRequest.status = completed
+   → activateIfComplete() → lease ACTIVE
+
+4. Admin sees ACTIVE in LeaseApplicationResource — identical to in-platform path
+```
+
+#### Milestone checklist
+
+- [ ] Ranch+ landowner can have admin attach a custom PDF when approving their application
+- [ ] Both parties receive embedded signing experience inside the platform (no redirect to Dropbox Sign)
+- [ ] Lease activates after final signature via webhook
+- [ ] Signed PDF stored in `ah-documents` and accessible via "Download Signed Contract" button
+- [ ] `dropboxsign:simulate` command fires the full webhook flow locally without ngrok
+- [ ] Standard in-platform signing for Homestead-tier leases is completely unaffected
+- [ ] Commit: "Custom lease contracts via Dropbox Sign (Ranch+ entitlement)"
 
 ### 4.6 Member Portal — Lease Dashboard (`/member`)
 
@@ -451,12 +544,13 @@ The goal: the full lease pipeline — application, negotiation, approval, e-sign
 
 ### Phase 4 Milestone
 
-- [ ] A hunter can browse, apply for a listed property, and see their application status
-- [ ] Admin can review the application, approve it, and trigger e-signature
-- [ ] Dropbox Sign envelope is created; hunter and landowner receive signature requests
-- [ ] On final signature, lease activates and member portal shows the active lease
+- [x] A hunter can browse, apply for a listed property, and see their application status
+- [x] Admin can review the application, approve it, and trigger in-platform e-signature
+- [x] On final in-platform signature, lease activates automatically
+- [ ] Ranch+ landowner can use a custom PDF contract signed via Dropbox Sign (Phase 4.5.5)
+- [ ] Member portal shows the active lease with lease details and gate code
 - [ ] Gate code is visible in member portal only to the active lessee (encrypted, decrypted by service)
-- [ ] QR check-in works and logs entry to DB 3 `check_in_log`
+- [ ] QR check-in works and logs entry to DB 3 `check_ins`
 - [ ] All events in DB 9 audit log
 - [ ] **MILESTONE: Full lease lifecycle functional end-to-end**
 
@@ -1072,21 +1166,18 @@ The goal: the platform is production-ready — fully administered, security-revi
 
 ## Current Position
 
-Phases 1, 2, 3, and 3.9 complete as of 2026-06-06. The full stack is running — auth, property listings, public frontend, and a production-ready admin panel with RBAC, IP allowlist, audit log viewer, and CMS settings pages.
+Phases 1, 2, 3, 3.9, 3.10, 4.1–4.5 complete as of 2026-06-10. The lease lifecycle is functional end-to-end: hunters apply, admins approve, in-platform e-signature activates the lease. Admin panel covers full platform user management (CustomerUserResource) and full lease application review (LeaseApplicationResource).
 
-**Immediate next actions (Phase 4):**
+**Immediate next actions:**
 
-1. Build all DB 3 Lease migrations in `database/migrations/lease/` — use raw PostgreSQL DDL per project conventions
-2. Build DB 11 Documents migrations — needed for file uploads, e-signatures, and QR codes
-3. Build `LeaseService`, `ApplicationService`, `EsignatureService`, `DocumentService`
-4. Build Lease and Document models under `App\Models\Lease\` and `App\Models\Documents\`
-5. Wire up the customer portal at `/apply` — application submission and status tracking
+1. **Phase 4.5.5** — Custom Lease Contracts (Dropbox Sign, Ranch+ tier): migrations → `DropboxSignService` → webhook controller + job → `EsignatureService` modification → approval-time upload UI → `dropboxsign:simulate` Artisan command
+2. **Phase 4.6** — Member portal lease dashboard (`/member`): active lease view, gate code decrypt, stand map, QR check-in page, `CheckInService`
+3. **Phase 4.7** — Document generation jobs: `GenerateLeasePdf`, `GenerateQrCode`, `ScanUploadedFile`
 
-The first Phase 4 milestone to aim for: **a hunter can apply for a listed property and see their application status in the customer portal.**
-
-**Open items before Phase 4 ships:**
+**Open items:**
 - SEC-024: Configure `TrustProxies` middleware before relying on IP allowlist in production
 - SEC-025: Audit role changes on admin user save (pivot table sync not currently logged)
+- Phase 4.9 profile templates: Outfitter, Landowner, Consultant, Seller, Advertiser, Corporate (Hunter template partially built)
 
 ---
 
