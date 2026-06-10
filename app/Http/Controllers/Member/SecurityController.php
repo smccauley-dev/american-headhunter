@@ -106,6 +106,23 @@ class SecurityController extends Controller
         return redirect()->route('member.profile')->with('success', $msg);
     }
 
+    public function checkUsername(string $username)
+    {
+        $clean = strtolower(trim($username));
+
+        if (! preg_match('/^[a-z][a-z0-9_]{2,29}$/', $clean)) {
+            return response()->json(['available' => false, 'reason' => 'invalid']);
+        }
+
+        $taken = DB::connection('identity')
+            ->table('users')
+            ->where('username', $clean)
+            ->whereNull('deleted_at')
+            ->exists();
+
+        return response()->json(['available' => ! $taken]);
+    }
+
     public function disableMfa(Request $request, string $method)
     {
         if (! in_array($method, ['totp', 'sms', 'email'])) {

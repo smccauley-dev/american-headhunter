@@ -8,6 +8,8 @@ use App\Models\Identity\LoginHistory;
 use App\Models\Identity\MfaConfiguration;
 use App\Models\Identity\User;
 use App\Models\Identity\UserProfile;
+use App\Models\Lease\CheckIn;
+use App\Models\Wildlife\HarvestLog;
 use App\Services\Documents\DocumentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -95,6 +97,7 @@ class ProfileController extends Controller
                 ],
             ],
             'photos'   => $photos,
+            'activity' => $this->buildActivityProps($userId),
             'security' => $this->buildSecurityProps($userId),
         ]);
     }
@@ -351,6 +354,60 @@ class ProfileController extends Controller
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
+
+    private function buildActivityProps(string $userId): array
+    {
+        $events = collect();
+
+        // Check-ins from lease DB
+        try {
+            CheckIn::on('lease')
+                ->where('user_id', $userId)
+                ->orderByDesc('checked_in_at')
+                ->limit(50)
+                ->get()
+                ->each(function ($ci) use ($events) {
+                    $events->push([
+                        'type'       => 'check_in',
+                        'occurred_at'=> $ci->checked_in_at?->toISOString(),
+                        'date_label' => $ci->checked_in_at?->format('M j, Y'),
+                        'time_label' => $ci->checked_in_at?->format('g:i A'),
+                        'checked_out'=> $ci->checked_out_at?->format('g:i A'),
+                        'notes'      => $ci->notes,
+                    ]);
+                });
+        } catch (\Throwable) {}
+
+        // Harvests from wildlife DB (table may not exist until Phase 5 migration)
+        try {
+            HarvestLog::on('wildlife')
+                ->where('user_id', $userId)
+                ->whereNull('deleted_at')
+                ->orderByDesc('harvest_date')
+                ->limit(50)
+                ->get()
+                ->each(function ($h) use ($events) {
+                    $events->push([
+                        'type'        => 'harvest',
+                        'occurred_at' => $h->harvest_date?->toISOString(),
+                        'date_label'  => $h->harvest_date?->format('M j, Y'),
+                        'species'     => $h->species_code,
+                        'weapon_type' => $h->weapon_type,
+                        'weight_lbs'  => $h->weight_lbs,
+                        'antler_score'=> $h->antler_score,
+                        'notes'       => $h->notes,
+                    ]);
+                });
+        } catch (\Throwable) {}
+
+        return [
+            'events' => $events
+                ->sortByDesc('occurred_at')
+                ->values()
+                ->take(30)
+                ->toArray(),
+        ];
+    }
 
     private function buildSecurityProps(string $userId): array
     {
