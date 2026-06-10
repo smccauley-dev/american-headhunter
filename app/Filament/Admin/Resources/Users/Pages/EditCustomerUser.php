@@ -281,7 +281,7 @@ class EditCustomerUser extends EditRecord
 
                                     TextInput::make('username')
                                         ->label('Username / @handle')
-                                        ->helperText('Set once by the user when they first enable a public profile. Used as the URL slug (/hunters/username) and @mention handle. Only super_admin may change it.')
+                                        ->helperText('Set once by the user when they first enable a public profile. Used as the URL slug (/hunters/username) and @mention handle. Only Super Administrator may change it.')
                                         ->prefix('@')
                                         ->maxLength(30)
                                         ->regex('/^[a-z][a-z0-9_]{2,29}$/')
@@ -299,7 +299,7 @@ class EditCustomerUser extends EditRecord
                                         ->revealable()
                                         ->minLength(10)
                                         ->maxLength(128)
-                                        ->helperText('Leave blank to keep the current password. Visible to super_admin only.')
+                                        ->helperText('Leave blank to keep the current password. Visible to Super Administrator only.')
                                         ->visible(fn () => AdminAuth::isSuperAdmin())
                                         ->dehydrated(false),
                                     SchemaActions::make([
