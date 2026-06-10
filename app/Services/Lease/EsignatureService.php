@@ -2,6 +2,7 @@
 
 namespace App\Services\Lease;
 
+use App\Models\Documents\Document;
 use App\Models\Documents\EsignatureRequest;
 use App\Models\Documents\EsignatureSigner;
 use App\Models\Lease\Lease;
@@ -9,12 +10,15 @@ use App\Models\Lease\LeaseHunter;
 use App\Models\Lease\SignatureEvent;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
+use App\Support\Entitlements;
+use Illuminate\Support\Facades\Log;
 
 class EsignatureService extends BaseService
 {
     public function __construct(
-        private readonly LeaseService $leaseService,
-        private readonly AuditService $auditService,
+        private readonly LeaseService      $leaseService,
+        private readonly AuditService      $auditService,
+        private readonly DropboxSignService $dropboxSign,
     ) {}
 
     // ── Read ──────────────────────────────────────────────────────────────────
@@ -36,13 +40,37 @@ class EsignatureService extends BaseService
     // ── Writes ────────────────────────────────────────────────────────────────
 
     /**
-     * Create an in-platform signing request for a lease.
-     * Lessor signs first (order 1), lessee second (order 2).
+     * Create a signing request for a lease.
+     *
+     * When $customPdf is provided and the lessor has the custom_lease_template entitlement,
+     * the request is routed to Dropbox Sign (embedded signing of the uploaded PDF).
+     * Otherwise falls back to in-platform signing.
      *
      * @param  array{user_id: string, name: string, email: string}  $lessorInfo
      * @param  array{user_id: string, name: string, email: string}  $lesseeInfo
      */
     public function createRequest(
+        Lease    $lease,
+        string   $requestedByUserId,
+        array    $lessorInfo,
+        array    $lesseeInfo,
+        ?Document $customPdf = null,
+    ): EsignatureRequest {
+        if ($customPdf !== null) {
+            $lessorUser = \App\Models\Identity\User::on('identity')->find($lessorInfo['user_id']);
+            $hasEntitlement = $lessorUser !== null
+                && app(\App\Services\Platform\EntitlementService::class)
+                    ->can($lessorUser, Entitlements::CUSTOM_LEASE_TEMPLATE);
+
+            if ($hasEntitlement) {
+                return $this->createDropboxSignRequest($lease, $requestedByUserId, $lessorInfo, $lesseeInfo, $customPdf);
+            }
+        }
+
+        return $this->createInPlatformRequest($lease, $requestedByUserId, $lessorInfo, $lesseeInfo);
+    }
+
+    private function createInPlatformRequest(
         Lease  $lease,
         string $requestedByUserId,
         array  $lessorInfo,
@@ -77,11 +105,77 @@ class EsignatureService extends BaseService
             'status'     => 'pending',
         ]);
 
-        // Permanent audit trail in DB 3 — never deleted
         SignatureEvent::create([
             'lease_id'    => $lease->id,
             'user_id'     => $requestedByUserId,
             'provider'    => 'in_platform',
+            'event_type'  => 'sent',
+            'occurred_at' => now(),
+        ]);
+
+        return $request;
+    }
+
+    private function createDropboxSignRequest(
+        Lease    $lease,
+        string   $requestedByUserId,
+        array    $lessorInfo,
+        array    $lesseeInfo,
+        Document $customPdf,
+    ): EsignatureRequest {
+        $year    = $lease->start_date?->format('Y') ?? now()->year;
+        $subject = "Hunting Lease Agreement — {$year}";
+
+        // Resolve the stored PDF to a temp file path for the Dropbox Sign upload
+        $disk    = config('filesystems.defaults.documents', 'local');
+        $tmpPath = tempnam(sys_get_temp_dir(), 'dbs_') . '.pdf';
+        file_put_contents($tmpPath, \Illuminate\Support\Facades\Storage::disk($disk)->get($customPdf->storage_key));
+
+        try {
+            $envelope = $this->dropboxSign->createEmbeddedEnvelope(
+                $tmpPath,
+                $subject,
+                $lessorInfo,
+                $lesseeInfo,
+            );
+        } finally {
+            @unlink($tmpPath);
+        }
+
+        $request = EsignatureRequest::create([
+            'lease_id'                    => $lease->id,
+            'requester_user_id'           => $requestedByUserId,
+            'provider'                    => 'dropbox_sign',
+            'provider_signature_request_id' => $envelope['signature_request_id'],
+            'status'                      => 'out_for_signature',
+            'subject'                     => $subject,
+            'requested_at'                => now(),
+        ]);
+
+        EsignatureSigner::create([
+            'request_id'         => $request->id,
+            'user_id'            => $lessorInfo['user_id'],
+            'email'              => $lessorInfo['email'],
+            'name'               => $lessorInfo['name'],
+            'order_num'          => 1,
+            'status'             => 'pending',
+            'provider_signer_id' => $envelope['lessor_signature_id'],
+        ]);
+
+        EsignatureSigner::create([
+            'request_id'         => $request->id,
+            'user_id'            => $lesseeInfo['user_id'],
+            'email'              => $lesseeInfo['email'],
+            'name'               => $lesseeInfo['name'],
+            'order_num'          => 2,
+            'status'             => 'pending',
+            'provider_signer_id' => $envelope['lessee_signature_id'],
+        ]);
+
+        SignatureEvent::create([
+            'lease_id'    => $lease->id,
+            'user_id'     => $requestedByUserId,
+            'provider'    => 'dropbox_sign',
             'event_type'  => 'sent',
             'occurred_at' => now(),
         ]);

@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'dropbox_sign' => [
+        'api_key'        => env('DROPBOX_SIGN_API_KEY'),
+        'client_id'      => env('DROPBOX_SIGN_CLIENT_ID'),
+        'webhook_secret' => env('DROPBOX_SIGN_WEBHOOK_SECRET'),
+        'test_mode'      => env('DROPBOX_SIGN_TEST_MODE', true),
+    ],
+
 ];

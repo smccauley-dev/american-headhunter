@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DropboxSignWebhookController;
+use App\Http\Controllers\Api\LeaseSigningController;
 use App\Http\Controllers\Api\MfaController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\RecoveryController;
@@ -30,6 +32,22 @@ Route::prefix('v1/auth')->group(function () {
     Route::post('/logout',     [AuthController::class, 'logout'])->middleware('auth:sanctum');
     Route::post('/revoke-all', [AuthController::class, 'revokeAll'])->middleware('auth:sanctum');
 });
+
+// Dropbox Sign webhook — no auth, HMAC-verified internally
+Route::post('/webhooks/dropbox-sign', [DropboxSignWebhookController::class, 'handle'])
+    ->name('webhooks.dropbox-sign');
+
+// Lease signing — mobile API
+Route::prefix('v1/leases')
+    ->middleware(['auth:sanctum'])
+    ->group(function () {
+        Route::get('/',                     [LeaseSigningController::class, 'index']);
+        Route::get('/{id}',                 [LeaseSigningController::class, 'show']);
+        Route::get('/{id}/signing-url',     [LeaseSigningController::class, 'signingUrl']);
+        Route::get('/{id}/signature-status', [LeaseSigningController::class, 'signatureStatus']);
+        Route::get('/{id}/contract',        [LeaseSigningController::class, 'contract'])
+            ->name('api.leases.contract.download');
+    });
 
 // MFA enrollment management — requires active hunter token
 Route::prefix('v1/mfa')

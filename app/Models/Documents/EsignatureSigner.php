@@ -18,6 +18,7 @@ class EsignatureSigner extends BaseModel
         'name',
         'order_num',
         'status',
+        'provider_signer_id',
         'signed_at',
         'declined_at',
     ];

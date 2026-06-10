@@ -154,6 +154,38 @@ class DocumentService extends BaseService
     }
 
     /**
+     * Store raw bytes (e.g. a PDF downloaded from Dropbox Sign) and register the Document record.
+     * The document is created in 'processing' status and queued for virus scan.
+     */
+    public function storeRawBytes(
+        string $bytes,
+        string $ownerUserId,
+        string $documentType,
+        string $filename,
+        string $mimeType = 'application/pdf',
+    ): Document {
+        $disk = config('filesystems.defaults.documents', 'local');
+        $ext  = pathinfo($filename, PATHINFO_EXTENSION) ?: 'bin';
+        $key  = "{$ownerUserId}/" . Str::uuid() . ".{$ext}";
+
+        Storage::disk($disk)->put("documents/{$key}", $bytes);
+
+        $provider = $disk === 'azure_blob' ? 'azure_blob' : 'garage';
+
+        return $this->register(
+            ownerUserId:      $ownerUserId,
+            documentType:     $documentType,
+            originalFilename: $filename,
+            mimeType:         $mimeType,
+            sizeBytes:        strlen($bytes),
+            storageBucket:    config("filesystems.disks.{$disk}.bucket", 'local'),
+            storageKey:       "documents/{$key}",
+            storageProvider:  $provider,
+            checksum:         hash('sha256', $bytes),
+        );
+    }
+
+    /**
      * Immediate compensation: soft-delete unattached documents and remove their storage files.
      * Called in a catch block when a surrounding transaction fails. The reaper is the
      * authoritative cleanup for cases where this compensation doesn't run (process death).

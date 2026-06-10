@@ -25,6 +25,7 @@ final class Entitlements
     const CONCIERGE_MESSAGING           = 'concierge_messaging';
 
     // Landowner entitlements
+    const CUSTOM_LEASE_TEMPLATE              = 'custom_lease_template';
     const MAX_ACTIVE_LISTINGS                = 'max_active_listings';
     const PHOTO_UPLOADS_PER_LISTING          = 'photo_uploads_per_listing';
     const VIDEO_UPLOADS_PER_LISTING          = 'video_uploads_per_listing';
