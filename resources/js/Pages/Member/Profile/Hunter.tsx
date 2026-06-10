@@ -1,5 +1,5 @@
 import { Head, router, usePage } from '@inertiajs/react'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   EyeIcon,
   EyeSlashIcon,
@@ -392,10 +392,26 @@ interface LoginEntry {
   at: string
 }
 
+interface ActivityEvent {
+  type: 'check_in' | 'harvest'
+  occurred_at: string
+  date_label: string
+  // check_in
+  time_label?: string
+  checked_out?: string | null
+  // harvest
+  species?: string
+  weapon_type?: string
+  weight_lbs?: number | null
+  antler_score?: number | null
+  notes?: string | null
+}
+
 interface Props {
   user: UserData
   profile: ProfileData
   photos: PhotoItem[]
+  activity: { events: ActivityEvent[] }
   security: {
     mfa: MfaStatus
     login_history: LoginEntry[]
@@ -527,7 +543,7 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, security }: Props) {
+export default function HunterProfile({ user, profile, photos, activity, security }: Props) {
   const [editing, setEditing]               = useState(false)
   const [tab, setTab]                       = useState<'about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security'>('about')
   const [saving, setSaving]                 = useState(false)
@@ -1095,14 +1111,7 @@ export default function HunterProfile({ user, profile, photos, security }: Props
                       onVisibility={v => visibility('gear', v)}
                     />
                   ) : tab === 'activity' ? (
-                    <div style={{ textAlign: 'center', padding: '48px 0' }}>
-                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.14em', textTransform: 'uppercase', color: '#ccc', marginBottom: '8px' }}>
-                        Activity Feed
-                      </div>
-                      <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', fontStyle: 'italic', color: '#bbb', margin: 0 }}>
-                        Harvest logs and hunt activity will appear here.
-                      </p>
-                    </div>
+                    <ActivityTab events={activity.events} />
                   ) : (
                     <SecurityTab
                       mfa={security.mfa}
@@ -2033,6 +2042,26 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
   const USERNAME_RE = /^[a-z][a-z0-9_]{2,29}$/
   const usernameValid = USERNAME_RE.test(usernameInput)
 
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null)
+  const [usernameChecking, setUsernameChecking]   = useState(false)
+
+  const checkAvailability = useCallback((val: string) => {
+    if (!USERNAME_RE.test(val)) { setUsernameAvailable(null); return }
+    setUsernameChecking(true)
+    fetch(`/member/security/username-check/${encodeURIComponent(val)}`)
+      .then(r => r.json())
+      .then(d => setUsernameAvailable(d.available ?? false))
+      .catch(() => setUsernameAvailable(null))
+      .finally(() => setUsernameChecking(false))
+  }, [])
+
+  useEffect(() => {
+    setUsernameAvailable(null)
+    if (!usernameValid) return
+    const t = setTimeout(() => checkAvailability(usernameInput), 400)
+    return () => clearTimeout(t)
+  }, [usernameInput, usernameValid, checkAvailability])
+
   function submitVisibility(makePublic: boolean) {
     setVisibilitySaving(true)
     const payload: Record<string, unknown> = { is_profile_public: makePublic }
@@ -2299,10 +2328,25 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                 )}
                 {usernameValid && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#4a7c59', letterSpacing: '.04em' }}>
+                    {usernameChecking && (
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#a89874', letterSpacing: '.04em' }}>
+                        Checking availability…
+                      </div>
+                    )}
+                    {!usernameChecking && usernameAvailable === true && (
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#4a7c59', letterSpacing: '.04em' }}>
+                        ✓ Available
+                      </div>
+                    )}
+                    {!usernameChecking && usernameAvailable === false && (
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#C84C21', letterSpacing: '.04em' }}>
+                        ✗ Already taken — try another
+                      </div>
+                    )}
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#6b7280', letterSpacing: '.04em' }}>
                       Profile URL: /hunters/{usernameInput}
                     </div>
-                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#4a7c59', letterSpacing: '.04em' }}>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#6b7280', letterSpacing: '.04em' }}>
                       Tag: @{usernameInput}
                     </div>
                   </div>
@@ -2325,16 +2369,16 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
                 onClick={() => submitVisibility(true)}
-                disabled={visibilitySaving || (!username && !usernameValid)}
+                disabled={visibilitySaving || (!username && (!usernameValid || usernameAvailable !== true))}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: '6px',
                   fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
                   letterSpacing: '.1em', textTransform: 'uppercase',
                   padding: '7px 16px',
-                  background: (visibilitySaving || (!username && !usernameValid)) ? '#d4c9b0' : '#0A1512',
-                  color: (visibilitySaving || (!username && !usernameValid)) ? '#a89874' : '#F4ECDC',
+                  background: (visibilitySaving || (!username && (!usernameValid || usernameAvailable !== true))) ? '#d4c9b0' : '#0A1512',
+                  color: (visibilitySaving || (!username && (!usernameValid || usernameAvailable !== true))) ? '#a89874' : '#F4ECDC',
                   border: 'none',
-                  cursor: (visibilitySaving || (!username && !usernameValid)) ? 'not-allowed' : 'pointer',
+                  cursor: (visibilitySaving || (!username && (!usernameValid || usernameAvailable !== true))) ? 'not-allowed' : 'pointer',
                 }}
               >
                 <EyeIcon style={{ width: '13px', height: '13px', flexShrink: 0 }} />
@@ -2539,6 +2583,78 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
         )}
       </div>
 
+    </div>
+  )
+}
+
+// ── Activity Tab ──────────────────────────────────────────────────────────────
+
+const SPECIES_LABELS: Record<string, string> = {
+  whitetail_deer: 'Whitetail Deer', mule_deer: 'Mule Deer', turkey: 'Turkey',
+  waterfowl: 'Waterfowl', dove: 'Dove', hog: 'Wild Hog', elk: 'Elk',
+  bear: 'Black Bear', antelope: 'Antelope', pheasant: 'Pheasant',
+  quail: 'Quail', rabbit: 'Rabbit', squirrel: 'Squirrel',
+  coyote: 'Coyote / Predator', other: 'Other',
+}
+
+const WEAPON_LABELS: Record<string, string> = {
+  bow: 'Bow', rifle: 'Rifle', shotgun: 'Shotgun',
+  muzzleloader: 'Muzzleloader', pistol: 'Pistol', other: 'Other',
+}
+
+function ActivityTab({ events }: { events: ActivityEvent[] }) {
+  const mono: React.CSSProperties = { fontFamily: 'JetBrains Mono, monospace' }
+  const serif: React.CSSProperties = { fontFamily: 'Crimson Pro, Georgia, serif' }
+
+  if (events.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '48px 0' }}>
+        <div style={{ ...mono, fontSize: '10px', letterSpacing: '.14em', textTransform: 'uppercase', color: '#ccc', marginBottom: '8px' }}>
+          Activity Feed
+        </div>
+        <p style={{ ...serif, fontSize: '15px', fontStyle: 'italic', color: '#bbb', margin: 0 }}>
+          Harvest logs and hunt activity will appear here.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+      {events.map((ev, i) => ev.type === 'harvest' ? (
+        <div key={i} style={{ background: '#F8F4EB', border: '1px solid #e8e0d0', padding: '14px 16px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+          <div style={{ ...mono, fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#b8934a', background: '#0A1512', padding: '4px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            Harvest
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ ...mono, fontSize: '11px', fontWeight: 700, color: '#0A1512', marginBottom: '2px' }}>
+              {SPECIES_LABELS[ev.species ?? ''] ?? ev.species}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+              <span style={{ ...mono, fontSize: '9px', color: '#6b7280' }}>{ev.date_label}</span>
+              {ev.weapon_type && <span style={{ ...mono, fontSize: '9px', color: '#9ca3af' }}>{WEAPON_LABELS[ev.weapon_type] ?? ev.weapon_type}</span>}
+              {ev.weight_lbs && <span style={{ ...mono, fontSize: '9px', color: '#9ca3af' }}>{ev.weight_lbs} lbs</span>}
+              {ev.antler_score && <span style={{ ...mono, fontSize: '9px', color: '#9ca3af' }}>Score: {ev.antler_score}</span>}
+            </div>
+            {ev.notes && <p style={{ ...serif, fontSize: '13px', color: '#6b7280', margin: '4px 0 0', fontStyle: 'italic' }}>{ev.notes}</p>}
+          </div>
+        </div>
+      ) : (
+        <div key={i} style={{ background: '#F8F4EB', border: '1px solid #e8e0d0', padding: '14px 16px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+          <div style={{ ...mono, fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', background: '#0A1512', padding: '4px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            {ev.checked_out ? 'Hunt' : 'Check-in'}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+              <span style={{ ...mono, fontSize: '11px', fontWeight: 700, color: '#0A1512' }}>{ev.date_label}</span>
+              <span style={{ ...mono, fontSize: '9px', color: '#9ca3af' }}>
+                {ev.time_label}{ev.checked_out ? ` — ${ev.checked_out}` : ' · still in field'}
+              </span>
+            </div>
+            {ev.notes && <p style={{ ...serif, fontSize: '13px', color: '#6b7280', margin: '4px 0 0', fontStyle: 'italic' }}>{ev.notes}</p>}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

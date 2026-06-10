@@ -6,6 +6,7 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\Member\LeaseSignController;
 use App\Http\Controllers\Member\MemberController;
 use App\Http\Controllers\Member\ProfileController;
+use App\Http\Controllers\Api\MentionController;
 use App\Http\Controllers\Member\SecurityController;
 use App\Http\Controllers\Public\HunterPublicProfileController;
 use App\Http\Controllers\Public\PropertyController;
@@ -17,6 +18,13 @@ Route::get('/properties', [PropertyController::class, 'index'])->name('property.
 Route::get('/properties/{slug}', [PropertyController::class, 'show'])->name('property.show');
 
 Route::get('/hunters/{username}', [HunterPublicProfileController::class, 'show'])->name('hunter.public');
+
+// Public API — rate-limited, no auth required
+Route::prefix('api')->name('api.')->group(function () {
+    Route::get('/mention/{username}', [MentionController::class, 'show'])
+        ->name('mention')
+        ->middleware('throttle:60,1');
+});
 
 // Application portal — all routes require authentication
 // Order matters: specific paths before /{listing} wildcard
@@ -50,6 +58,7 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/security/mfa/{method}/enable',     [SecurityController::class, 'enableMfa'])->name('security.mfa.enable');
     Route::post('/security/mfa/{method}/disable',    [SecurityController::class, 'disableMfa'])->name('security.mfa.disable');
     Route::post('/security/profile-visibility',      [SecurityController::class, 'setProfileVisibility'])->name('security.profile.visibility');
+    Route::get('/security/username-check/{username}', [SecurityController::class, 'checkUsername'])->name('security.username.check')->middleware('throttle:30,1');
 });
 
 require __DIR__ . '/auth.php';
