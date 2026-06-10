@@ -302,9 +302,33 @@ class EditCustomerUser extends EditRecord
                                         ->helperText('Leave blank to keep the current password. Visible to super_admin only.')
                                         ->visible(fn () => AdminAuth::isSuperAdmin())
                                         ->dehydrated(false),
-                                    Placeholder::make('force_reset_info')
-                                        ->label('')
-                                        ->content('Use "Force Password Reset" in the header actions to send a reset email without setting a password directly.'),
+                                    SchemaActions::make([
+                                        Action::make('force_password_reset')
+                                            ->label('Force Password Reset')
+                                            ->icon('heroicon-o-envelope')
+                                            ->color('warning')
+                                            ->requiresConfirmation()
+                                            ->modalDescription('This will send a password reset email to the user\'s address. They will be required to set a new password before logging in.')
+                                            ->action(function () {
+                                                $record = $this->getRecord();
+                                                app(\App\Services\Identity\VerificationService::class)
+                                                    ->sendPasswordResetEmail($record);
+
+                                                app(AuditService::class)->log(
+                                                    eventType:      'update',
+                                                    sourceDatabase: 'identity',
+                                                    tableName:      'users',
+                                                    recordId:       $record->id,
+                                                    userId:         Auth::id(),
+                                                    ipAddress:      request()->ip(),
+                                                    userAgent:      request()->userAgent(),
+                                                    actionSummary:  "Admin forced password reset for: {$record->email}",
+                                                    changedFields:  ['password_hash'],
+                                                );
+
+                                                Notification::make()->title('Password reset email sent.')->success()->send();
+                                            }),
+                                    ]),
                                 ]),
 
                             Section::make('MFA Status')
@@ -1208,31 +1232,6 @@ class EditCustomerUser extends EditRecord
     {
         return [
             \Filament\Actions\ViewAction::make(),
-
-            Action::make('force_password_reset')
-                ->label('Force Password Reset')
-                ->icon('heroicon-o-envelope')
-                ->color('warning')
-                ->requiresConfirmation()
-                ->action(function () {
-                    $record = $this->getRecord();
-                    app(\App\Services\Identity\VerificationService::class)
-                        ->sendPasswordResetEmail($record);
-
-                    app(AuditService::class)->log(
-                        eventType:      'update',
-                        sourceDatabase: 'identity',
-                        tableName:      'users',
-                        recordId:       $record->id,
-                        userId:         Auth::id(),
-                        ipAddress:      request()->ip(),
-                        userAgent:      request()->userAgent(),
-                        actionSummary:  "Admin forced password reset for: {$record->email}",
-                        changedFields:  ['password_hash'],
-                    );
-
-                    Notification::make()->title('Password reset email sent.')->success()->send();
-                }),
 
             Action::make('suspend')
                 ->label('Suspend')
