@@ -11,7 +11,12 @@ use App\Models\Identity\Role;
 use App\Models\Identity\UserAdminNote;
 use App\Models\Identity\UserProfile;
 use App\Services\Audit\AuditService;
+use App\Services\Auth\MfaService;
 use App\Services\Documents\DocumentService;
+use App\Services\Identity\UserService;
+use App\Services\Lease\LeaseService;
+use App\Services\Platform\MfaFactorService;
+use App\Services\Property\PropertyService;
 use App\Support\AdminAuth;
 use App\Support\HasIconPageHeading;
 use Filament\Actions\Action;
@@ -327,209 +332,38 @@ class EditCustomerUser extends EditRecord
                                         ->minLength(10)
                                         ->maxLength(128)
                                         ->helperText('Leave blank to keep the current password. Visible to Super Administrator only.')
-                                        ->visible(fn () => AdminAuth::isSuperAdmin())
-                                        ->dehydrated(false),
+                                        ->visible(fn () => AdminAuth::isSuperAdmin()),
                                 ]),
 
                             Section::make('MFA Status')
                                 ->description('Multi-factor authentication configuration')
-                                ->headerActions([
-                                    // ── Email ─────────────────────────────────
-                                    Action::make('enable_email_mfa')
-                                        ->label('Enable Email MFA')
-                                        ->icon('heroicon-o-envelope')
-                                        ->color('success')
-                                        ->requiresConfirmation()
-                                        ->modalHeading('Enable Email MFA')
-                                        ->modalDescription('Admin-activates email-based two-factor authentication for this account.')
-                                        ->visible(fn () => $this->platformMethodEnabled('email') && ! $this->mfaMethodEnabled('email'))
-                                        ->action(function () {
-                                            try {
-                                                $this->enableMfaMethod('email');
-                                                Notification::make()->success()->title('Email MFA enabled')->send();
-                                            } catch (\Throwable $e) {
-                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                            }
-                                        }),
-
-                                    Action::make('disable_email_mfa')
-                                        ->label('Disable Email MFA')
-                                        ->icon('heroicon-o-envelope-open')
-                                        ->color('danger')
-                                        ->requiresConfirmation()
-                                        ->modalHeading('Disable Email MFA')
-                                        ->modalDescription('Removes email-based two-factor authentication. The user can re-enable it from their Security settings.')
-                                        ->visible(fn () => $this->mfaMethodEnabled('email'))
-                                        ->action(function () {
-                                            try {
-                                                $this->disableMfaMethod('email');
-                                                Notification::make()->success()->title('Email MFA disabled')->send();
-                                            } catch (\Throwable $e) {
-                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                            }
-                                        }),
-
-                                    // ── TOTP ──────────────────────────────────
-                                    Action::make('enable_totp_mfa')
-                                        ->label('Enable Authenticator MFA')
-                                        ->icon('heroicon-o-device-phone-mobile')
-                                        ->color('success')
-                                        ->requiresConfirmation()
-                                        ->modalHeading('Enable Authenticator App MFA')
-                                        ->modalDescription('Admin-activates TOTP. The user must still scan the QR code on their next login to complete enrollment.')
-                                        ->visible(fn () => $this->platformMethodEnabled('totp') && ! $this->mfaMethodEnabled('totp'))
-                                        ->action(function () {
-                                            try {
-                                                $this->enableMfaMethod('totp');
-                                                Notification::make()->success()->title('Authenticator MFA enabled')->send();
-                                            } catch (\Throwable $e) {
-                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                            }
-                                        }),
-
-                                    Action::make('disable_totp_mfa')
-                                        ->label('Disable Authenticator MFA')
-                                        ->icon('heroicon-o-shield-check')
-                                        ->color('danger')
-                                        ->requiresConfirmation()
-                                        ->modalHeading('Disable Authenticator App MFA')
-                                        ->modalDescription('Removes TOTP two-factor authentication. The user will need to re-scan the QR code to re-enroll.')
-                                        ->visible(fn () => $this->mfaMethodEnabled('totp'))
-                                        ->action(function () {
-                                            try {
-                                                $this->disableMfaMethod('totp');
-                                                Notification::make()->success()->title('Authenticator MFA disabled')->send();
-                                            } catch (\Throwable $e) {
-                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                            }
-                                        }),
-
-                                    // ── SMS ───────────────────────────────────
-                                    Action::make('enable_sms_mfa')
-                                        ->label('Enable SMS MFA')
-                                        ->icon('heroicon-o-chat-bubble-left-ellipsis')
-                                        ->color('success')
-                                        ->requiresConfirmation()
-                                        ->modalHeading('Enable SMS MFA')
-                                        ->modalDescription('Admin-activates SMS-based two-factor authentication for this account.')
-                                        ->visible(fn () => $this->platformMethodEnabled('sms') && ! $this->mfaMethodEnabled('sms'))
-                                        ->action(function () {
-                                            try {
-                                                $this->enableMfaMethod('sms');
-                                                Notification::make()->success()->title('SMS MFA enabled')->send();
-                                            } catch (\Throwable $e) {
-                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                            }
-                                        }),
-
-                                    Action::make('disable_sms_mfa')
-                                        ->label('Disable SMS MFA')
-                                        ->icon('heroicon-o-chat-bubble-left')
-                                        ->color('danger')
-                                        ->requiresConfirmation()
-                                        ->modalHeading('Disable SMS MFA')
-                                        ->modalDescription('Removes SMS-based two-factor authentication for this account.')
-                                        ->visible(fn () => $this->mfaMethodEnabled('sms'))
-                                        ->action(function () {
-                                            try {
-                                                $this->disableMfaMethod('sms');
-                                                Notification::make()->success()->title('SMS MFA disabled')->send();
-                                            } catch (\Throwable $e) {
-                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                            }
-                                        }),
-
-                                    // ── Reset / Emergency ─────────────────────
-                                    Action::make('reset_totp_secret')
-                                        ->label('Clear TOTP Token')
-                                        ->icon('heroicon-o-arrow-path')
-                                        ->color('warning')
-                                        ->requiresConfirmation()
-                                        ->modalHeading('Clear Authenticator App Token')
-                                        ->modalDescription('Clears the stored TOTP secret and disables the authenticator method. The user must re-scan a new QR code to re-enroll.')
-                                        ->visible(fn () => $this->mfaTotpExists())
-                                        ->action(function () {
-                                            try {
-                                                $this->getRecord()
-                                                    ->mfaConfigurations()
-                                                    ->where('method', 'totp')
-                                                    ->update([
-                                                        'is_enabled'       => false,
-                                                        'secret_encrypted' => null,
-                                                        'verified_at'      => null,
-                                                    ]);
-                                                Notification::make()->warning()->title('TOTP secret cleared — user must re-enroll')->send();
-                                            } catch (\Throwable $e) {
-                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                            }
-                                        }),
-
-                                    Action::make('disable_all_mfa')
-                                        ->label('Disable All MFA')
-                                        ->icon('heroicon-o-shield-exclamation')
-                                        ->color('danger')
-                                        ->requiresConfirmation()
-                                        ->modalHeading('Disable All MFA Methods')
-                                        ->modalDescription('Emergency: removes every two-factor method from this account. The user will need to re-enroll on their next login.')
-                                        ->action(function () {
-                                            try {
-                                                $this->getRecord()
-                                                    ->mfaConfigurations()
-                                                    ->update(['is_enabled' => false, 'verified_at' => null]);
-                                                Notification::make()->warning()->title('All MFA methods disabled')->send();
-                                            } catch (\Throwable $e) {
-                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                            }
-                                        }),
-                                ])
+                                ->headerActions($this->mfaFactorActions())
                                 ->schema([
                                     Placeholder::make('mfa_status_detail')
                                         ->label('Configured Methods')
                                         ->content(function () {
                                             try {
-                                                $configs  = $this->getRecord()->mfaConfigurations()->get()->keyBy('method');
-                                                $platform = \Illuminate\Support\Facades\DB::connection('platform')
-                                                    ->table('mfa_factor_settings')
-                                                    ->pluck('is_enabled', 'factor');
+                                                $configs       = $this->getRecord()->mfaConfigurations()->get()->keyBy('method');
+                                                $factorService = app(MfaFactorService::class);
 
-                                                $rows = '';
+                                                $methods = [];
                                                 foreach ([
                                                     'email' => 'Email',
                                                     'totp'  => 'Authenticator App (TOTP)',
                                                     'sms'   => 'SMS / Text Message',
                                                 ] as $method => $label) {
-                                                    $platformOn = (bool) ($platform[$method] ?? false);
-                                                    $cfg        = $configs->get($method);
-                                                    $enabled    = $cfg && $cfg->is_enabled;
-
-                                                    $dot = $enabled
-                                                        ? '<span style="color:#16a34a;font-size:16px;">●</span>'
-                                                        : '<span style="color:#d1d5db;font-size:16px;">○</span>';
-
-                                                    $status = $enabled
-                                                        ? '<span style="color:#16a34a;font-weight:600;">Enabled</span>'
-                                                          . ($cfg?->verified_at
-                                                              ? '<span style="color:#9ca3af;font-size:11px;margin-left:8px;">verified '
-                                                                . e($cfg->verified_at->format('M j, Y')) . '</span>'
-                                                              : '')
-                                                        : '<span style="color:#9ca3af;">Disabled</span>';
-
-                                                    $platformBadge = ! $platformOn
-                                                        ? '<span style="color:#ef4444;font-size:10px;margin-left:8px;">[platform off]</span>'
-                                                        : '';
-
-                                                    $rows .= '<div style="display:flex;align-items:center;gap:10px;'
-                                                        . 'padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:13px;">'
-                                                        . '<span>' . $dot . '</span>'
-                                                        . '<span style="flex:1;color:#374151;">' . e($label) . $platformBadge . '</span>'
-                                                        . '<span>' . $status . '</span>'
-                                                        . '</div>';
+                                                    $cfg       = $configs->get($method);
+                                                    $methods[] = [
+                                                        'label'       => $label,
+                                                        'enabled'     => (bool) $cfg?->is_enabled,
+                                                        'verified_at' => $cfg?->verified_at,
+                                                        'platform_on' => $factorService->isFactorEnabled($method),
+                                                    ];
                                                 }
 
-                                                return new \Illuminate\Support\HtmlString(
-                                                    $rows ?: '<span style="color:#9ca3af;">No MFA configured</span>'
-                                                );
-                                            } catch (\Throwable) {
+                                                return view('filament.admin.users.mfa-status', ['methods' => $methods]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Unavailable.';
                                             }
                                         })
@@ -542,40 +376,19 @@ class EditCustomerUser extends EditRecord
                                         ->label('')
                                         ->content(function () {
                                             try {
-                                            $entries = $this->getRecord()
-                                                ->loginHistory()
-                                                ->orderByDesc('created_at')
-                                                ->limit(20)
-                                                ->get();
+                                                $entries = $this->getRecord()
+                                                    ->loginHistory()
+                                                    ->orderByDesc('created_at')
+                                                    ->limit(20)
+                                                    ->get();
 
-                                            if ($entries->isEmpty()) {
-                                                return 'No login history.';
-                                            }
+                                                if ($entries->isEmpty()) {
+                                                    return 'No login history.';
+                                                }
 
-                                            $col = 'style="display:grid;grid-template-columns:2fr 1.5fr 1.2fr 0.8fr;gap:0 1rem;"';
-                                            $headerStyle = 'style="padding-bottom:6px;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;"';
-                                            $rowStyle    = 'style="padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:13px;align-items:center;"';
-
-                                            $rows = $entries->map(fn ($e) =>
-                                                '<div ' . $col . ' ' . $rowStyle . '>'
-                                                . '<span style="color:#6b7280;">' . e($e->created_at?->format('M j, Y H:i')) . '</span>'
-                                                . '<span style="font-family:monospace;font-size:12px;">' . e($e->ip_address ?? '—') . '</span>'
-                                                . ($e->success
-                                                    ? '<span style="color:#16a34a;">✓ Success</span>'
-                                                    : '<span style="color:#dc2626;">✗ Failed</span>')
-                                                . '<span>' . ($e->mfa_used ? '<span style="color:#2563eb;">MFA</span>' : '—') . '</span>'
-                                                . '</div>'
-                                            )->join('');
-
-                                            return new \Illuminate\Support\HtmlString(
-                                                '<div style="width:100%;">'
-                                                . '<div ' . $col . ' ' . $headerStyle . '>'
-                                                . '<span>Time</span><span>IP Address</span><span>Result</span><span>MFA</span>'
-                                                . '</div>'
-                                                . $rows
-                                                . '</div>'
-                                            );
-                                            } catch (\Throwable) {
+                                                return view('filament.admin.users.login-history', ['entries' => $entries]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Unavailable.';
                                             }
                                         }),
@@ -604,18 +417,9 @@ class EditCustomerUser extends EditRecord
                                                     return 'No events recorded.';
                                                 }
 
-                                                return new \Illuminate\Support\HtmlString(
-                                                    $events->map(fn ($e) =>
-                                                        '<div class="flex gap-4 py-1 border-b border-gray-100 text-sm">'
-                                                        . '<span class="text-gray-400 w-36">' . e($e->created_at?->format('M j Y H:i')) . '</span>'
-                                                        . '<span class="' . ($e->delta >= 0 ? 'text-green-600' : 'text-red-600') . ' w-12">'
-                                                        . ($e->delta >= 0 ? '+' : '') . $e->delta
-                                                        . '</span>'
-                                                        . '<span class="text-gray-700">' . e($e->reason ?? '—') . '</span>'
-                                                        . '</div>'
-                                                    )->join('')
-                                                );
-                                            } catch (\Throwable) {
+                                                return view('filament.admin.users.trust-score-events', ['events' => $events]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Unavailable.';
                                             }
                                         }),
@@ -633,7 +437,8 @@ class EditCustomerUser extends EditRecord
                                                 if (! $check) return 'No background check on file.';
                                                 return ucfirst($check->status ?? 'unknown')
                                                     . ($check->completed_at ? ' — completed ' . $check->completed_at->format('M j Y') : '');
-                                            } catch (\Throwable) {
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Unavailable.';
                                             }
                                         }),
@@ -651,7 +456,8 @@ class EditCustomerUser extends EditRecord
                                                 if (! $result) return 'No OFAC screening on file.';
                                                 return ucfirst($result->result ?? 'unknown')
                                                     . ' — screened ' . $result->created_at?->format('M j Y');
-                                            } catch (\Throwable) {
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Unavailable.';
                                             }
                                         }),
@@ -671,17 +477,9 @@ class EditCustomerUser extends EditRecord
                                                     return 'No identity verifications on file.';
                                                 }
 
-                                                return new \Illuminate\Support\HtmlString(
-                                                    $records->map(fn ($v) =>
-                                                        '<div class="py-1 text-sm border-b border-gray-100">'
-                                                        . '<span class="font-medium">' . ucfirst($v->verification_type ?? '—') . '</span> '
-                                                        . '— ' . ucfirst($v->status ?? '—')
-                                                        . ($v->verified_at ? ' on ' . $v->verified_at->format('M j Y') : '')
-                                                        . ' via ' . ($v->provider ?? '—')
-                                                        . '</div>'
-                                                    )->join('')
-                                                );
-                                            } catch (\Throwable) {
+                                                return view('filament.admin.users.identity-verifications', ['records' => $records]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Unavailable.';
                                             }
                                         }),
@@ -704,17 +502,7 @@ class EditCustomerUser extends EditRecord
                                                 return 'No staff notes on file.';
                                             }
 
-                                            return new \Illuminate\Support\HtmlString(
-                                                $notes->map(fn ($n) =>
-                                                    '<div class="py-2 border-b border-gray-100">'
-                                                    . '<div class="text-xs text-gray-400 mb-1">'
-                                                    . e($n->created_at?->format('M j Y H:i'))
-                                                    . ' — ' . e($n->getAuthor()?->profile?->first_name . ' ' . $n->getAuthor()?->profile?->last_name)
-                                                    . '</div>'
-                                                    . '<div class="text-sm text-gray-800 whitespace-pre-wrap">' . e($n->note) . '</div>'
-                                                    . '</div>'
-                                                )->join('')
-                                            );
+                                            return view('filament.admin.users.admin-notes', ['notes' => $notes]);
                                         }),
                                     Textarea::make('new_note')
                                         ->label('Add Note')
@@ -743,84 +531,9 @@ class EditCustomerUser extends EditRecord
                                                     return 'No audit events for this user.';
                                                 }
 
-                                                $boolFields = [
-                                                    'is_veteran', 'is_first_responder',
-                                                    'veteran_is_active', 'first_responder_is_active',
-                                                ];
-                                                $formatVal = function ($field, $val) use ($boolFields): string {
-                                                    if ($val === null || $val === '') return '—';
-                                                    if (in_array($field, $boolFields, true)) {
-                                                        return $val ? 'Yes' : 'No';
-                                                    }
-                                                    if (is_string($val) && preg_match('/^\d{4}-\d{2}-\d{2}(T|\s)/', $val)) {
-                                                        try { return \Carbon\Carbon::parse($val)->format('M j, Y'); } catch (\Throwable) {}
-                                                    }
-                                                    if (is_string($val) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $val)) {
-                                                        try { return \Carbon\Carbon::parse($val)->format('M j, Y'); } catch (\Throwable) {}
-                                                    }
-                                                    return (string) $val;
-                                                };
-
-                                                $ths = 'text-align:left;font-size:0.72rem;font-weight:600;text-transform:uppercase;'
-                                                     . 'letter-spacing:0.05em;color:#6b7280;padding:0.4rem 0.75rem;'
-                                                     . 'border-bottom:2px solid #e5e7eb;white-space:nowrap;';
-                                                $tds = 'padding:0.55rem 0.75rem;border-bottom:1px solid #f3f4f6;'
-                                                     . 'vertical-align:top;font-size:0.875rem;color:#374151;';
-
-                                                $html  = '<table style="width:100%;border-collapse:collapse;">';
-                                                $html .= '<thead><tr>'
-                                                       . "<th style=\"{$ths}\">Time</th>"
-                                                       . "<th style=\"{$ths}\">Event</th>"
-                                                       . "<th style=\"{$ths}\">IP</th>"
-                                                       . "<th style=\"{$ths}\">Summary</th>"
-                                                       . '</tr></thead><tbody>';
-
-                                                foreach ($events as $e) {
-                                                    $html .= '<tr>'
-                                                           . "<td style=\"{$tds}white-space:nowrap;color:#9ca3af;font-size:0.8rem;\">"
-                                                           . e($e->occurred_at?->format('M j, Y H:i')) . '</td>'
-                                                           . "<td style=\"{$tds}font-family:monospace;font-size:0.8rem;\">"
-                                                           . e($e->event_type) . '</td>'
-                                                           . "<td style=\"{$tds}font-family:monospace;font-size:0.8rem;color:#9ca3af;\">"
-                                                           . e($e->ip_address ?? '—') . '</td>'
-                                                           . "<td style=\"{$tds}\">" . e($e->action_summary ?? '—') . '</td>'
-                                                           . '</tr>';
-
-                                                    if (! empty($e->new_values)) {
-                                                        $dths = 'text-align:left;font-size:0.68rem;font-weight:600;text-transform:uppercase;'
-                                                              . 'letter-spacing:0.04em;color:#9ca3af;padding:0.25rem 0.5rem;'
-                                                              . 'border-bottom:1px solid #e5e7eb;';
-                                                        $dtds = 'padding:0.2rem 0.5rem;border-bottom:1px solid #f9fafb;'
-                                                              . 'font-size:0.75rem;vertical-align:middle;';
-
-                                                        $diffRows = '';
-                                                        foreach ($e->new_values as $field => $newVal) {
-                                                            $oldVal      = $e->old_values[$field] ?? null;
-                                                            $oldFmt      = e($formatVal($field, $oldVal));
-                                                            $newFmt      = e($formatVal($field, $newVal));
-                                                            $diffRows .= '<tr>'
-                                                                . "<td style=\"{$dtds}font-family:monospace;color:#6b7280;\">" . e($field) . '</td>'
-                                                                . "<td style=\"{$dtds}color:#dc2626;text-decoration:line-through;\">{$oldFmt}</td>"
-                                                                . "<td style=\"{$dtds}color:#16a34a;\">{$newFmt}</td>"
-                                                                . '</tr>';
-                                                        }
-
-                                                        $html .= '<tr><td colspan="4" style="padding:0 0.75rem 0.5rem 1.5rem;'
-                                                               . 'border-bottom:1px solid #f3f4f6;">'
-                                                               . '<table style="border-collapse:collapse;width:auto;">'
-                                                               . '<thead><tr>'
-                                                               . "<th style=\"{$dths}\">Field</th>"
-                                                               . "<th style=\"{$dths}\">Before</th>"
-                                                               . "<th style=\"{$dths}\">After</th>"
-                                                               . '</tr></thead><tbody>'
-                                                               . $diffRows
-                                                               . '</tbody></table></td></tr>';
-                                                    }
-                                                }
-
-                                                $html .= '</tbody></table>';
-                                                return new \Illuminate\Support\HtmlString($html);
-                                            } catch (\Throwable) {
+                                                return view('filament.admin.users.audit-log', ['events' => $events]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Audit log unavailable.';
                                             }
                                         }),
@@ -836,62 +549,14 @@ class EditCustomerUser extends EditRecord
                                         ->label('')
                                         ->content(function () {
                                             try {
-                                                $userId = $this->getRecord()->id;
+                                                $properties = app(PropertyService::class)
+                                                    ->getOwnedPropertySummaries($this->getRecord()->id);
 
-                                                // Direct ownership via properties.owner_user_id
-                                                $direct = \App\Models\Property\Property::on('property')
-                                                    ->where('owner_user_id', $userId)
-                                                    ->whereNull('deleted_at')
-                                                    ->get(['id', 'title', 'state_code', 'status']);
+                                                if (empty($properties)) return 'No properties owned.';
 
-                                                // Granted ownership via property_managers role = 'owner'
-                                                $grantedIds = \App\Models\Property\PropertyManager::on('property')
-                                                    ->where('user_id', $userId)
-                                                    ->where('role', 'owner')
-                                                    ->whereNull('revoked_at')
-                                                    ->pluck('property_id');
-
-                                                $granted = \App\Models\Property\Property::on('property')
-                                                    ->whereIn('id', $grantedIds)
-                                                    ->whereNull('deleted_at')
-                                                    ->get(['id', 'title', 'state_code', 'status']);
-
-                                                $props = $direct->merge($granted)->unique('id');
-
-                                                if ($props->isEmpty()) return 'No properties owned.';
-
-                                                $hs = 'font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;'
-                                                    . 'color:#6b7280;padding:0.4rem 0.75rem;border-bottom:2px solid #e5e7eb;';
-                                                $cs = 'padding:0.6rem 0.75rem;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;';
-
-                                                $header = '<div style="display:grid;grid-template-columns:2fr 0.5fr 1fr;">'
-                                                    . "<div style=\"{$hs}\">Property</div>"
-                                                    . "<div style=\"{$hs}\">State</div>"
-                                                    . "<div style=\"{$hs}\">Status</div>"
-                                                    . '</div>';
-
-                                                $rows = $props->map(function ($p) use ($cs) {
-                                                    $statusColor = match ($p->status) {
-                                                        'active'    => ['#d1fae5', '#065f46'],
-                                                        'draft'     => ['#f3f4f6', '#374151'],
-                                                        'suspended' => ['#fef3c7', '#92400e'],
-                                                        'archived'  => ['#e5e7eb', '#6b7280'],
-                                                        default     => ['#f3f4f6', '#374151'],
-                                                    };
-                                                    $badge = "<span style=\"background:{$statusColor[0]};color:{$statusColor[1]};"
-                                                           . "padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.72rem;font-weight:600;\">"
-                                                           . ucfirst($p->status) . '</span>';
-
-                                                    return '<div style="display:grid;grid-template-columns:2fr 0.5fr 1fr;">'
-                                                        . "<div style=\"{$cs}\"><span style=\"font-weight:500;font-size:0.875rem;color:#374151;\">"
-                                                        . e($p->title) . '</span></div>'
-                                                        . "<div style=\"{$cs}\"><span style=\"font-size:0.8rem;color:#6b7280;\">" . e($p->state_code) . '</span></div>'
-                                                        . "<div style=\"{$cs}\">{$badge}</div>"
-                                                        . '</div>';
-                                                })->join('');
-
-                                                return new \Illuminate\Support\HtmlString($header . $rows);
-                                            } catch (\Throwable) {
+                                                return view('filament.admin.users.properties-owned', ['properties' => $properties]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Unavailable.';
                                             }
                                         }),
@@ -903,49 +568,14 @@ class EditCustomerUser extends EditRecord
                                         ->label('')
                                         ->content(function () {
                                             try {
-                                                $grants = \App\Models\Property\PropertyManager::on('property')
-                                                    ->where('user_id', $this->getRecord()->id)
-                                                    ->whereNull('revoked_at')
-                                                    ->whereIn('role', ['co_owner', 'manager', 'operator'])
-                                                    ->with('property')
-                                                    ->get();
+                                                $grants = app(PropertyService::class)
+                                                    ->getManagerGrantSummaries($this->getRecord()->id);
 
-                                                if ($grants->isEmpty()) return 'No property management roles.';
+                                                if (empty($grants)) return 'No property management roles.';
 
-                                                $roleBadge = fn (string $role) => match ($role) {
-                                                    'owner'    => ['Owner',     '#fce7f3', '#9d174d'],
-                                                    'co_owner' => ['Co-Owner',  '#d1fae5', '#065f46'],
-                                                    'manager'  => ['Manager',   '#dbeafe', '#1e40af'],
-                                                    'operator' => ['Operator',  '#fef3c7', '#92400e'],
-                                                    default    => [ucfirst($role), '#f3f4f6', '#374151'],
-                                                };
-
-                                                $hs = 'font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;'
-                                                    . 'color:#6b7280;padding:0.4rem 0.75rem;border-bottom:2px solid #e5e7eb;';
-                                                $cs = 'padding:0.6rem 0.75rem;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;';
-
-                                                $header = '<div style="display:grid;grid-template-columns:2fr 1fr 1.2fr;">'
-                                                    . "<div style=\"{$hs}\">Property</div>"
-                                                    . "<div style=\"{$hs}\">Role</div>"
-                                                    . "<div style=\"{$hs}\">Granted</div>"
-                                                    . '</div>';
-
-                                                $rows = $grants->map(function ($g) use ($cs, $roleBadge) {
-                                                    [$label, $bg, $color] = $roleBadge($g->role);
-                                                    $badge = "<span style=\"background:{$bg};color:{$color};padding:0.15rem 0.5rem;"
-                                                           . "border-radius:9999px;font-size:0.72rem;font-weight:600;\">{$label}</span>";
-                                                    $date  = $g->granted_at?->format('M j, Y') ?? '—';
-
-                                                    return '<div style="display:grid;grid-template-columns:2fr 1fr 1.2fr;">'
-                                                        . "<div style=\"{$cs}\"><span style=\"font-weight:500;font-size:0.875rem;color:#374151;\">"
-                                                        . e($g->property?->title ?? '—') . '</span></div>'
-                                                        . "<div style=\"{$cs}\">{$badge}</div>"
-                                                        . "<div style=\"{$cs}\"><span style=\"font-size:0.8rem;color:#6b7280;\">{$date}</span></div>"
-                                                        . '</div>';
-                                                })->join('');
-
-                                                return new \Illuminate\Support\HtmlString($header . $rows);
-                                            } catch (\Throwable) {
+                                                return view('filament.admin.users.manager-roles', ['grants' => $grants]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Unavailable.';
                                             }
                                         }),
@@ -957,33 +587,14 @@ class EditCustomerUser extends EditRecord
                                         ->label('')
                                         ->content(function () {
                                             try {
-                                                $userId = $this->getRecord()->id;
-                                                $leases = \App\Models\Lease\Lease::on('lease')
-                                                    ->where(fn ($q) =>
-                                                        $q->where('lessee_user_id', $userId)
-                                                          ->orWhere('lessor_user_id', $userId)
-                                                    )
-                                                    ->whereNull('deleted_at')
-                                                    ->orderByDesc('created_at')
-                                                    ->get(['id', 'lessee_user_id', 'lessor_user_id', 'status', 'start_date', 'end_date']);
+                                                $leases = app(LeaseService::class)
+                                                    ->getLeaseSummariesForUser($this->getRecord()->id);
 
-                                                if ($leases->isEmpty()) return 'No leases found.';
+                                                if (empty($leases)) return 'No leases found.';
 
-                                                return new \Illuminate\Support\HtmlString(
-                                                    $leases->map(fn ($l) =>
-                                                        '<div class="py-1 text-sm border-b border-gray-100 flex gap-3">'
-                                                        . '<span class="font-mono text-xs text-gray-400">' . substr($l->id, 0, 8) . '…</span>'
-                                                        . '<span class="text-xs px-1 rounded bg-gray-100">'
-                                                        . ($l->lessee_user_id === $userId ? 'Lessee' : 'Lessor')
-                                                        . '</span>'
-                                                        . '<span class="text-xs px-1 rounded bg-green-50 text-green-700">' . e($l->status) . '</span>'
-                                                        . '<span class="text-gray-500">'
-                                                        . e($l->start_date?->format('M j Y')) . ' – ' . e($l->end_date?->format('M j Y'))
-                                                        . '</span>'
-                                                        . '</div>'
-                                                    )->join('')
-                                                );
-                                            } catch (\Throwable) {
+                                                return view('filament.admin.users.leases', ['leases' => $leases]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Unavailable.';
                                             }
                                         }),
@@ -995,43 +606,14 @@ class EditCustomerUser extends EditRecord
                                         ->label('')
                                         ->content(function () {
                                             try {
-                                                $userId = $this->getRecord()->id;
+                                                $clubs = app(LeaseService::class)
+                                                    ->getClubAffiliationsForUser($this->getRecord()->id);
 
-                                                $owned = \App\Models\Lease\Club::on('lease')
-                                                    ->where('owner_user_id', $userId)
-                                                    ->whereNull('deleted_at')
-                                                    ->get(['id', 'name', 'status']);
+                                                if (empty($clubs)) return 'No club memberships.';
 
-                                                $memberships = \App\Models\Lease\ClubMember::on('lease')
-                                                    ->where('user_id', $userId)
-                                                    ->whereNull('deleted_at')
-                                                    ->with('club')
-                                                    ->get();
-
-                                                if ($owned->isEmpty() && $memberships->isEmpty()) {
-                                                    return 'No club memberships.';
-                                                }
-
-                                                $lines = [];
-
-                                                foreach ($owned as $c) {
-                                                    $lines[] = '<div class="py-1 text-sm border-b border-gray-100 flex gap-3">'
-                                                        . '<span class="font-medium">' . e($c->name) . '</span>'
-                                                        . '<span class="text-xs px-1 rounded bg-amber-50 text-amber-700">Owner</span>'
-                                                        . '<span class="text-xs text-gray-400">' . e($c->status) . '</span>'
-                                                        . '</div>';
-                                                }
-
-                                                foreach ($memberships as $m) {
-                                                    $lines[] = '<div class="py-1 text-sm border-b border-gray-100 flex gap-3">'
-                                                        . '<span class="font-medium">' . e($m->club?->name ?? '—') . '</span>'
-                                                        . '<span class="text-xs px-1 rounded bg-gray-100">' . e(ucfirst($m->role)) . '</span>'
-                                                        . '<span class="text-xs text-gray-400">' . e($m->status) . '</span>'
-                                                        . '</div>';
-                                                }
-
-                                                return new \Illuminate\Support\HtmlString(implode('', $lines));
-                                            } catch (\Throwable) {
+                                                return view('filament.admin.users.club-memberships', ['clubs' => $clubs]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
                                                 return 'Unavailable.';
                                             }
                                         }),
@@ -1086,7 +668,8 @@ class EditCustomerUser extends EditRecord
             $updateData['username'] = strtolower(trim($data['username']));
         }
 
-        // Snapshot user fields before update
+        // Snapshot user fields before update — password_hash is added after the
+        // snapshot so the hash never enters the audit diff below.
         $oldUserState = $record->only(array_keys($updateData));
 
         if (! empty($data['new_password'])) {
@@ -1095,43 +678,43 @@ class EditCustomerUser extends EditRecord
 
         $record->update($updateData);
 
-        $profileData = array_filter([
+        // Nulls are written through so an admin can clear a field; empty
+        // strings are normalized to null for enum/date columns.
+        $profileData = array_map(fn ($v) => $v === '' ? null : $v, [
             'first_name'    => $data['first_name']    ?? null,
             'last_name'     => $data['last_name']     ?? null,
             'display_name'  => $data['display_name']  ?? null,
-            'bio'           => $data['bio']            ?? null,
+            'bio'           => $data['bio']           ?? null,
             'state_code'    => $data['state_code']    ?? null,
             'zip_code'      => $data['zip_code']      ?? null,
             'date_of_birth' => $data['date_of_birth'] ?? null,
             'gender'        => $data['gender']        ?? null,
-        ], fn ($v) => $v !== null);
+        ]);
 
         // Veteran detail fields — only written when the veteran toggle is on
         $profileData['veteran_is_active'] = false;
         if (! empty($data['is_veteran'])) {
             $profileData['veteran_is_active'] = (bool) ($data['veteran_is_active'] ?? false);
-            $profileData = array_merge($profileData, array_filter([
-                'veteran_branch'    => $data['veteran_branch']    ?? null,
-                'veteran_last_rank' => $data['veteran_last_rank'] ?? null,
-                'veteran_bio'       => $data['veteran_bio']       ?? null,
-            ], fn ($v) => $v !== null));
-            foreach ($this->parseServiceRange($data['veteran_service_range'] ?? null, 'veteran') as $k => $v) {
-                if ($v !== null) $profileData[$k] = $v;
-            }
+            $profileData['veteran_branch']    = $data['veteran_branch']    ?: null;
+            $profileData['veteran_last_rank'] = $data['veteran_last_rank'] ?: null;
+            $profileData['veteran_bio']       = $data['veteran_bio']       ?: null;
+            $profileData = array_merge(
+                $profileData,
+                $this->parseServiceRange($data['veteran_service_range'] ?? null, 'veteran'),
+            );
         }
 
         // First responder detail fields — only written when the first_responder toggle is on
         $profileData['first_responder_is_active'] = false;
         if (! empty($data['is_first_responder'])) {
             $profileData['first_responder_is_active'] = (bool) ($data['first_responder_is_active'] ?? false);
-            $profileData = array_merge($profileData, array_filter([
-                'first_responder_type'      => $data['first_responder_type']      ?? null,
-                'first_responder_last_rank' => $data['first_responder_last_rank'] ?? null,
-                'first_responder_bio'       => $data['first_responder_bio']       ?? null,
-            ], fn ($v) => $v !== null));
-            foreach ($this->parseServiceRange($data['first_responder_service_range'] ?? null, 'first_responder') as $k => $v) {
-                if ($v !== null) $profileData[$k] = $v;
-            }
+            $profileData['first_responder_type']      = $data['first_responder_type']      ?: null;
+            $profileData['first_responder_last_rank'] = $data['first_responder_last_rank'] ?: null;
+            $profileData['first_responder_bio']       = $data['first_responder_bio']       ?: null;
+            $profileData = array_merge(
+                $profileData,
+                $this->parseServiceRange($data['first_responder_service_range'] ?? null, 'first_responder'),
+            );
         }
 
         // Snapshot profile fields before update
@@ -1159,6 +742,12 @@ class EditCustomerUser extends EditRecord
             }
         }
 
+        // Record that the password changed without ever logging the hash
+        $changedFields = array_keys($newValues);
+        if (! empty($data['new_password'])) {
+            $changedFields[] = 'password_hash';
+        }
+
         app(AuditService::class)->log(
             eventType:      'update',
             sourceDatabase: 'identity',
@@ -1168,7 +757,7 @@ class EditCustomerUser extends EditRecord
             ipAddress:      request()->ip(),
             userAgent:      request()->userAgent(),
             actionSummary:  "Platform user updated: {$record->email}",
-            changedFields:  array_keys($newValues) ?: null,
+            changedFields:  $changedFields ?: null,
             oldValues:      $oldValues ?: null,
             newValues:      $newValues ?: null,
         );
@@ -1182,7 +771,10 @@ class EditCustomerUser extends EditRecord
 
         // Process avatar upload if a file was provided
         if (! empty($data['avatar_upload'])) {
-            $file = $data['avatar_upload'];
+            // Livewire stores FileUpload state as an array keyed by upload UUID
+            $file = is_array($data['avatar_upload'])
+                ? reset($data['avatar_upload'])
+                : $data['avatar_upload'];
             if ($file instanceof TemporaryUploadedFile) {
                 try {
                     $document = app(DocumentService::class)->storeUploadedFile(
@@ -1323,16 +915,120 @@ class EditCustomerUser extends EditRecord
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private function platformMethodEnabled(string $method): bool
+    /**
+     * Section header actions for the MFA Status section. Enable/disable pairs
+     * are generated per factor; all writes delegate to UserService so every
+     * change is audited.
+     */
+    private function mfaFactorActions(): array
     {
-        try {
-            return (bool) \Illuminate\Support\Facades\DB::connection('platform')
-                ->table('mfa_factor_settings')
-                ->where('factor', $method)
-                ->value('is_enabled');
-        } catch (\Throwable) {
-            return false;
+        $factors = [
+            'email' => [
+                'name'        => 'Email MFA',
+                'modalName'   => 'Email MFA',
+                'enableIcon'  => 'heroicon-o-envelope',
+                'disableIcon' => 'heroicon-o-envelope-open',
+                'enableDesc'  => 'Admin-activates email-based two-factor authentication for this account.',
+                'disableDesc' => 'Removes email-based two-factor authentication. The user can re-enable it from their Security settings.',
+            ],
+            'totp' => [
+                'name'        => 'Authenticator MFA',
+                'modalName'   => 'Authenticator App MFA',
+                'enableIcon'  => 'heroicon-o-device-phone-mobile',
+                'disableIcon' => 'heroicon-o-shield-check',
+                'enableDesc'  => 'Admin-activates TOTP. The user must still scan the QR code on their next login to complete enrollment.',
+                'disableDesc' => 'Removes TOTP two-factor authentication. The user will need to re-scan the QR code to re-enroll.',
+            ],
+            'sms' => [
+                'name'        => 'SMS MFA',
+                'modalName'   => 'SMS MFA',
+                'enableIcon'  => 'heroicon-o-chat-bubble-left-ellipsis',
+                'disableIcon' => 'heroicon-o-chat-bubble-left',
+                'enableDesc'  => 'Admin-activates SMS-based two-factor authentication for this account.',
+                'disableDesc' => 'Removes SMS-based two-factor authentication for this account.',
+            ],
+        ];
+
+        $actions = [];
+
+        foreach ($factors as $method => $f) {
+            $actions[] = Action::make("enable_{$method}_mfa")
+                ->label("Enable {$f['name']}")
+                ->icon($f['enableIcon'])
+                ->color('success')
+                ->requiresConfirmation()
+                ->modalHeading("Enable {$f['modalName']}")
+                ->modalDescription($f['enableDesc'])
+                ->visible(fn () => AdminAuth::canManageSecurity()
+                    && app(MfaFactorService::class)->isFactorEnabled($method)
+                    && ! $this->mfaMethodEnabled($method))
+                ->action(function () use ($method, $f) {
+                    try {
+                        app(UserService::class)->enableMfaFactor($this->getRecord(), $method, Auth::id());
+                        Notification::make()->success()->title("{$f['name']} enabled")->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                    }
+                });
+
+            $actions[] = Action::make("disable_{$method}_mfa")
+                ->label("Disable {$f['name']}")
+                ->icon($f['disableIcon'])
+                ->color('danger')
+                ->requiresConfirmation()
+                ->modalHeading("Disable {$f['modalName']}")
+                ->modalDescription($f['disableDesc'])
+                ->visible(fn () => AdminAuth::canManageSecurity() && $this->mfaMethodEnabled($method))
+                ->action(function () use ($method, $f) {
+                    try {
+                        app(UserService::class)->disableMfaFactor($this->getRecord(), $method, Auth::id());
+                        Notification::make()->success()->title("{$f['name']} disabled")->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                    }
+                });
         }
+
+        $actions[] = Action::make('reset_totp_secret')
+            ->label('Clear TOTP Token')
+            ->icon('heroicon-o-arrow-path')
+            ->color('warning')
+            ->requiresConfirmation()
+            ->modalHeading('Clear Authenticator App Token')
+            ->modalDescription('Clears the stored TOTP secret and disables the authenticator method. The user must re-scan a new QR code to re-enroll.')
+            ->visible(fn () => AdminAuth::canManageSecurity() && $this->mfaTotpExists())
+            ->action(function () {
+                try {
+                    app(UserService::class)->clearTotpSecret($this->getRecord(), Auth::id());
+                    Notification::make()->warning()->title('TOTP secret cleared — user must re-enroll')->send();
+                } catch (\Throwable $e) {
+                    report($e);
+                    Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                }
+            });
+
+        $actions[] = Action::make('disable_all_mfa')
+            ->label('Disable All MFA')
+            ->icon('heroicon-o-shield-exclamation')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading('Disable All MFA Methods')
+            ->modalDescription('Emergency: disables every two-factor method, invalidates all recovery codes, and revokes all API tokens. The user must re-enroll on their next login.')
+            ->visible(fn () => AdminAuth::isSuperAdmin()
+                && app(MfaService::class)->isEnabled($this->getRecord()))
+            ->action(function () {
+                try {
+                    app(UserService::class)->resetMfa($this->getRecord(), Auth::id());
+                    Notification::make()->warning()->title('All MFA disabled — recovery codes invalidated, tokens revoked')->send();
+                } catch (\Throwable $e) {
+                    report($e);
+                    Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                }
+            });
+
+        return $actions;
     }
 
     private function mfaMethodEnabled(string $method): bool
@@ -1343,7 +1039,8 @@ class EditCustomerUser extends EditRecord
                 ->where('method', $method)
                 ->where('is_enabled', true)
                 ->exists();
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            report($e);
             return false;
         }
     }
@@ -1355,27 +1052,10 @@ class EditCustomerUser extends EditRecord
                 ->mfaConfigurations()
                 ->where('method', 'totp')
                 ->exists();
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            report($e);
             return false;
         }
-    }
-
-    private function enableMfaMethod(string $method): void
-    {
-        $cfg = $this->getRecord()
-            ->mfaConfigurations()
-            ->firstOrNew(['method' => $method]);
-        $cfg->is_enabled  = true;
-        $cfg->verified_at = now();
-        $cfg->save();
-    }
-
-    private function disableMfaMethod(string $method): void
-    {
-        $this->getRecord()
-            ->mfaConfigurations()
-            ->where('method', $method)
-            ->update(['is_enabled' => false, 'verified_at' => null]);
     }
 
     private function formatServiceRange(mixed $start, mixed $end): ?string

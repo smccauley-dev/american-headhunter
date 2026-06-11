@@ -4,6 +4,7 @@ namespace App\Services\Identity;
 
 use App\Mail\RecoveryCodesEmail;
 use App\Models\Identity\ConsentLog;
+use App\Models\Identity\MfaConfiguration;
 use App\Models\Identity\User;
 use App\Models\Identity\UserProfile;
 use App\Services\Audit\AuditService;
@@ -128,6 +129,61 @@ class UserService extends BaseService
             recordId:       $user->id,
             userId:         $adminUserId,
             actionSummary:  "MFA factor disabled: {$method} (admin-initiated)",
+        );
+    }
+
+    /**
+     * Admin-enable a single MFA factor. The factor is marked verified so it
+     * is immediately active; for TOTP the user must still scan a QR code on
+     * next login before codes will validate.
+     */
+    public function enableMfaFactor(User $user, string $method, ?string $adminUserId = null): void
+    {
+        $cfg = MfaConfiguration::firstOrNew([
+            'user_id' => $user->id,
+            'method'  => $method,
+        ]);
+        $cfg->is_enabled  = true;
+        $cfg->verified_at = now();
+        $cfg->save();
+
+        $this->invalidate("user:{$user->id}");
+
+        $this->audit->log(
+            eventType:      'mfa_factor_enabled',
+            sourceDatabase: 'ah_identity',
+            tableName:      'mfa_configurations',
+            recordId:       $user->id,
+            userId:         $adminUserId,
+            actionSummary:  "MFA factor enabled: {$method} (admin-initiated)",
+        );
+    }
+
+    /**
+     * Clear the stored TOTP secret and disable the factor. The user must
+     * re-scan a fresh QR code to re-enroll.
+     */
+    public function clearTotpSecret(User $user, ?string $adminUserId = null): void
+    {
+        DB::connection('identity')
+            ->table('mfa_configurations')
+            ->where('user_id', $user->id)
+            ->where('method', 'totp')
+            ->update([
+                'is_enabled'       => false,
+                'secret_encrypted' => null,
+                'verified_at'      => null,
+            ]);
+
+        $this->invalidate("user:{$user->id}");
+
+        $this->audit->log(
+            eventType:      'mfa_totp_secret_cleared',
+            sourceDatabase: 'ah_identity',
+            tableName:      'mfa_configurations',
+            recordId:       $user->id,
+            userId:         $adminUserId,
+            actionSummary:  'TOTP secret cleared — user must re-enroll (admin-initiated)',
         );
     }
 

@@ -4,6 +4,7 @@ namespace App\Services\Property;
 
 use App\Models\Property\Property;
 use App\Models\Property\PropertyListing;
+use App\Models\Property\PropertyManager;
 use App\Models\Property\PropertyAccessInfo;
 use App\Services\BaseService;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +57,61 @@ class PropertyService extends BaseService
             ->whereNull('deleted_at')
             ->orderBy('created_at', 'desc')
             ->get();
+    }
+
+    /**
+     * Properties the user owns — directly via owner_user_id or via an
+     * 'owner' grant in property_managers. Plain arrays for the admin user
+     * detail page. Cached 5 min.
+     */
+    public function getOwnedPropertySummaries(string $userId): array
+    {
+        return $this->cache("property:user:{$userId}:owned_summaries", function () use ($userId) {
+            $direct = Property::on('property_read')
+                ->where('owner_user_id', $userId)
+                ->whereNull('deleted_at')
+                ->get(['id', 'title', 'state_code', 'status']);
+
+            $grantedIds = PropertyManager::on('property_read')
+                ->where('user_id', $userId)
+                ->where('role', 'owner')
+                ->whereNull('revoked_at')
+                ->pluck('property_id');
+
+            $granted = Property::on('property_read')
+                ->whereIn('id', $grantedIds)
+                ->whereNull('deleted_at')
+                ->get(['id', 'title', 'state_code', 'status']);
+
+            return $direct->merge($granted)
+                ->unique('id')
+                ->map(fn ($p) => [
+                    'title'      => $p->title,
+                    'state_code' => $p->state_code,
+                    'status'     => $p->status,
+                ])->values()->all();
+        }, 5);
+    }
+
+    /**
+     * Active co-owner / manager / operator grants for the user — plain
+     * arrays for the admin user detail page. Cached 5 min.
+     */
+    public function getManagerGrantSummaries(string $userId): array
+    {
+        return $this->cache("property:user:{$userId}:manager_grants", function () use ($userId) {
+            return PropertyManager::on('property_read')
+                ->where('user_id', $userId)
+                ->whereNull('revoked_at')
+                ->whereIn('role', ['co_owner', 'manager', 'operator'])
+                ->with('property')
+                ->get()
+                ->map(fn ($g) => [
+                    'property_title' => $g->property?->title ?? '—',
+                    'role'           => $g->role,
+                    'granted_at'     => $g->granted_at?->format('M j, Y'),
+                ])->all();
+        }, 5);
     }
 
     /**
