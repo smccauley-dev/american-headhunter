@@ -107,7 +107,7 @@ class ProcessDropboxSignWebhook implements ShouldQueue
             $signedDoc = $documentService->storeRawBytes(
                 bytes:        $pdfBytes,
                 ownerUserId:  $esigRequest->requester_user_id,
-                documentType: 'signed_lease_contract',
+                documentType: 'contract',
                 filename:     'signed_lease_' . substr($esigRequest->lease_id, 0, 8) . '.pdf',
             );
 

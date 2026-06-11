@@ -481,7 +481,7 @@ class ViewLeaseApplication extends ViewRecord
                     if (! empty($data['custom_contract_pdf'])) {
                         try {
                             $tmpFile   = \Livewire\Features\SupportFileUploads\TemporaryUploadedFile::createFromLivewire($data['custom_contract_pdf']);
-                            $customPdf = app(DocumentService::class)->storeUploadedFile($tmpFile, $property->owner_user_id, 'lease_contract');
+                            $customPdf = app(DocumentService::class)->storeUploadedFile($tmpFile, $property->owner_user_id, 'contract');
                         } catch (\Throwable $e) {
                             Notification::make()
                                 ->title('Could not store uploaded PDF — using in-platform signing')

@@ -12,10 +12,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends BaseModelWithSoftDeletes implements AuthenticatableContract, FilamentUser, HasName
 {
-    use Authenticatable, Notifiable;
+    use Authenticatable, HasApiTokens, Notifiable;
 
     protected $connection = 'identity';
     protected $table      = 'users';
