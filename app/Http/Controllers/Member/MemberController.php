@@ -110,6 +110,7 @@ class MemberController extends Controller
             'size_bytes'       => $doc->size_bytes,
             'created_at'       => $doc->created_at?->format('M j, Y'),
             'download_url'     => route('member.leases.documents.download', [$lease, $doc->id]),
+            'delete_url'       => route('member.leases.documents.destroy', [$lease, $doc->id]),
         ])->values()->all();
 
         return Inertia::render('Member/Lease', [

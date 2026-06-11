@@ -40,6 +40,17 @@ Route::middleware('auth.session')->prefix('apply')->name('apply.')->group(functi
 // Admin print views — protected by Filament web guard
 Route::middleware('auth:web')->get('/admin/applications/{application}/print', [PrintApplicationController::class, 'show'])->name('admin.applications.print');
 
+// Admin lease-document soft-delete
+Route::middleware('auth:web')->post('/admin/lease-documents/{leaseDocumentId}/delete', function (string $leaseDocumentId) {
+    $applicationId = request()->input('application_id');
+    app(\App\Services\Lease\LeaseDocumentService::class)->remove($leaseDocumentId, auth()->id());
+
+    if ($applicationId) {
+        return redirect()->route('filament.admin.resources.lease-applications.view', ['record' => $applicationId]);
+    }
+    return back();
+})->name('admin.lease-documents.delete');
+
 // Admin lease-document download (from lease_documents table, with audit logging)
 Route::middleware('auth:web')->get('/admin/lease-documents/{leaseDocumentId}/download', function (string $leaseDocumentId) {
     return app(\App\Services\Lease\LeaseDocumentService::class)->adminDownload(
@@ -66,6 +77,7 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/leases/{lease}/sign', [LeaseSignController::class, 'sign'])->name('leases.sign.submit');
     Route::post('/leases/{lease}/documents', [LeaseDocumentController::class, 'upload'])->name('leases.documents.upload')->middleware('throttle:20,1');
     Route::get('/leases/{lease}/documents/{leaseDocument}/download', [LeaseDocumentController::class, 'download'])->name('leases.documents.download');
+    Route::delete('/leases/{lease}/documents/{leaseDocument}', [LeaseDocumentController::class, 'destroy'])->name('leases.documents.destroy');
 
     Route::get('/profile/avatar/{userId}', [ProfileController::class, 'serveAvatar'])->name('profile.avatar');
     Route::get('/profile/photos/{documentId}', [ProfileController::class, 'servePhoto'])->name('profile.photos.serve');

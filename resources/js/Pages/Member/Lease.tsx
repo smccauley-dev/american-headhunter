@@ -1,4 +1,4 @@
-import { Head, useForm } from '@inertiajs/react'
+import { Head, useForm, router } from '@inertiajs/react'
 import { useState } from 'react'
 
 interface Signer {
@@ -25,6 +25,7 @@ interface LeaseDocument {
   size_bytes: number | null
   created_at: string | null
   download_url: string
+  delete_url: string
 }
 
 interface Props {
@@ -93,6 +94,110 @@ function AccessField({ label, value }: { label: string; value: string }) {
       <div style={{ fontFamily: 'monospace', fontSize: '16px', fontWeight: '700', color: '#0A1512', letterSpacing: '.05em', background: '#f5f3ef', padding: '8px 12px', borderRadius: '3px', border: '1px solid #e5e0d8', display: 'inline-block', minWidth: '120px' }}>
         {value}
       </div>
+    </div>
+  )
+}
+
+function DocumentRow({ doc, leaseId, isLessor, isLast }: { doc: LeaseDocument; leaseId: string; isLessor: boolean; isLast: boolean }) {
+  const [confirming, setConfirming] = useState(false)
+  const [typed, setTyped] = useState('')
+  const [deleting, setDeleting] = useState(false)
+
+  function handleDelete() {
+    if (typed !== 'DELETE') return
+    setDeleting(true)
+    router.delete(doc.delete_url, {
+      onFinish: () => { setDeleting(false); setConfirming(false); setTyped('') },
+    })
+  }
+
+  const badgeProps = Object.fromEntries(
+    doc.tag_badge_style.split(';').filter(Boolean).map(s => {
+      const [k, v] = s.split(':')
+      return [k.trim().replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase()), v.trim()]
+    })
+  )
+
+  return (
+    <div style={{ padding: '10px 0', borderBottom: isLast ? 'none' : '1px solid #f0ece6' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+          <svg style={{ width: '20px', height: '20px', flexShrink: 0, color: '#C84C21' }} fill="currentColor" viewBox="0 0 24 24">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/>
+          </svg>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#0A1512' }}>{doc.tag_label}</span>
+              <span style={{ fontSize: '10px', fontWeight: '700', padding: '1px 6px', borderRadius: '3px', ...badgeProps }}>
+                {doc.tag.toUpperCase().replace(/_/g, ' ')}
+              </span>
+            </div>
+            <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
+              {doc.original_filename ?? 'document.pdf'}
+              {doc.size_bytes ? ` · ${Math.round(doc.size_bytes / 1024)} KB` : ''}
+              {doc.created_at ? ` · ${doc.created_at}` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
+          <a
+            href={doc.download_url}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', background: '#f5f3ef', border: '1px solid #e5e0d8', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', color: '#374151', textDecoration: 'none', letterSpacing: '.06em', textTransform: 'uppercase' }}
+          >
+            <svg style={{ width: '12px', height: '12px' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            Download
+          </a>
+
+          {isLessor && !confirming && (
+            <button
+              onClick={() => setConfirming(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', background: '#fff', border: '1px solid #fca5a5', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', color: '#b91c1c', cursor: 'pointer', letterSpacing: '.06em', textTransform: 'uppercase' }}
+            >
+              <svg style={{ width: '12px', height: '12px' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Delete
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Inline delete confirmation */}
+      {confirming && (
+        <div style={{ marginTop: '10px', padding: '14px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '4px' }}>
+          <div style={{ fontSize: '13px', fontWeight: '600', color: '#b91c1c', marginBottom: '4px' }}>
+            Confirm document removal
+          </div>
+          <div style={{ fontSize: '12px', color: '#9a3412', marginBottom: '10px' }}>
+            This document will be soft-deleted and permanently removed after 30 days. Type <strong>DELETE</strong> to confirm.
+          </div>
+          <input
+            type="text"
+            value={typed}
+            onChange={e => setTyped(e.target.value)}
+            placeholder="Type DELETE"
+            style={{ padding: '6px 10px', border: '1px solid #fca5a5', borderRadius: '3px', fontSize: '13px', fontFamily: 'monospace', marginBottom: '10px', width: '160px' }}
+          />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={handleDelete}
+              disabled={typed !== 'DELETE' || deleting}
+              style={{ padding: '6px 16px', background: typed === 'DELETE' ? '#b91c1c' : '#e5e7eb', color: typed === 'DELETE' ? '#fff' : '#9ca3af', border: 'none', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', cursor: typed === 'DELETE' && !deleting ? 'pointer' : 'not-allowed', letterSpacing: '.06em', textTransform: 'uppercase' }}
+            >
+              {deleting ? 'Removing…' : 'Confirm Delete'}
+            </button>
+            <button
+              onClick={() => { setConfirming(false); setTyped('') }}
+              style={{ padding: '6px 16px', background: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -353,39 +458,14 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
                 </p>
               )}
 
-              {documents.map(doc => (
-                <div
+              {documents.map((doc, i) => (
+                <DocumentRow
                   key={doc.id}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f0ece6' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                    <svg style={{ width: '20px', height: '20px', flexShrink: 0, color: '#C84C21' }} fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/>
-                    </svg>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: '#0A1512' }}>{doc.tag_label}</span>
-                        <span style={{ fontSize: '10px', fontWeight: '700', padding: '1px 6px', borderRadius: '3px', ...Object.fromEntries(doc.tag_badge_style.split(';').filter(Boolean).map(s => { const [k, v] = s.split(':'); return [k.trim().replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase()), v.trim()] })) }}>
-                          {doc.tag.toUpperCase().replace(/_/g, ' ')}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }}>
-                        {doc.original_filename ?? 'document.pdf'}
-                        {doc.size_bytes ? ` · ${Math.round(doc.size_bytes / 1024)} KB` : ''}
-                        {doc.created_at ? ` · ${doc.created_at}` : ''}
-                      </div>
-                    </div>
-                  </div>
-                  <a
-                    href={doc.download_url}
-                    style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', background: '#f5f3ef', border: '1px solid #e5e0d8', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', color: '#374151', textDecoration: 'none', letterSpacing: '.06em', textTransform: 'uppercase', marginLeft: '12px' }}
-                  >
-                    <svg style={{ width: '12px', height: '12px' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
-                    Download
-                  </a>
-                </div>
+                  doc={doc}
+                  leaseId={lease.id}
+                  isLessor={is_lessor}
+                  isLast={i === documents.length - 1}
+                />
               ))}
 
               {is_lessor && (

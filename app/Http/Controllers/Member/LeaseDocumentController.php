@@ -6,6 +6,7 @@ use App\Enums\LeaseDocumentTag;
 use App\Http\Controllers\Controller;
 use App\Models\Lease\Lease;
 use App\Services\Lease\LeaseDocumentService;
+use App\Models\Lease\LeaseDocument;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -47,6 +48,31 @@ class LeaseDocumentController extends Controller
     }
 
     /**
+     * Soft-delete a lease document (landowner/lessor only).
+     */
+    public function destroy(Request $request, string $lease, string $leaseDocument): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        // Only the lessor may delete documents
+        $leaseRecord = \App\Models\Lease\Lease::where('id', $lease)
+            ->where('lessor_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        // Confirm the document belongs to this lease
+        LeaseDocument::where('id', $leaseDocument)
+            ->where('lease_id', $leaseRecord->id)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $this->leaseDocumentService->remove($leaseDocument, $userId);
+
+        return redirect()->route('member.leases.show', $lease)
+            ->with('flash', 'Document removed. It will be permanently deleted after 30 days.');
+    }
+
+    /**
      * Download a lease document (any party to the lease: lessor or lessee).
      */
     public function download(Request $request, string $lease, string $leaseDocument): StreamedResponse
@@ -54,7 +80,7 @@ class LeaseDocumentController extends Controller
         $userId = session('auth.user_id');
 
         return $this->leaseDocumentService->authorizedDownload(
-            $leaseDocumentId: $leaseDocument,
+            leaseDocumentId:  $leaseDocument,
             leaseId:          $lease,
             requestingUserId: $userId,
         );

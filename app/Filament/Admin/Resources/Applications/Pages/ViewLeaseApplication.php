@@ -785,20 +785,27 @@ class ViewLeaseApplication extends ViewRecord
 
         // ── Part 2: general lease_documents attachments ───────────────────────
 
-        $leaseDocs = app(LeaseDocumentService::class)->getForLease($lease->id);
+        $leaseDocs    = app(LeaseDocumentService::class)->getForLease($lease->id);
+        $csrf         = csrf_token();
+        $applicationId = $record->id;
 
         foreach ($leaseDocs as $ld) {
-            $tag   = $ld->tag;
-            $url   = route('admin.lease-documents.download', $ld->id);
-            $rows .= $this->documentRow(
-                label:      $tag->label(),
-                badge:      strtoupper(str_replace('_', ' ', $tag->value)),
-                badgeStyle: $tag->badgeStyle(),
-                subtitle:   $ld->notes ?? '',
-                filename:   $ld->original_filename ?? 'document.pdf',
-                sizeBytes:  $ld->size_bytes,
-                date:       $ld->created_at?->format('M j, Y') ?? '',
-                downloadUrl: $url,
+            $tag       = $ld->tag;
+            $deleteUrl = route('admin.lease-documents.delete', $ld->id);
+            $formId    = 'del-' . substr(str_replace('-', '', $ld->id), 0, 12);
+            $rows     .= $this->documentRow(
+                label:         $tag->label(),
+                badge:         strtoupper(str_replace('_', ' ', $tag->value)),
+                badgeStyle:    $tag->badgeStyle(),
+                subtitle:      $ld->notes ?? '',
+                filename:      $ld->original_filename ?? 'document.pdf',
+                sizeBytes:     $ld->size_bytes,
+                date:          $ld->created_at?->format('M j, Y') ?? '',
+                downloadUrl:   route('admin.lease-documents.download', $ld->id),
+                deleteFormId:  $formId,
+                deleteUrl:     $deleteUrl,
+                applicationId: $applicationId,
+                csrf:          $csrf,
             );
         }
 
@@ -810,14 +817,18 @@ class ViewLeaseApplication extends ViewRecord
     }
 
     private function documentRow(
-        string $label,
-        string $badge,
-        string $badgeStyle,
-        string $subtitle,
-        string $filename,
-        ?int   $sizeBytes,
-        string $date,
-        string $downloadUrl,
+        string  $label,
+        string  $badge,
+        string  $badgeStyle,
+        string  $subtitle,
+        string  $filename,
+        ?int    $sizeBytes,
+        string  $date,
+        string  $downloadUrl,
+        ?string $deleteFormId  = null,
+        ?string $deleteUrl     = null,
+        ?string $applicationId = null,
+        ?string $csrf          = null,
     ): string {
         $filename    = e($filename);
         $subtitle    = e($subtitle);
@@ -826,6 +837,27 @@ class ViewLeaseApplication extends ViewRecord
         $subtitleRow = $subtitle !== ''
             ? "<p style=\"font-size:12px;color:#6b7280;margin:0;\">{$subtitle}</p>"
             : '';
+
+        // Delete button — only shown for deletable (lease_documents) rows
+        $deleteHtml = '';
+        if ($deleteUrl && $deleteFormId && $csrf) {
+            $jsFilename = addslashes($filename);
+            $deleteHtml = <<<HTML
+                <form id="{$deleteFormId}" method="POST" action="{$deleteUrl}" style="display:none">
+                    <input type="hidden" name="_token" value="{$csrf}">
+                    <input type="hidden" name="application_id" value="{$applicationId}">
+                </form>
+                <button type="button"
+                    onclick="(function(){if(!confirm('Remove this document from the lease?\\n\\nIt will be permanently deleted after 30 days.'))return;var t=prompt('Type DELETE to confirm removal of &quot;{$jsFilename}&quot;');if(t!=='DELETE'){if(t!==null)alert('Cancelled — text did not match.');return;}document.getElementById('{$deleteFormId}').submit();})()"
+                    style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;background:#fff;font-size:13px;font-weight:500;color:#b91c1c;cursor:pointer;border:1px solid #fca5a5;white-space:nowrap;flex-shrink:0;">
+                    <svg style="width:13px;height:13px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    Delete
+                </button>
+            HTML;
+        }
 
         return <<<HTML
             <div style="display:flex;align-items:center;justify-content:space-between;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;background:#fff;">
@@ -842,14 +874,17 @@ class ViewLeaseApplication extends ViewRecord
                         <p style="font-size:11px;color:#9ca3af;margin:0;">{$meta}</p>
                     </div>
                 </div>
-                <a href="{$downloadUrl}" target="_blank"
-                   style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:6px;background:#f3f4f6;font-size:13px;font-weight:500;color:#374151;text-decoration:none;border:1px solid #e5e7eb;white-space:nowrap;flex-shrink:0;">
-                    <svg style="width:14px;height:14px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
-                    Download
-                </a>
+                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                    <a href="{$downloadUrl}" target="_blank"
+                       style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:6px;background:#f3f4f6;font-size:13px;font-weight:500;color:#374151;text-decoration:none;border:1px solid #e5e7eb;white-space:nowrap;">
+                        <svg style="width:14px;height:14px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        Download
+                    </a>
+                    {$deleteHtml}
+                </div>
             </div>
         HTML;
     }

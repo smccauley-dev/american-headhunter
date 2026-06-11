@@ -20,3 +20,7 @@ Schedule::job(new CleanupUnattachedDocuments)->everyTwoHours();
 // Purge consumed and long-expired MFA challenge rows (SEC-041).
 // Runs at 03:00 daily — off-peak, after the 00:30 listing expiry job.
 Schedule::command('mfa:prune-challenges')->dailyAt('03:00');
+
+// Hard-delete lease documents soft-deleted more than 30 days ago and clean up storage files.
+// Runs at 02:00 daily — between listing expiry and MFA pruning.
+Schedule::command('lease:prune-deleted-documents')->dailyAt('02:00');
