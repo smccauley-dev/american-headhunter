@@ -26,7 +26,6 @@ use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
-use Filament\Schemas\Components\Actions as SchemaActions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
@@ -292,6 +291,33 @@ class EditCustomerUser extends EditRecord
                                 ]),
 
                             Section::make('Password')
+                                ->headerActions([
+                                    Action::make('force_password_reset')
+                                        ->label('Force Password Reset')
+                                        ->icon('heroicon-o-envelope')
+                                        ->color('warning')
+                                        ->requiresConfirmation()
+                                        ->modalDescription('This will send a password reset email to the user\'s address. They will be required to set a new password before logging in.')
+                                        ->action(function () {
+                                            $record = $this->getRecord();
+                                            app(\App\Services\Identity\VerificationService::class)
+                                                ->sendPasswordResetEmail($record);
+
+                                            app(AuditService::class)->log(
+                                                eventType:      'update',
+                                                sourceDatabase: 'identity',
+                                                tableName:      'users',
+                                                recordId:       $record->id,
+                                                userId:         Auth::id(),
+                                                ipAddress:      request()->ip(),
+                                                userAgent:      request()->userAgent(),
+                                                actionSummary:  "Admin forced password reset for: {$record->email}",
+                                                changedFields:  ['password_hash'],
+                                            );
+
+                                            Notification::make()->title('Password reset email sent.')->success()->send();
+                                        }),
+                                ])
                                 ->schema([
                                     TextInput::make('new_password')
                                         ->label('Set New Password')
@@ -302,36 +328,158 @@ class EditCustomerUser extends EditRecord
                                         ->helperText('Leave blank to keep the current password. Visible to Super Administrator only.')
                                         ->visible(fn () => AdminAuth::isSuperAdmin())
                                         ->dehydrated(false),
-                                    SchemaActions::make([
-                                        Action::make('force_password_reset')
-                                            ->label('Force Password Reset')
-                                            ->icon('heroicon-o-envelope')
-                                            ->color('warning')
-                                            ->requiresConfirmation()
-                                            ->modalDescription('This will send a password reset email to the user\'s address. They will be required to set a new password before logging in.')
-                                            ->action(function () {
-                                                $record = $this->getRecord();
-                                                app(\App\Services\Identity\VerificationService::class)
-                                                    ->sendPasswordResetEmail($record);
-
-                                                app(AuditService::class)->log(
-                                                    eventType:      'update',
-                                                    sourceDatabase: 'identity',
-                                                    tableName:      'users',
-                                                    recordId:       $record->id,
-                                                    userId:         Auth::id(),
-                                                    ipAddress:      request()->ip(),
-                                                    userAgent:      request()->userAgent(),
-                                                    actionSummary:  "Admin forced password reset for: {$record->email}",
-                                                    changedFields:  ['password_hash'],
-                                                );
-
-                                                Notification::make()->title('Password reset email sent.')->success()->send();
-                                            }),
-                                    ]),
                                 ]),
 
                             Section::make('MFA Status')
+                                ->headerActions([
+                                    // ── Email ─────────────────────────────────
+                                    Action::make('enable_email_mfa')
+                                        ->label('Enable Email MFA')
+                                        ->icon('heroicon-o-envelope')
+                                        ->color('success')
+                                        ->requiresConfirmation()
+                                        ->modalHeading('Enable Email MFA')
+                                        ->modalDescription('Admin-activates email-based two-factor authentication for this account.')
+                                        ->visible(fn () => $this->platformMethodEnabled('email') && ! $this->mfaMethodEnabled('email'))
+                                        ->action(function () {
+                                            try {
+                                                $this->enableMfaMethod('email');
+                                                Notification::make()->success()->title('Email MFA enabled')->send();
+                                            } catch (\Throwable $e) {
+                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                                            }
+                                        }),
+
+                                    Action::make('disable_email_mfa')
+                                        ->label('Disable Email MFA')
+                                        ->icon('heroicon-o-envelope-open')
+                                        ->color('danger')
+                                        ->requiresConfirmation()
+                                        ->modalHeading('Disable Email MFA')
+                                        ->modalDescription('Removes email-based two-factor authentication. The user can re-enable it from their Security settings.')
+                                        ->visible(fn () => $this->mfaMethodEnabled('email'))
+                                        ->action(function () {
+                                            try {
+                                                $this->disableMfaMethod('email');
+                                                Notification::make()->success()->title('Email MFA disabled')->send();
+                                            } catch (\Throwable $e) {
+                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                                            }
+                                        }),
+
+                                    // ── TOTP ──────────────────────────────────
+                                    Action::make('enable_totp_mfa')
+                                        ->label('Enable Authenticator MFA')
+                                        ->icon('heroicon-o-device-phone-mobile')
+                                        ->color('success')
+                                        ->requiresConfirmation()
+                                        ->modalHeading('Enable Authenticator App MFA')
+                                        ->modalDescription('Admin-activates TOTP. The user must still scan the QR code on their next login to complete enrollment.')
+                                        ->visible(fn () => $this->platformMethodEnabled('totp') && ! $this->mfaMethodEnabled('totp'))
+                                        ->action(function () {
+                                            try {
+                                                $this->enableMfaMethod('totp');
+                                                Notification::make()->success()->title('Authenticator MFA enabled')->send();
+                                            } catch (\Throwable $e) {
+                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                                            }
+                                        }),
+
+                                    Action::make('disable_totp_mfa')
+                                        ->label('Disable Authenticator MFA')
+                                        ->icon('heroicon-o-shield-check')
+                                        ->color('danger')
+                                        ->requiresConfirmation()
+                                        ->modalHeading('Disable Authenticator App MFA')
+                                        ->modalDescription('Removes TOTP two-factor authentication. The user will need to re-scan the QR code to re-enroll.')
+                                        ->visible(fn () => $this->mfaMethodEnabled('totp'))
+                                        ->action(function () {
+                                            try {
+                                                $this->disableMfaMethod('totp');
+                                                Notification::make()->success()->title('Authenticator MFA disabled')->send();
+                                            } catch (\Throwable $e) {
+                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                                            }
+                                        }),
+
+                                    // ── SMS ───────────────────────────────────
+                                    Action::make('enable_sms_mfa')
+                                        ->label('Enable SMS MFA')
+                                        ->icon('heroicon-o-chat-bubble-left-ellipsis')
+                                        ->color('success')
+                                        ->requiresConfirmation()
+                                        ->modalHeading('Enable SMS MFA')
+                                        ->modalDescription('Admin-activates SMS-based two-factor authentication for this account.')
+                                        ->visible(fn () => $this->platformMethodEnabled('sms') && ! $this->mfaMethodEnabled('sms'))
+                                        ->action(function () {
+                                            try {
+                                                $this->enableMfaMethod('sms');
+                                                Notification::make()->success()->title('SMS MFA enabled')->send();
+                                            } catch (\Throwable $e) {
+                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                                            }
+                                        }),
+
+                                    Action::make('disable_sms_mfa')
+                                        ->label('Disable SMS MFA')
+                                        ->icon('heroicon-o-chat-bubble-left')
+                                        ->color('danger')
+                                        ->requiresConfirmation()
+                                        ->modalHeading('Disable SMS MFA')
+                                        ->modalDescription('Removes SMS-based two-factor authentication for this account.')
+                                        ->visible(fn () => $this->mfaMethodEnabled('sms'))
+                                        ->action(function () {
+                                            try {
+                                                $this->disableMfaMethod('sms');
+                                                Notification::make()->success()->title('SMS MFA disabled')->send();
+                                            } catch (\Throwable $e) {
+                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                                            }
+                                        }),
+
+                                    // ── Reset / Emergency ─────────────────────
+                                    Action::make('reset_totp_secret')
+                                        ->label('Clear TOTP Token')
+                                        ->icon('heroicon-o-arrow-path')
+                                        ->color('warning')
+                                        ->requiresConfirmation()
+                                        ->modalHeading('Clear Authenticator App Token')
+                                        ->modalDescription('Clears the stored TOTP secret and disables the authenticator method. The user must re-scan a new QR code to re-enroll.')
+                                        ->visible(fn () => $this->mfaTotpExists())
+                                        ->action(function () {
+                                            try {
+                                                $this->getRecord()
+                                                    ->mfaConfigurations()
+                                                    ->where('method', 'totp')
+                                                    ->update([
+                                                        'is_enabled'       => false,
+                                                        'secret_encrypted' => null,
+                                                        'verified_at'      => null,
+                                                    ]);
+                                                Notification::make()->warning()->title('TOTP secret cleared — user must re-enroll')->send();
+                                            } catch (\Throwable $e) {
+                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                                            }
+                                        }),
+
+                                    Action::make('disable_all_mfa')
+                                        ->label('Disable All MFA')
+                                        ->icon('heroicon-o-shield-exclamation')
+                                        ->color('danger')
+                                        ->requiresConfirmation()
+                                        ->modalHeading('Disable All MFA Methods')
+                                        ->modalDescription('Emergency: removes every two-factor method from this account. The user will need to re-enroll on their next login.')
+                                        ->action(function () {
+                                            try {
+                                                $this->getRecord()
+                                                    ->mfaConfigurations()
+                                                    ->update(['is_enabled' => false, 'verified_at' => null]);
+                                                Notification::make()->warning()->title('All MFA methods disabled')->send();
+                                            } catch (\Throwable $e) {
+                                                Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
+                                            }
+                                        }),
+                                ])
                                 ->schema([
                                     Placeholder::make('mfa_status_detail')
                                         ->label('Configured Methods')
@@ -384,156 +532,6 @@ class EditCustomerUser extends EditRecord
                                             }
                                         })
                                         ->columnSpanFull(),
-
-                                    SchemaActions::make([
-                                        // ── Email ─────────────────────────────
-                                        Action::make('enable_email_mfa')
-                                            ->label('Enable Email MFA')
-                                            ->icon('heroicon-o-envelope')
-                                            ->color('success')
-                                            ->requiresConfirmation()
-                                            ->modalHeading('Enable Email MFA')
-                                            ->modalDescription('Admin-activates email-based two-factor authentication for this account.')
-                                            ->visible(fn () => $this->platformMethodEnabled('email') && ! $this->mfaMethodEnabled('email'))
-                                            ->action(function () {
-                                                try {
-                                                    $this->enableMfaMethod('email');
-                                                    Notification::make()->success()->title('Email MFA enabled')->send();
-                                                } catch (\Throwable $e) {
-                                                    Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                                }
-                                            }),
-
-                                        Action::make('disable_email_mfa')
-                                            ->label('Disable Email MFA')
-                                            ->icon('heroicon-o-envelope-open')
-                                            ->color('danger')
-                                            ->requiresConfirmation()
-                                            ->modalHeading('Disable Email MFA')
-                                            ->modalDescription('Removes email-based two-factor authentication. The user can re-enable it from their Security settings.')
-                                            ->visible(fn () => $this->mfaMethodEnabled('email'))
-                                            ->action(function () {
-                                                try {
-                                                    $this->disableMfaMethod('email');
-                                                    Notification::make()->success()->title('Email MFA disabled')->send();
-                                                } catch (\Throwable $e) {
-                                                    Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                                }
-                                            }),
-
-                                        // ── TOTP ──────────────────────────────
-                                        Action::make('enable_totp_mfa')
-                                            ->label('Enable Authenticator MFA')
-                                            ->icon('heroicon-o-device-phone-mobile')
-                                            ->color('success')
-                                            ->requiresConfirmation()
-                                            ->modalHeading('Enable Authenticator App MFA')
-                                            ->modalDescription('Admin-activates TOTP. The user must still scan the QR code on their next login to complete enrollment.')
-                                            ->visible(fn () => $this->platformMethodEnabled('totp') && ! $this->mfaMethodEnabled('totp'))
-                                            ->action(function () {
-                                                try {
-                                                    $this->enableMfaMethod('totp');
-                                                    Notification::make()->success()->title('Authenticator MFA enabled')->send();
-                                                } catch (\Throwable $e) {
-                                                    Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                                }
-                                            }),
-
-                                        Action::make('disable_totp_mfa')
-                                            ->label('Disable Authenticator MFA')
-                                            ->icon('heroicon-o-shield-check')
-                                            ->color('danger')
-                                            ->requiresConfirmation()
-                                            ->modalHeading('Disable Authenticator App MFA')
-                                            ->modalDescription('Removes TOTP two-factor authentication. The user will need to re-scan the QR code to re-enroll.')
-                                            ->visible(fn () => $this->mfaMethodEnabled('totp'))
-                                            ->action(function () {
-                                                try {
-                                                    $this->disableMfaMethod('totp');
-                                                    Notification::make()->success()->title('Authenticator MFA disabled')->send();
-                                                } catch (\Throwable $e) {
-                                                    Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                                }
-                                            }),
-
-                                        // ── SMS ───────────────────────────────
-                                        Action::make('enable_sms_mfa')
-                                            ->label('Enable SMS MFA')
-                                            ->icon('heroicon-o-chat-bubble-left-ellipsis')
-                                            ->color('success')
-                                            ->requiresConfirmation()
-                                            ->modalHeading('Enable SMS MFA')
-                                            ->modalDescription('Admin-activates SMS-based two-factor authentication for this account.')
-                                            ->visible(fn () => $this->platformMethodEnabled('sms') && ! $this->mfaMethodEnabled('sms'))
-                                            ->action(function () {
-                                                try {
-                                                    $this->enableMfaMethod('sms');
-                                                    Notification::make()->success()->title('SMS MFA enabled')->send();
-                                                } catch (\Throwable $e) {
-                                                    Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                                }
-                                            }),
-
-                                        Action::make('disable_sms_mfa')
-                                            ->label('Disable SMS MFA')
-                                            ->icon('heroicon-o-chat-bubble-left')
-                                            ->color('danger')
-                                            ->requiresConfirmation()
-                                            ->modalHeading('Disable SMS MFA')
-                                            ->modalDescription('Removes SMS-based two-factor authentication for this account.')
-                                            ->visible(fn () => $this->mfaMethodEnabled('sms'))
-                                            ->action(function () {
-                                                try {
-                                                    $this->disableMfaMethod('sms');
-                                                    Notification::make()->success()->title('SMS MFA disabled')->send();
-                                                } catch (\Throwable $e) {
-                                                    Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                                }
-                                            }),
-
-                                        // ── Reset / Emergency ─────────────────
-                                        Action::make('reset_totp_secret')
-                                            ->label('Clear TOTP Token')
-                                            ->icon('heroicon-o-arrow-path')
-                                            ->color('warning')
-                                            ->requiresConfirmation()
-                                            ->modalHeading('Clear Authenticator App Token')
-                                            ->modalDescription('Clears the stored TOTP secret and disables the authenticator method. The user must re-scan a new QR code to re-enroll.')
-                                            ->visible(fn () => $this->mfaTotpExists())
-                                            ->action(function () {
-                                                try {
-                                                    $this->getRecord()
-                                                        ->mfaConfigurations()
-                                                        ->where('method', 'totp')
-                                                        ->update([
-                                                            'is_enabled'       => false,
-                                                            'secret_encrypted' => null,
-                                                            'verified_at'      => null,
-                                                        ]);
-                                                    Notification::make()->warning()->title('TOTP secret cleared — user must re-enroll')->send();
-                                                } catch (\Throwable $e) {
-                                                    Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                                }
-                                            }),
-
-                                        Action::make('disable_all_mfa')
-                                            ->label('Disable All MFA')
-                                            ->icon('heroicon-o-shield-exclamation')
-                                            ->color('danger')
-                                            ->requiresConfirmation()
-                                            ->modalHeading('Disable All MFA Methods')
-                                            ->modalDescription('Emergency: removes every two-factor method from this account. The user will need to re-enroll on their next login.')
-                                            ->action(function () {
-                                                try {
-                                                    $this->getRecord()
-                                                        ->mfaConfigurations()
-                                                        ->update(['is_enabled' => false, 'verified_at' => null]);
-                                                    Notification::make()->warning()->title('All MFA methods disabled')->send();
-                                                } catch (\Throwable $e) {
-                                                    Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
-                                                }
-                                            }),
-                                    ]),
                                 ]),
 
                             Section::make('Login History')
