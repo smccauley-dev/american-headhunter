@@ -785,27 +785,25 @@ class ViewLeaseApplication extends ViewRecord
 
         // ── Part 2: general lease_documents attachments ───────────────────────
 
-        $leaseDocs    = app(LeaseDocumentService::class)->getForLease($lease->id);
-        $csrf         = csrf_token();
-        $applicationId = $record->id;
+        $leaseDocs = app(LeaseDocumentService::class)->getForLease($lease->id);
+        $csrf      = csrf_token();
 
         foreach ($leaseDocs as $ld) {
             $tag       = $ld->tag;
             $deleteUrl = route('admin.lease-documents.delete', $ld->id);
             $formId    = 'del-' . substr(str_replace('-', '', $ld->id), 0, 12);
             $rows     .= $this->documentRow(
-                label:         $tag->label(),
-                badge:         strtoupper(str_replace('_', ' ', $tag->value)),
-                badgeStyle:    $tag->badgeStyle(),
-                subtitle:      $ld->notes ?? '',
-                filename:      $ld->original_filename ?? 'document.pdf',
-                sizeBytes:     $ld->size_bytes,
-                date:          $ld->created_at?->format('M j, Y') ?? '',
-                downloadUrl:   route('admin.lease-documents.download', $ld->id),
-                deleteFormId:  $formId,
-                deleteUrl:     $deleteUrl,
-                applicationId: $applicationId,
-                csrf:          $csrf,
+                label:        $tag->label(),
+                badge:        strtoupper(str_replace('_', ' ', $tag->value)),
+                badgeStyle:   $tag->badgeStyle(),
+                subtitle:     $ld->notes ?? '',
+                filename:     $ld->original_filename ?? 'document.pdf',
+                sizeBytes:    $ld->size_bytes,
+                date:         $ld->created_at?->format('M j, Y') ?? '',
+                downloadUrl:  route('admin.lease-documents.download', $ld->id),
+                deleteFormId: $formId,
+                deleteUrl:    $deleteUrl,
+                csrf:         $csrf,
             );
         }
 
@@ -825,10 +823,9 @@ class ViewLeaseApplication extends ViewRecord
         ?int    $sizeBytes,
         string  $date,
         string  $downloadUrl,
-        ?string $deleteFormId  = null,
-        ?string $deleteUrl     = null,
-        ?string $applicationId = null,
-        ?string $csrf          = null,
+        ?string $deleteFormId = null,
+        ?string $deleteUrl    = null,
+        ?string $csrf         = null,
     ): string {
         $filename    = e($filename);
         $subtitle    = e($subtitle);
@@ -845,7 +842,6 @@ class ViewLeaseApplication extends ViewRecord
             $deleteHtml = <<<HTML
                 <form id="{$deleteFormId}" method="POST" action="{$deleteUrl}" style="display:none">
                     <input type="hidden" name="_token" value="{$csrf}">
-                    <input type="hidden" name="application_id" value="{$applicationId}">
                 </form>
                 <button type="button"
                     onclick="(function(){if(!confirm('Remove this document from the lease?\\n\\nIt will be permanently deleted after 30 days.'))return;var t=prompt('Type DELETE to confirm removal of &quot;{$jsFilename}&quot;');if(t!=='DELETE'){if(t!==null)alert('Cancelled — text did not match.');return;}document.getElementById('{$deleteFormId}').submit();})()"

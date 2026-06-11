@@ -42,12 +42,7 @@ Route::middleware('auth:web')->get('/admin/applications/{application}/print', [P
 
 // Admin lease-document soft-delete
 Route::middleware('auth:web')->post('/admin/lease-documents/{leaseDocumentId}/delete', function (string $leaseDocumentId) {
-    $applicationId = request()->input('application_id');
     app(\App\Services\Lease\LeaseDocumentService::class)->remove($leaseDocumentId, auth()->id());
-
-    if ($applicationId) {
-        return redirect()->route('filament.admin.resources.lease-applications.view', ['record' => $applicationId]);
-    }
     return back();
 })->name('admin.lease-documents.delete');
 
