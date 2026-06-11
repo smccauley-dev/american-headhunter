@@ -271,6 +271,27 @@ class ViewLeaseApplication extends ViewRecord
                 Section::make('Notes')
                     ->columnSpan(3)
                     ->description('Visible to staff and landowner only — not shown to the applicant.')
+                    ->headerActions([
+                        Action::make('edit_notes')
+                            ->label('Edit Notes')
+                            ->color('gray')
+                            ->icon(Heroicon::OutlinedPencilSquare)
+                            ->fillForm(fn (LeaseApplication $record): array => [
+                                'admin_notes' => $record->admin_notes ?? '',
+                            ])
+                            ->form([
+                                Textarea::make('admin_notes')
+                                    ->label('Application Notes')
+                                    ->helperText('Private — visible to staff and landowner only. Not shown to the applicant.')
+                                    ->maxLength(5000)
+                                    ->rows(8),
+                            ])
+                            ->action(function (LeaseApplication $record, array $data): void {
+                                app(ApplicationMessageService::class)->saveNotes($record->id, $data['admin_notes'] ?? '');
+                                Notification::make()->title('Notes saved')->success()->send();
+                                $this->redirect(LeaseApplicationResource::getUrl('view', ['record' => $record]));
+                            }),
+                    ])
                     ->schema([
                         TextEntry::make('admin_notes')
                             ->label('')
@@ -359,26 +380,6 @@ class ViewLeaseApplication extends ViewRecord
                         $data['message'],
                     );
                     Notification::make()->title('Message sent to applicant')->success()->send();
-                    $this->redirect(LeaseApplicationResource::getUrl('view', ['record' => $record]));
-                }),
-
-            Action::make('edit_notes')
-                ->label('Edit Notes')
-                ->color('gray')
-                ->icon(Heroicon::OutlinedPencilSquare)
-                ->fillForm(fn (LeaseApplication $record): array => [
-                    'admin_notes' => $record->admin_notes ?? '',
-                ])
-                ->form([
-                    Textarea::make('admin_notes')
-                        ->label('Application Notes')
-                        ->helperText('Private — visible to staff and landowner only. Not shown to the applicant.')
-                        ->maxLength(5000)
-                        ->rows(8),
-                ])
-                ->action(function (LeaseApplication $record, array $data): void {
-                    app(ApplicationMessageService::class)->saveNotes($record->id, $data['admin_notes'] ?? '');
-                    Notification::make()->title('Notes saved')->success()->send();
                     $this->redirect(LeaseApplicationResource::getUrl('view', ['record' => $record]));
                 }),
 
