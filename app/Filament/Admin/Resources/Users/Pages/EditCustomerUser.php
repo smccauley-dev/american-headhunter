@@ -291,6 +291,7 @@ class EditCustomerUser extends EditRecord
                                 ]),
 
                             Section::make('Password')
+                                ->description('User password management')
                                 ->headerActions([
                                     Action::make('force_password_reset')
                                         ->label('Force Password Reset')
@@ -331,6 +332,7 @@ class EditCustomerUser extends EditRecord
                                 ]),
 
                             Section::make('MFA Status')
+                                ->description('Multi-factor authentication configuration')
                                 ->headerActions([
                                     // ── Email ─────────────────────────────────
                                     Action::make('enable_email_mfa')
