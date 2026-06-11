@@ -37,6 +37,17 @@ class EsignatureService extends BaseService
             ->first();
     }
 
+    /** Whether any party has already signed the lease's latest signing request. */
+    public function hasAnySignature(string $leaseId): bool
+    {
+        $request = $this->getRequestForLease($leaseId);
+
+        return $request !== null
+            && EsignatureSigner::where('request_id', $request->id)
+                ->where('status', 'signed')
+                ->exists();
+    }
+
     // ── Writes ────────────────────────────────────────────────────────────────
 
     /**
@@ -189,12 +200,18 @@ class EsignatureService extends BaseService
     /**
      * Record an in-platform signature for a user.
      * Returns true if this was the final signature and the lease was activated.
+     *
+     * Pass $recordedByUserId when someone other than the signer executes the
+     * signature (admin signing on a landowner's behalf) — the acting user is
+     * written to the audit log so the signature is never silently attributed
+     * to a party who didn't perform the action.
      */
     public function recordSignature(
         string $requestId,
         string $userId,
         string $ipAddress = '',
         string $userAgent = '',
+        ?string $recordedByUserId = null,
     ): bool {
         $signer = EsignatureSigner::where('request_id', $requestId)
             ->where('user_id', $userId)
@@ -221,7 +238,44 @@ class EsignatureService extends BaseService
             'user_agent'  => $userAgent ?: null,
         ]);
 
+        if ($recordedByUserId !== null && $recordedByUserId !== $userId) {
+            $this->auditService->log(
+                eventType:      'esignature.signed_on_behalf',
+                sourceDatabase: 'ah_lease',
+                tableName:      'signature_events',
+                recordId:       $request->lease_id,
+                userId:         $recordedByUserId,
+                ipAddress:      $ipAddress ?: null,
+                userAgent:      $userAgent ?: null,
+                actionSummary:  "In-platform signature recorded on behalf of user {$userId}",
+                newValues:      ['signer_user_id' => $userId, 'request_id' => $requestId],
+            );
+        }
+
         return $this->activateIfComplete($request);
+    }
+
+    /**
+     * Void the lease's latest signing request (e.g. when an approval is
+     * overridden before anyone has signed). No-op once completed or cancelled.
+     */
+    public function cancelRequest(string $leaseId, string $cancelledByUserId): void
+    {
+        $request = $this->getRequestForLease($leaseId);
+        if (! $request || in_array($request->status, ['completed', 'cancelled'], true)) {
+            return;
+        }
+
+        $request->status = 'cancelled';
+        $request->save();
+
+        SignatureEvent::create([
+            'lease_id'    => $leaseId,
+            'user_id'     => $cancelledByUserId,
+            'provider'    => $request->provider,
+            'event_type'  => 'cancelled',
+            'occurred_at' => now(),
+        ]);
     }
 
     // ── Private ───────────────────────────────────────────────────────────────

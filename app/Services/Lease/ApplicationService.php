@@ -2,10 +2,16 @@
 
 namespace App\Services\Lease;
 
+use App\Models\Documents\Document;
 use App\Models\Identity\HunterCredentials;
+use App\Models\Identity\User;
+use App\Models\Identity\UserProfile;
+use App\Models\Lease\Lease;
 use App\Models\Lease\LeaseApplication;
 use App\Models\Lease\LeaseApplicationHunter;
 use App\Models\Lease\LeaseApplicationReviewHistory;
+use App\Models\Lease\LeaseHunter;
+use App\Models\Property\Property;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
 use App\Services\Documents\DocumentService;
@@ -13,16 +19,20 @@ use App\Services\Platform\LegalService;
 use App\Services\Property\PropertyService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ApplicationService extends BaseService
 {
     public function __construct(
-        private readonly AuditService    $auditService,
-        private readonly PropertyService $propertyService,
-        private readonly DocumentService $documentService,
-        private readonly LegalService    $legalService,
+        private readonly AuditService      $auditService,
+        private readonly PropertyService   $propertyService,
+        private readonly DocumentService   $documentService,
+        private readonly LegalService      $legalService,
+        private readonly LeaseService      $leaseService,
+        private readonly EsignatureService $esignatureService,
     ) {}
 
     // ── Read ──────────────────────────────────────────────────────────────────
@@ -171,6 +181,190 @@ class ApplicationService extends BaseService
         return $application->refresh();
     }
 
+    /**
+     * Approve an application and create its lease, hunter record, and signing
+     * request as one operation.
+     *
+     * The property and signer identities are resolved BEFORE any state change
+     * so a missing property cannot strand the application in approved-without-
+     * lease limbo. All lease-DB writes share one transaction; if the
+     * documents-DB signing request fails afterwards, the lease-DB writes are
+     * compensated (lease deleted, application reverted to pending).
+     *
+     * @param  array{start_date: mixed, end_date: mixed, total_price: mixed}  $leaseTerms
+     * @param  ?UploadedFile  $customContractUpload  Admin-uploaded contract
+     *         override; falls back to the listing's attached MLA when null.
+     * @return array{lease: Lease, activated: bool, customPdfFailed: bool}
+     */
+    public function approveAndCreateLease(
+        string        $applicationId,
+        string        $reviewerUserId,
+        array         $leaseTerms,
+        ?UploadedFile $customContractUpload,
+        bool          $signAsLessor,
+        string        $ipAddress = '',
+        string        $userAgent = '',
+    ): array {
+        $application = LeaseApplication::findOrFail($applicationId);
+
+        if ($application->status !== 'pending') {
+            throw new \RuntimeException('Only pending applications can be approved.');
+        }
+
+        // property_id_snapshot may be null for older applications — fall back via listing
+        $propertyId = $application->property_id_snapshot
+            ?? DB::connection('property')
+                ->table('property_listings')
+                ->where('id', $application->listing_id)
+                ->value('property_id');
+
+        $property = $propertyId ? Property::on('property')->find($propertyId) : null;
+
+        if (! $property) {
+            throw new \RuntimeException(
+                'Property record not found — check the listing exists and has a valid property in the property database.'
+            );
+        }
+
+        $lessorUser    = User::on('identity')->find($property->owner_user_id);
+        $lesseeUser    = User::on('identity')->find($application->applicant_user_id);
+        $lessorProfile = UserProfile::on('identity')->where('user_id', $property->owner_user_id)->first();
+        $lesseeProfile = UserProfile::on('identity')->where('user_id', $application->applicant_user_id)->first();
+
+        $lessorName = $lessorProfile
+            ? trim("{$lessorProfile->first_name} {$lessorProfile->last_name}") ?: 'Landowner'
+            : 'Landowner';
+        $lesseeName = $lesseeProfile
+            ? trim("{$lesseeProfile->first_name} {$lesseeProfile->last_name}") ?: 'Hunter'
+            : 'Hunter';
+
+        // Store the admin-uploaded contract override; a storage failure must
+        // not block approval — fall through to the listing MLA / in-platform.
+        $customPdf       = null;
+        $customPdfFailed = false;
+        if ($customContractUpload !== null) {
+            try {
+                $customPdf = $this->documentService->storeUploadedFile(
+                    $customContractUpload,
+                    $property->owner_user_id,
+                    'contract',
+                );
+            } catch (\Throwable $e) {
+                $customPdfFailed = true;
+                Log::warning('ApplicationService: custom contract PDF store failed — falling back', [
+                    'application_id' => $applicationId,
+                    'error'          => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // No admin override — fall back to the MLA the landowner attached to the listing
+        if ($customPdf === null) {
+            $listingContractDocId = DB::connection('property')
+                ->table('property_listings')
+                ->where('id', $application->listing_id)
+                ->value('custom_contract_document_id');
+
+            if ($listingContractDocId) {
+                $customPdf = Document::on('documents')->find($listingContractDocId);
+            }
+        }
+
+        // All lease-DB writes (approval, history, lease, hunter) commit together
+        $lease = DB::connection('lease')->transaction(function () use ($application, $applicationId, $reviewerUserId, $property, $leaseTerms): Lease {
+            $this->approve($applicationId, $reviewerUserId);
+
+            $lease = $this->leaseService->createFromApplication($applicationId, [
+                'property_id'    => $property->id,
+                'listing_id'     => $application->listing_id,
+                'lessee_user_id' => $application->applicant_user_id,
+                'lessor_user_id' => $property->owner_user_id,
+                'start_date'     => $leaseTerms['start_date'],
+                'end_date'       => $leaseTerms['end_date'],
+                'total_price'    => $leaseTerms['total_price'],
+                'deposit_paid'   => 0.00,
+            ]);
+
+            LeaseHunter::create([
+                'lease_id'    => $lease->id,
+                'user_id'     => $application->applicant_user_id,
+                'role'        => 'primary',
+                'is_approved' => false,
+            ]);
+
+            return $lease;
+        });
+
+        // Signing request lives in the documents DB — no shared transaction
+        // is possible, so compensate the lease DB if this step fails.
+        try {
+            $esigRequest = $this->esignatureService->createRequest(
+                $lease,
+                $reviewerUserId,
+                ['user_id' => $property->owner_user_id, 'name' => $lessorName, 'email' => $lessorUser?->email ?? ''],
+                ['user_id' => $application->applicant_user_id, 'name' => $lesseeName, 'email' => $lesseeUser?->email ?? ''],
+                $customPdf,
+            );
+        } catch (\Throwable $e) {
+            $this->compensateFailedApproval($application, $lease, $reviewerUserId);
+            throw $e;
+        }
+
+        // Lease and request both exist now — a signature failure here is
+        // recoverable via the "Sign as Lessor" action, so don't compensate.
+        $activated = false;
+        if ($signAsLessor) {
+            try {
+                $activated = $this->esignatureService->recordSignature(
+                    $esigRequest->id,
+                    $property->owner_user_id,
+                    $ipAddress,
+                    $userAgent,
+                    recordedByUserId: $reviewerUserId,
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        return ['lease' => $lease, 'activated' => $activated, 'customPdfFailed' => $customPdfFailed];
+    }
+
+    /**
+     * Undo the lease-DB side of a failed approval: remove the lease and its
+     * hunter rows and put the application back to pending so the admin can
+     * retry once the underlying failure is fixed.
+     */
+    private function compensateFailedApproval(LeaseApplication $application, Lease $lease, string $reviewerUserId): void
+    {
+        try {
+            DB::connection('lease')->transaction(function () use ($application, $lease): void {
+                LeaseHunter::where('lease_id', $lease->id)->delete();
+                $lease->delete();
+                $application->update([
+                    'status'              => 'pending',
+                    'reviewed_by_user_id' => null,
+                    'reviewed_at'         => null,
+                ]);
+            });
+
+            $this->auditService->log(
+                eventType:      'lease_application.approval_compensated',
+                sourceDatabase: 'ah_lease',
+                tableName:      'lease_applications',
+                recordId:       $application->id,
+                userId:         $reviewerUserId,
+                actionSummary:  'Approval rolled back — signing request creation failed; application returned to pending',
+            );
+        } catch (\Throwable $e) {
+            Log::error('ApplicationService: approval compensation failed', [
+                'application_id' => $application->id,
+                'lease_id'       => $lease->id,
+                'error'          => $e->getMessage(),
+            ]);
+        }
+    }
+
     public function reject(string $applicationId, string $reviewerUserId, string $reason): LeaseApplication
     {
         $application = LeaseApplication::findOrFail($applicationId);
@@ -216,6 +410,36 @@ class ApplicationService extends BaseService
 
         $application = LeaseApplication::findOrFail($applicationId);
         $fromStatus  = $application->status;
+
+        // Overriding an approval must not orphan a live lease: cancel the
+        // lease and signing request while unsigned, refuse once signed.
+        if ($newStatus === 'rejected' && $fromStatus === 'approved') {
+            $lease = Lease::where('application_id', $applicationId)
+                ->whereNull('deleted_at')
+                ->latest('created_at')
+                ->first();
+
+            if ($lease) {
+                if ($lease->status === 'active' || $this->esignatureService->hasAnySignature($lease->id)) {
+                    throw new \RuntimeException(
+                        'Cannot override to rejected: signatures have already been recorded on the lease. '
+                        . 'Terminate the lease first, then override the application decision.'
+                    );
+                }
+
+                $this->esignatureService->cancelRequest($lease->id, $reviewerUserId);
+                $this->leaseService->cancel($lease->id, "Application decision overridden: {$reason}");
+
+                $this->auditService->log(
+                    eventType:      'lease.cancelled',
+                    sourceDatabase: 'ah_lease',
+                    tableName:      'leases',
+                    recordId:       $lease->id,
+                    userId:         $reviewerUserId,
+                    actionSummary:  'Lease cancelled — application approval overridden to rejected',
+                );
+            }
+        }
 
         $application->update([
             'status'              => $newStatus,
