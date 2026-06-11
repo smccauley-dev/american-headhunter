@@ -530,6 +530,8 @@ class AdminPanelProvider extends PanelProvider
         .fi-section-header {
             background-color: transparent !important;
             border-bottom: none !important;
+            padding-top: 1.25rem !important;
+            padding-bottom: 1.25rem !important;
             /* Inset divider line using gradient — matches 24px section padding-inline */
             background-image: linear-gradient(#a89874, #a89874) !important;
             background-position: center bottom !important;
