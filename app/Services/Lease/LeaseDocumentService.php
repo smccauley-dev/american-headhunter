@@ -102,6 +102,64 @@ class LeaseDocumentService extends BaseService
     }
 
     /**
+     * Return soft-deleted lease_documents for a lease (for admin recovery UI).
+     */
+    public function getDeletedForLease(string $leaseId): Collection
+    {
+        $rows = LeaseDocument::where('lease_id', $leaseId)
+            ->whereNotNull('deleted_at')
+            ->orderByDesc('deleted_at')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return collect();
+        }
+
+        $docIds = $rows->pluck('document_id')->all();
+
+        $docs = DB::connection('documents')
+            ->table('documents')
+            ->whereIn('id', $docIds)
+            ->get(['id', 'original_filename', 'size_bytes', 'created_at'])
+            ->keyBy('id');
+
+        return $rows->map(function (LeaseDocument $ld) use ($docs) {
+            $doc = $docs->get($ld->document_id);
+            return (object) [
+                'id'                => $ld->id,
+                'lease_id'          => $ld->lease_id,
+                'document_id'       => $ld->document_id,
+                'tag'               => $ld->tag,
+                'notes'             => $ld->notes,
+                'original_filename' => $doc?->original_filename,
+                'size_bytes'        => $doc?->size_bytes,
+                'deleted_at'        => $ld->deleted_at,
+            ];
+        });
+    }
+
+    /**
+     * Restore a soft-deleted lease document (nulls deleted_at).
+     */
+    public function restore(string $leaseDocumentId, string $restoredByUserId): void
+    {
+        LeaseDocument::whereNotNull('deleted_at')
+            ->where('id', $leaseDocumentId)
+            ->update(['deleted_at' => null]);
+
+        try {
+            $this->auditService->log(
+                eventType:      'document.restored',
+                sourceDatabase: 'ah_lease',
+                tableName:      'lease_documents',
+                recordId:       $leaseDocumentId,
+                actionSummary:  'Lease document restored from soft-delete',
+                userId:         $restoredByUserId,
+            );
+        } catch (\Throwable) {}
+    }
+
+    /**
      * Soft-delete a lease document association (file remains in DB 11).
      */
     public function remove(string $leaseDocumentId, string $removedByUserId): void

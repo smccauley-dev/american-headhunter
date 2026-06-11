@@ -807,11 +807,80 @@ class ViewLeaseApplication extends ViewRecord
             );
         }
 
-        if ($rows === '') {
+        // ── Part 3: soft-deleted documents (recovery section) ────────────────
+
+        $deletedDocs  = app(LeaseDocumentService::class)->getDeletedForLease($lease->id);
+        $deletedRows  = '';
+        $restoreCsrf  = csrf_token();
+
+        foreach ($deletedDocs as $ld) {
+            $tag         = $ld->tag;
+            $restoreUrl  = route('admin.lease-documents.restore', $ld->id);
+            $filename    = e($ld->original_filename ?? 'document.pdf');
+            $size        = $ld->size_bytes ? number_format($ld->size_bytes / 1024, 0) . ' KB' : '';
+            $deletedDate = $ld->deleted_at?->format('M j, Y') ?? '';
+            $prunedOn    = $ld->deleted_at ? $ld->deleted_at->addDays(30)->format('M j, Y') : '';
+            $badge       = strtoupper(str_replace('_', ' ', $tag->value));
+            $badgeStyle  = $tag->badgeStyle();
+            $meta        = implode(' · ', array_filter([$filename, $size]));
+
+            $deletedRows .= <<<HTML
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#fafafa;border:1px solid #e5e7eb;border-radius:6px;opacity:0.75;">
+                    <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                        <svg style="width:22px;height:22px;flex-shrink:0;color:#9ca3af;" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/>
+                        </svg>
+                        <div style="min-width:0;">
+                            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                                <span style="font-size:13px;font-weight:600;color:#6b7280;">{$tag->label()}</span>
+                                <span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;{$badgeStyle}opacity:0.6;">{$badge}</span>
+                            </div>
+                            <div style="font-size:11px;color:#9ca3af;margin-top:2px;font-family:monospace;">
+                                {$meta} &nbsp;·&nbsp; Deleted {$deletedDate} &nbsp;·&nbsp; <span style="color:#dc2626;">Permanently removed {$prunedOn}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <form method="POST" action="{$restoreUrl}" style="flex-shrink:0;margin-left:12px;">
+                        <input type="hidden" name="_token" value="{$restoreCsrf}">
+                        <button type="submit" style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:6px;background:#fff;border:1px solid #6ee7b7;font-size:13px;font-weight:500;color:#065f46;cursor:pointer;white-space:nowrap;">
+                            <svg style="width:13px;height:13px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Restore
+                        </button>
+                    </form>
+                </div>
+            HTML;
+        }
+
+        $deletedSection = '';
+        if ($deletedRows !== '') {
+            $count          = $deletedDocs->count();
+            $label          = $count === 1 ? '1 deleted document' : "{$count} deleted documents";
+            $deletedSection = <<<HTML
+                <details style="margin-top:12px;">
+                    <summary style="cursor:pointer;font-family:monospace;font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.08em;list-style:none;display:flex;align-items:center;gap:6px;user-select:none;">
+                        <svg style="width:12px;height:12px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                        {$label} — click to expand
+                    </summary>
+                    <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">
+                        {$deletedRows}
+                    </div>
+                </details>
+            HTML;
+        }
+
+        if ($rows === '' && $deletedSection === '') {
             return new HtmlString('<p style="color:#888;font-style:italic;font-size:13px">No documents attached yet.</p>');
         }
 
-        return new HtmlString("<div style=\"display:flex;flex-direction:column;gap:8px;\">{$rows}</div>");
+        $activeSection = $rows !== ''
+            ? "<div style=\"display:flex;flex-direction:column;gap:8px;\">{$rows}</div>"
+            : '';
+
+        return new HtmlString("{$activeSection}{$deletedSection}");
     }
 
     private function documentRow(

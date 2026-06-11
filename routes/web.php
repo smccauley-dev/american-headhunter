@@ -40,6 +40,12 @@ Route::middleware('auth.session')->prefix('apply')->name('apply.')->group(functi
 // Admin print views — protected by Filament web guard
 Route::middleware('auth:web')->get('/admin/applications/{application}/print', [PrintApplicationController::class, 'show'])->name('admin.applications.print');
 
+// Admin lease-document restore (undo soft-delete)
+Route::middleware('auth:web')->post('/admin/lease-documents/{leaseDocumentId}/restore', function (string $leaseDocumentId) {
+    app(\App\Services\Lease\LeaseDocumentService::class)->restore($leaseDocumentId, auth()->id());
+    return back();
+})->name('admin.lease-documents.restore');
+
 // Admin lease-document soft-delete
 Route::middleware('auth:web')->post('/admin/lease-documents/{leaseDocumentId}/delete', function (string $leaseDocumentId) {
     app(\App\Services\Lease\LeaseDocumentService::class)->remove($leaseDocumentId, auth()->id());
