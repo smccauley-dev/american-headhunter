@@ -19,6 +19,7 @@ class EsignatureRequest extends BaseModel
         'status',
         'subject',
         'message',
+        'template_document_id',
         'signed_document_id',
         'requested_at',
         'completed_at',

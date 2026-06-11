@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Member;
 
+use App\Enums\LeaseDocumentTag;
 use App\Http\Controllers\Controller;
 use App\Models\Lease\Lease;
 use App\Services\Lease\EsignatureService;
+use App\Services\Lease\LeaseDocumentService;
 use App\Services\Property\PropertyService;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -49,14 +51,20 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService): Response
     {
         $userId = session('auth.user_id');
 
+        // Both lessees (hunters) and lessors (landowners) may view their lease
         $leaseRecord = Lease::where('id', $lease)
-            ->where('lessee_user_id', $userId)
+            ->where(function ($q) use ($userId) {
+                $q->where('lessee_user_id', $userId)
+                  ->orWhere('lessor_user_id', $userId);
+            })
             ->whereNull('deleted_at')
             ->firstOrFail();
+
+        $isLessor = $leaseRecord->lessor_user_id === $userId;
 
         $property = rescue(fn () => $propertyService->find($leaseRecord->property_id), null);
 
@@ -93,6 +101,17 @@ class MemberController extends Controller
             ? route('member.leases.sign', $lease)
             : null;
 
+        $leaseDocuments = $leaseDocumentService->getForLease($lease)->map(fn ($doc) => [
+            'id'               => $doc->id,
+            'tag'              => $doc->tag->value,
+            'tag_label'        => $doc->tag->label(),
+            'tag_badge_style'  => $doc->tag->badgeStyle(),
+            'original_filename' => $doc->original_filename,
+            'size_bytes'       => $doc->size_bytes,
+            'created_at'       => $doc->created_at?->format('M j, Y'),
+            'download_url'     => route('member.leases.documents.download', [$lease, $doc->id]),
+        ])->values()->all();
+
         return Inertia::render('Member/Lease', [
             'lease' => [
                 'id'          => $leaseRecord->id,
@@ -110,9 +129,13 @@ class MemberController extends Controller
                 'acres'  => $property->huntable_acres ?? $property->total_acres,
                 'rules'  => collect($property->rules ?? [])->map(fn ($r) => $r->rule_text)->values()->all(),
             ] : null,
-            'access_info' => $accessInfo,
-            'signers'     => $signers,
-            'sign_url'    => $signUrl,
+            'access_info'    => $accessInfo,
+            'signers'        => $signers,
+            'sign_url'       => $signUrl,
+            'is_lessor'      => $isLessor,
+            'documents'      => $leaseDocuments,
+            'document_tags'  => LeaseDocumentTag::options(),
+            'upload_url'     => route('member.leases.documents.upload', $lease),
         ]);
     }
 }

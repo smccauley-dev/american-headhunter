@@ -67,24 +67,26 @@ class EsignatureService extends BaseService
             }
         }
 
-        return $this->createInPlatformRequest($lease, $requestedByUserId, $lessorInfo, $lesseeInfo);
+        return $this->createInPlatformRequest($lease, $requestedByUserId, $lessorInfo, $lesseeInfo, $customPdf);
     }
 
     private function createInPlatformRequest(
-        Lease  $lease,
-        string $requestedByUserId,
-        array  $lessorInfo,
-        array  $lesseeInfo,
+        Lease     $lease,
+        string    $requestedByUserId,
+        array     $lessorInfo,
+        array     $lesseeInfo,
+        ?Document $customPdf = null,
     ): EsignatureRequest {
         $year = $lease->start_date?->format('Y') ?? now()->year;
 
         $request = EsignatureRequest::create([
-            'lease_id'          => $lease->id,
-            'requester_user_id' => $requestedByUserId,
-            'provider'          => 'in_platform',
-            'status'            => 'out_for_signature',
-            'subject'           => "Hunting Lease Agreement — {$year}",
-            'requested_at'      => now(),
+            'lease_id'             => $lease->id,
+            'requester_user_id'    => $requestedByUserId,
+            'provider'             => 'in_platform',
+            'status'               => 'out_for_signature',
+            'subject'              => "Hunting Lease Agreement — {$year}",
+            'template_document_id' => $customPdf?->id,
+            'requested_at'         => now(),
         ]);
 
         EsignatureSigner::create([
@@ -143,13 +145,14 @@ class EsignatureService extends BaseService
         }
 
         $request = EsignatureRequest::create([
-            'lease_id'                    => $lease->id,
-            'requester_user_id'           => $requestedByUserId,
-            'provider'                    => 'dropbox_sign',
+            'lease_id'                      => $lease->id,
+            'requester_user_id'             => $requestedByUserId,
+            'provider'                      => 'dropbox_sign',
             'provider_signature_request_id' => $envelope['signature_request_id'],
-            'status'                      => 'out_for_signature',
-            'subject'                     => $subject,
-            'requested_at'                => now(),
+            'status'                        => 'out_for_signature',
+            'subject'                       => $subject,
+            'template_document_id'          => $customPdf->id,
+            'requested_at'                  => now(),
         ]);
 
         EsignatureSigner::create([

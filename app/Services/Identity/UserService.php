@@ -24,9 +24,17 @@ class UserService extends BaseService
 
     public function findById(string $id): ?User
     {
-        return $this->cache("user:{$id}", function () use ($id) {
+        $result = $this->cache("user:{$id}", function () use ($id) {
             return User::with('profile')->find($id);
         }, self::CACHE_TTL_MINUTES);
+
+        if ($result !== null && ! ($result instanceof User)) {
+            // Stale serialized object from a previous deploy — bust and re-fetch
+            $this->invalidate("user:{$id}");
+            return User::with('profile')->find($id);
+        }
+
+        return $result;
     }
 
     public function findByEmail(string $email): ?User
