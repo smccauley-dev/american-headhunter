@@ -6,7 +6,10 @@ use App\Models\Property\Property;
 use App\Models\Property\PropertyListing;
 use App\Models\Property\PropertyManager;
 use App\Models\Property\PropertyAccessInfo;
+use App\Models\Property\PropertyPhoto;
 use App\Services\BaseService;
+use App\Services\Documents\DocumentService;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -20,6 +23,7 @@ class PropertyService extends BaseService
 
     public function __construct(
         private readonly GeospatialService $geospatialService,
+        private readonly DocumentService   $documentService,
     ) {}
 
     // ─── Reads ───────────────────────────────────────────────────────────────────
@@ -351,6 +355,141 @@ class PropertyService extends BaseService
     /**
      * Append a view event. Fire-and-forget — use only from a queued job.
      */
+    // ─── Photos ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Store an uploaded image via DocumentService and attach it to the
+     * property. The first photo on a property automatically becomes primary.
+     */
+    public function addPhoto(
+        string $propertyId,
+        UploadedFile $file,
+        ?string $caption = null,
+        array $tags = [],
+    ): PropertyPhoto {
+        $property = Property::findOrFail($propertyId);
+
+        $document = $this->documentService->storeUploadedFile(
+            $file,
+            $property->owner_user_id,
+            'photo',
+        );
+
+        $isFirst  = ! PropertyPhoto::where('property_id', $propertyId)->whereNull('deleted_at')->exists();
+        $nextSort = (int) PropertyPhoto::where('property_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->max('sort_order') + 1;
+
+        $photo = PropertyPhoto::create([
+            'property_id' => $propertyId,
+            'document_id' => $document->id,
+            'sort_order'  => $isFirst ? 0 : $nextSort,
+            'caption'     => $caption,
+            'tags'        => array_values($tags),
+            'is_primary'  => $isFirst,
+        ]);
+
+        if ($isFirst) {
+            $property->update(['primary_photo_document_id' => $document->id]);
+        }
+
+        return $photo;
+    }
+
+    public function updatePhotoDetails(string $photoId, ?string $caption, array $tags): void
+    {
+        PropertyPhoto::whereNull('deleted_at')->findOrFail($photoId)->update([
+            'caption' => $caption !== '' ? $caption : null,
+            'tags'    => array_values($tags),
+        ]);
+    }
+
+    /** Make this photo the property's primary (cover) photo. */
+    public function setPrimaryPhoto(string $photoId): void
+    {
+        $photo = PropertyPhoto::whereNull('deleted_at')->findOrFail($photoId);
+
+        DB::connection('property')->transaction(function () use ($photo): void {
+            PropertyPhoto::where('property_id', $photo->property_id)
+                ->where('id', '!=', $photo->id)
+                ->update(['is_primary' => false]);
+
+            $photo->update(['is_primary' => true]);
+
+            Property::where('id', $photo->property_id)
+                ->update(['primary_photo_document_id' => $photo->document_id]);
+        });
+    }
+
+    /**
+     * Soft-delete a photo (the storage object is retained 30 days, then
+     * purged). If it was the primary photo, the next photo is promoted.
+     */
+    public function deletePhoto(string $photoId): void
+    {
+        $photo = PropertyPhoto::whereNull('deleted_at')->findOrFail($photoId);
+
+        $photo->update(['deleted_at' => now()]);
+
+        // Mark the underlying document deleted so the purge job picks it up
+        try {
+            $this->documentService->softDelete($photo->document_id);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        if ($photo->is_primary) {
+            $next = PropertyPhoto::where('property_id', $photo->property_id)
+                ->whereNull('deleted_at')
+                ->orderBy('sort_order')
+                ->orderBy('created_at')
+                ->first();
+
+            $next?->update(['is_primary' => true]);
+
+            Property::where('id', $photo->property_id)
+                ->update(['primary_photo_document_id' => $next?->document_id]);
+        }
+    }
+
+    /**
+     * Move a photo one position up or down in the gallery. Re-sequences all
+     * sort_order values so legacy duplicates (e.g. all 0) can't block moves.
+     */
+    public function movePhoto(string $photoId, string $direction): void
+    {
+        if (! in_array($direction, ['up', 'down'], true)) {
+            throw new \InvalidArgumentException("Invalid direction '{$direction}'. Must be 'up' or 'down'.");
+        }
+
+        $photo = PropertyPhoto::whereNull('deleted_at')->findOrFail($photoId);
+
+        $photos = PropertyPhoto::where('property_id', $photo->property_id)
+            ->whereNull('deleted_at')
+            ->orderBy('sort_order')
+            ->orderBy('created_at')
+            ->get()
+            ->values();
+
+        $index = $photos->search(fn (PropertyPhoto $p) => $p->id === $photo->id);
+        $swap  = $direction === 'up' ? $index - 1 : $index + 1;
+
+        if ($index === false || $swap < 0 || $swap >= $photos->count()) {
+            return;
+        }
+
+        $ordered = $photos->all();
+        [$ordered[$index], $ordered[$swap]] = [$ordered[$swap], $ordered[$index]];
+
+        DB::connection('property')->transaction(function () use ($ordered): void {
+            foreach ($ordered as $i => $p) {
+                if ($p->sort_order !== $i) {
+                    $p->update(['sort_order' => $i]);
+                }
+            }
+        });
+    }
+
     public function recordView(string $listingId, ?string $userId, ?string $ipAddress): void
     {
         DB::connection('property')->table('property_views')->insert([

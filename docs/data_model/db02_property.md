@@ -123,6 +123,7 @@ CREATE TABLE property_photos (
     document_id UUID        NOT NULL,  -- References DB 11 (Documents) documents.id
     sort_order  SMALLINT    NOT NULL DEFAULT 0,
     caption     VARCHAR(255) NULL,
+    tags        JSONB       NOT NULL DEFAULT '[]'::jsonb,
     is_primary  BOOLEAN     NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at  TIMESTAMPTZ NULL
@@ -130,10 +131,12 @@ CREATE TABLE property_photos (
 
 CREATE INDEX idx_property_photos_property_id ON property_photos (property_id);
 CREATE INDEX idx_property_photos_sort_order  ON property_photos (property_id, sort_order);
+CREATE INDEX idx_property_photos_tags_gin    ON property_photos USING GIN (tags);
 ```
 
 **Notes:**
 - At most one row should have `is_primary = true` per property. Enforced by `PropertyService` — not a DB constraint, to allow for easy reordering.
+- `tags` is a JSON array of free-form strings (suggested values defined in `PropertyFormV2::photoTagSuggestions()`), used for gallery filtering.
 - `document_id` resolves to a URL via `DocumentService::getUrl($documentId)`.
 - Photos with `deleted_at IS NOT NULL` are soft-deleted; the underlying file in object storage is retained for 30 days then purged by `PurgeOrphanedDocumentsJob`.
 

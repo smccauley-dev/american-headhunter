@@ -70,6 +70,17 @@ Route::middleware('auth:web')->get('/admin/documents/{documentId}/download', fun
     );
 })->name('admin.documents.download');
 
+// Admin inline document view (images in admin galleries) — protected by Filament web guard
+Route::middleware('auth:web')->get('/admin/documents/{documentId}/view', function (string $documentId) {
+    $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
+    $disk = config('filesystems.defaults.documents', 'local');
+    return \Illuminate\Support\Facades\Storage::disk($disk)->response(
+        $doc->storage_key,
+        $doc->original_filename,
+        ['Content-Type' => $doc->mime_type ?? 'application/octet-stream'],
+    );
+})->name('admin.documents.view');
+
 // Member portal
 Route::middleware('auth.session')->prefix('member')->name('member.')->group(function () {
     Route::get('/', [MemberController::class, 'dashboard'])->name('dashboard');

@@ -2,22 +2,30 @@
 
 namespace App\Filament\Admin\Resources\Properties\Schemas;
 
+use App\Filament\Admin\Resources\Properties\PropertyResource;
 use App\Models\Property\PropertyAmenity;
 use App\Models\Property\PropertyManager;
+use App\Models\Property\PropertyPhoto;
+use App\Services\Property\PropertyService;
+use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\Alignment;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 
 class PropertyFormV2
@@ -39,6 +47,112 @@ class PropertyFormV2
         'coyote'         => 'Coyote',
         'other'          => 'Other',
     ];
+
+    /** Suggested photo tags — free-form entry is also allowed. */
+    public static function photoTagSuggestions(): array
+    {
+        return [
+            'aerial', 'habitat', 'food plot', 'stand', 'blind', 'trail camera',
+            'water', 'creek', 'pond', 'access', 'road', 'gate', 'cabin',
+            'lodging', 'harvest', 'wildlife', 'boundary', 'terrain',
+        ];
+    }
+
+    private static function uploadPhotosAction(): Action
+    {
+        return Action::make('upload_photos')
+            ->label('Upload Photos')
+            ->icon('heroicon-o-arrow-up-tray')
+            ->color('gray')
+            ->modalHeading('Upload Property Photos')
+            ->form([
+                FileUpload::make('photos')
+                    ->label('Photos')
+                    ->image()
+                    ->multiple()
+                    ->disk('local')
+                    ->directory('pending-property-photos')
+                    ->maxSize(10240)
+                    ->maxFiles(20)
+                    ->required()
+                    ->helperText('JPG, PNG, or WebP — max 10 MB each, up to 20 per batch.'),
+                TextInput::make('caption')
+                    ->label('Caption')
+                    ->maxLength(255)
+                    ->helperText('Optional — applied to every photo in this batch. Edit photos individually afterwards.'),
+                TagsInput::make('tags')
+                    ->label('Tags')
+                    ->suggestions(self::photoTagSuggestions())
+                    ->helperText('Optional — applied to every photo in this batch. Press Enter after each tag.'),
+            ])
+            ->action(function (array $data, $record, $livewire): void {
+                $uploaded = 0;
+                foreach ((array) ($data['photos'] ?? []) as $path) {
+                    try {
+                        $file = new \Illuminate\Http\UploadedFile(
+                            Storage::disk('local')->path($path),
+                            basename($path),
+                            Storage::disk('local')->mimeType($path) ?: 'image/jpeg',
+                            null,
+                            true,
+                        );
+                        app(PropertyService::class)->addPhoto(
+                            $record->id,
+                            $file,
+                            $data['caption'] ?? null,
+                            $data['tags'] ?? [],
+                        );
+                        $uploaded++;
+                    } catch (\Throwable $e) {
+                        report($e);
+                    } finally {
+                        Storage::disk('local')->delete($path);
+                    }
+                }
+
+                if ($uploaded > 0) {
+                    Notification::make()
+                        ->title($uploaded === 1 ? 'Photo uploaded' : "{$uploaded} photos uploaded")
+                        ->success()
+                        ->send();
+                    $livewire->redirect(PropertyResource::getUrl('edit', ['record' => $record]));
+                } else {
+                    Notification::make()->title('Upload failed')->danger()->send();
+                }
+            });
+    }
+
+    private static function renderPhotosHtml($record): HtmlString
+    {
+        if (! $record?->id) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;">Save the property first to manage photos.</p>'
+            );
+        }
+
+        try {
+            $photos = PropertyPhoto::where('property_id', $record->id)
+                ->whereNull('deleted_at')
+                ->orderBy('sort_order')
+                ->orderBy('created_at')
+                ->get();
+        } catch (\Throwable $e) {
+            report($e);
+            return new HtmlString('<p style="color:#6b7280;font-size:0.875rem;">Unavailable.</p>');
+        }
+
+        if ($photos->isEmpty()) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;padding:0.75rem 0;">'
+                . 'No photos yet. Use <strong>Upload Photos</strong> in the section header to add some.'
+                . '</p>'
+            );
+        }
+
+        return new HtmlString(view('filament.admin.properties.photo-grid', [
+            'photos' => $photos,
+        ])->render());
+    }
 
     private static function renderManagersHtml($record): HtmlString
     {
@@ -296,6 +410,21 @@ class PropertyFormV2
 
                         Tab::make('Amenities')
                             ->schema(static::amenitiesTabSchema()),
+
+                        Tab::make('Photos')
+                            ->visible(fn ($record) => $record !== null)
+                            ->schema([
+                                Section::make('Photo Gallery')
+                                    ->description('Photos shown on the public listing. The primary photo is the cover image; use the arrows to set display order.')
+                                    ->headerActions([self::uploadPhotosAction()])
+                                    ->schema([
+                                        Placeholder::make('property_photos_display')
+                                            ->hiddenLabel()
+                                            ->content(function (Placeholder $component) {
+                                                return static::renderPhotosHtml($component->getRecord());
+                                            }),
+                                    ]),
+                            ]),
 
                         Tab::make('Listings')
                             ->schema([

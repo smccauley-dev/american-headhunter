@@ -7,10 +7,14 @@ use App\Filament\Admin\Resources\Properties\PropertyResource;
 use App\Filament\Admin\Resources\Properties\Schemas\PropertyFormV2;
 use App\Models\Property\PropertyAmenity;
 use App\Models\Property\PropertyManager;
+use App\Models\Property\PropertyPhoto;
 use App\Services\Identity\UserService;
+use App\Services\Property\PropertyService;
 use App\Support\AdminAuth;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TagsInput;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
@@ -121,6 +125,78 @@ class EditPropertyV2 extends EditRecord
                         ->send();
                 }),
         ];
+    }
+
+    // ── Photo gallery actions (mounted from the photo-grid partial) ────────────
+
+    public function editPropertyPhotoAction(): Action
+    {
+        return Action::make('editPropertyPhoto')
+            ->modalHeading('Edit Photo Details')
+            ->fillForm(function (array $arguments): array {
+                $photo = PropertyPhoto::whereNull('deleted_at')->find($arguments['photoId'] ?? null);
+                return [
+                    'caption' => $photo?->caption ?? '',
+                    'tags'    => $photo?->tags ?? [],
+                ];
+            })
+            ->form([
+                Textarea::make('caption')
+                    ->label('Caption / Description')
+                    ->rows(3)
+                    ->maxLength(255),
+                TagsInput::make('tags')
+                    ->label('Tags')
+                    ->suggestions(PropertyFormV2::photoTagSuggestions())
+                    ->helperText('Press Enter after each tag. Used for gallery filtering.'),
+            ])
+            ->action(function (array $arguments, array $data): void {
+                abort_unless(AdminAuth::canManageProperties(), 403);
+                app(PropertyService::class)->updatePhotoDetails(
+                    $arguments['photoId'],
+                    $data['caption'] ?? null,
+                    $data['tags'] ?? [],
+                );
+                Notification::make()->title('Photo updated')->success()->send();
+                $this->redirect(PropertyResource::getUrl('edit', ['record' => $this->getRecord()]));
+            });
+    }
+
+    public function makePrimaryPropertyPhotoAction(): Action
+    {
+        return Action::make('makePrimaryPropertyPhoto')
+            ->action(function (array $arguments): void {
+                abort_unless(AdminAuth::canManageProperties(), 403);
+                app(PropertyService::class)->setPrimaryPhoto($arguments['photoId']);
+                Notification::make()->title('Primary photo updated')->success()->send();
+                $this->redirect(PropertyResource::getUrl('edit', ['record' => $this->getRecord()]));
+            });
+    }
+
+    public function movePropertyPhotoAction(): Action
+    {
+        return Action::make('movePropertyPhoto')
+            ->action(function (array $arguments): void {
+                abort_unless(AdminAuth::canManageProperties(), 403);
+                app(PropertyService::class)->movePhoto($arguments['photoId'], $arguments['direction'] ?? 'up');
+                $this->redirect(PropertyResource::getUrl('edit', ['record' => $this->getRecord()]));
+            });
+    }
+
+    public function deletePropertyPhotoAction(): Action
+    {
+        return Action::make('deletePropertyPhoto')
+            ->requiresConfirmation()
+            ->modalHeading('Delete photo?')
+            ->modalDescription('The photo is removed from the gallery immediately. The file is retained for 30 days before being permanently purged.')
+            ->modalSubmitActionLabel('Delete')
+            ->color('danger')
+            ->action(function (array $arguments): void {
+                abort_unless(AdminAuth::canManageProperties(), 403);
+                app(PropertyService::class)->deletePhoto($arguments['photoId']);
+                Notification::make()->title('Photo deleted')->success()->send();
+                $this->redirect(PropertyResource::getUrl('edit', ['record' => $this->getRecord()]));
+            });
     }
 
     public function revokePropertyManager(string $managerId): void

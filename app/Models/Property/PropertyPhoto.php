@@ -14,6 +14,7 @@ class PropertyPhoto extends BaseModel
         'document_id',
         'sort_order',
         'caption',
+        'tags',
         'is_primary',
     ];
 
@@ -22,6 +23,7 @@ class PropertyPhoto extends BaseModel
         return array_merge(parent::casts(), [
             'is_primary' => 'boolean',
             'sort_order' => 'integer',
+            'tags'       => 'array',
             'deleted_at' => 'datetime',
         ]);
     }
