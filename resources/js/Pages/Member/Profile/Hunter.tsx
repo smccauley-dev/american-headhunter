@@ -1078,7 +1078,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               <div style={fieldCard}>
                 <DashedInset />
                 {/* Tab bar */}
-                <div style={{ display: 'flex', borderBottom: '1px solid #e5ddd0', margin: '0 16px', padding: '0 12px' }}>
+                <div style={{ display: 'flex', borderBottom: '1px solid #e5ddd0', margin: '14px 16px 0', padding: '0 12px' }}>
                   {(['about', 'contact', 'social', 'photos', 'gear', 'activity', 'security'] as const).map(t => {
                     const visKey = t as 'about' | 'contact' | 'social' | 'gear' | 'photos'
                     const hasVis = t === 'about' || t === 'contact' || t === 'social' || t === 'gear' || t === 'photos'
@@ -1119,7 +1119,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 </div>
 
                 {/* Tab content */}
-                <div style={{ padding: '28px' }}>
+                <div style={{ padding: '18px 28px 28px' }}>
                   {tab === 'about' ? (
                     <AboutTab
                       user={user}
@@ -1295,7 +1295,7 @@ function TabPrivacyHeader({ value, editing, onChange }: {
   onChange: (val: 'public' | 'private') => void
 }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '22px' }}>
+    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
       <PrivacyToggle value={value} editing={editing} onChange={onChange} />
     </div>
   )
