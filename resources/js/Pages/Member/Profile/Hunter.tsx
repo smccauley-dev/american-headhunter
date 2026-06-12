@@ -1004,8 +1004,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                     <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: 500, color: '#0A1512' }}>
                       AH-{user.id.slice(0, 8).toUpperCase()}
                       {profile.state_code && (
-                        <span style={{ color: '#a89874', marginLeft: '12px', fontWeight: 400 }}>
-                          {STATE_NAMES[profile.state_code] ?? profile.state_code}
+                        <span style={{ color: '#a89874', marginLeft: '8px', fontWeight: 400 }}>
+                          · {STATE_NAMES[profile.state_code] ?? profile.state_code}
                         </span>
                       )}
                     </div>
