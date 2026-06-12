@@ -708,7 +708,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
   return (
     <>
       <Head title="My Profile — American Headhunter" />
-      <div style={{ minHeight: '100vh', background: '#EDE5D0' }}>
+      <div className="topo-bg" style={{ minHeight: '100vh', background: '#EDE5D0' }}>
 
         {/* ── Topbar ─────────────────────────────────────────────────────── */}
         <div style={{ background: '#0A1512', borderBottom: '1px solid #b8934a' }}>
@@ -972,6 +972,16 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               <div style={{ ...fieldCard, padding: '24px 28px' }}>
                 <DashedInset />
 
+                {/* Registration marks — surveyor's corner marks between dashed line and content */}
+                {([
+                  { top: 13, left: 13, borderTop: '1px solid #a89874', borderLeft: '1px solid #a89874' },
+                  { top: 13, right: 13, borderTop: '1px solid #a89874', borderRight: '1px solid #a89874' },
+                  { bottom: 13, left: 13, borderBottom: '1px solid #a89874', borderLeft: '1px solid #a89874' },
+                  { bottom: 13, right: 13, borderBottom: '1px solid #a89874', borderRight: '1px solid #a89874' },
+                ] as React.CSSProperties[]).map((pos, i) => (
+                  <div key={i} style={{ position: 'absolute', width: 10, height: 10, pointerEvents: 'none', zIndex: 4, ...pos }} />
+                ))}
+
                 {/* Field record strip — label + ID left, rotated stamp right */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '14px', borderBottom: '1px solid #d4c9b0', marginBottom: '18px' }}>
                   <div>
@@ -980,6 +990,11 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                     </div>
                     <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: 500, color: '#0A1512' }}>
                       AH-{user.id.slice(0, 8).toUpperCase()}
+                      {profile.state_code && (
+                        <span style={{ color: '#a89874', marginLeft: '12px', fontWeight: 400 }}>
+                          {profile.state_code}{profile.zip_code ? ` · ${profile.zip_code}` : ''}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '11px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: '#C84C21', border: '1.5px solid #C84C21', padding: '3px 10px', transform: 'rotate(-6deg)', marginRight: '6px' }}>
@@ -997,25 +1012,20 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                         const branch = (editing ? form.veteran_branch : profile.veteran_branch) ?? ''
                         const emblem = branch ? BRANCH_EMBLEMS[branch] : null
                         return (
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#b8934a', border: '1px solid #b8934a', padding: '3px 8px', flexShrink: 0 }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#b8934a', border: '1.5px solid #b8934a', padding: '3px 10px', flexShrink: 0, transform: 'rotate(-3deg)' }}>
                             {emblem}
-                            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase' }}>
+                            <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '11px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase' }}>
                               Veteran
                             </span>
                           </div>
                         )
                       })()}
                       {(editing ? form.is_first_responder : user.is_first_responder) && (
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: '#4a7c59', border: '1px solid #4a7c59', padding: '3px 8px', flexShrink: 0 }}>
+                        <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '11px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: '#4a7c59', border: '1.5px solid #4a7c59', padding: '3px 10px', flexShrink: 0, transform: 'rotate(2deg)', display: 'inline-block' }}>
                           First Responder
                         </span>
                       )}
                     </div>
-                    {profile.state_code && (
-                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#a89874', letterSpacing: '.06em' }}>
-                        {profile.state_code}{profile.zip_code ? ` · ${profile.zip_code}` : ''}
-                      </div>
-                    )}
                   </div>
                 </div>
 
