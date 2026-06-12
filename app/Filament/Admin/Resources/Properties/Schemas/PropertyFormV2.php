@@ -2,7 +2,6 @@
 
 namespace App\Filament\Admin\Resources\Properties\Schemas;
 
-use App\Filament\Admin\Resources\Properties\PropertyResource;
 use App\Models\Property\PropertyAmenity;
 use App\Models\Property\PropertyManager;
 use App\Models\Property\PropertyPhoto;
@@ -85,7 +84,7 @@ class PropertyFormV2
                     ->suggestions(self::photoTagSuggestions())
                     ->helperText('Optional — applied to every photo in this batch. Press Enter after each tag.'),
             ])
-            ->action(function (array $data, $record, $livewire): void {
+            ->action(function (array $data, $record): void {
                 $uploaded = 0;
                 foreach ((array) ($data['photos'] ?? []) as $path) {
                     try {
@@ -115,7 +114,6 @@ class PropertyFormV2
                         ->title($uploaded === 1 ? 'Photo uploaded' : "{$uploaded} photos uploaded")
                         ->success()
                         ->send();
-                    $livewire->redirect(PropertyResource::getUrl('edit', ['record' => $record]));
                 } else {
                     Notification::make()->title('Upload failed')->danger()->send();
                 }
@@ -293,6 +291,7 @@ class PropertyFormV2
         return $schema
             ->components([
                 Tabs::make()
+                    ->persistTabInQueryString()
                     ->columnSpanFull()
                     ->tabs([
 

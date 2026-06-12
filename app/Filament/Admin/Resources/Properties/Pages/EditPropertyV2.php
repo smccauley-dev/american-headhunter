@@ -203,7 +203,6 @@ class EditPropertyV2 extends EditRecord
                     ->title($madePrimary ? 'Photo updated — set as primary' : 'Photo updated')
                     ->success()
                     ->send();
-                $this->redirect(PropertyResource::getUrl('edit', ['record' => $this->getRecord()]));
             });
     }
 
@@ -213,7 +212,6 @@ class EditPropertyV2 extends EditRecord
             ->action(function (array $arguments): void {
                 abort_unless(AdminAuth::canManageProperties(), 403);
                 app(PropertyService::class)->movePhoto($arguments['photoId'], $arguments['direction'] ?? 'up');
-                $this->redirect(PropertyResource::getUrl('edit', ['record' => $this->getRecord()]));
             });
     }
 
@@ -229,7 +227,6 @@ class EditPropertyV2 extends EditRecord
                 abort_unless(AdminAuth::canManageProperties(), 403);
                 app(PropertyService::class)->deletePhoto($arguments['photoId']);
                 Notification::make()->title('Photo deleted')->success()->send();
-                $this->redirect(PropertyResource::getUrl('edit', ['record' => $this->getRecord()]));
             });
     }
 
