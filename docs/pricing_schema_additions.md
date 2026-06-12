@@ -470,4 +470,4 @@ Plus initial promotional periods:
 - Landowner Honeymoon (permanent, auto-apply on first listing)
 - Veteran Program (permanent, triggered on verification)
 
-The seeders live in `database/seeders/platform/MembershipPlanSeeder.php` and `PromotionalPeriodSeeder.php`.
+The seeders live in `database/seeders/Platform/MembershipPlanSeeder.php` and `PromotionalPeriodSeeder.php`.
