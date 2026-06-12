@@ -18,6 +18,7 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 
 class NavigationSettings extends Page implements HasForms
 {
@@ -77,6 +78,19 @@ class NavigationSettings extends Page implements HasForms
             ->components([
                 Section::make('Main Navigation Links')
                     ->description('Add, remove, reorder, or disable links in the main nav bar. Disabled items are hidden without being deleted.')
+                    ->headerActions([
+                        Action::make('add_nav_item')
+                            ->label('Add Nav Item')
+                            ->icon('heroicon-o-plus')
+                            ->color('gray')
+                            ->action(function (): void {
+                                $this->data['nav_links'][(string) Str::uuid()] = [
+                                    'label'   => '',
+                                    'href'    => '',
+                                    'enabled' => true,
+                                ];
+                            }),
+                    ])
                     ->schema([
                         Repeater::make('nav_links')
                             ->label('')
@@ -99,7 +113,7 @@ class NavigationSettings extends Page implements HasForms
                                     ->inline(false),
                             ])
                             ->columns(3)
-                            ->addActionLabel('Add Nav Item')
+                            ->addable(false)
                             ->reorderable()
                             ->reorderableWithButtons()
                             ->collapsible()
