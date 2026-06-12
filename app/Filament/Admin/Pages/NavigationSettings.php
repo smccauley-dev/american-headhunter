@@ -67,6 +67,7 @@ class NavigationSettings extends Page implements HasForms
             'cta_href'      => $t->getSetting('nav.cta_href',     '/get-started?type=landowner'),
             'signin_label'  => $t->getSetting('nav.signin_label', 'Sign In'),
             'signin_href'   => $t->getSetting('nav.signin_href',  '/login'),
+            'login_redirect' => $t->getSetting('nav.login_redirect', '/member/profile'),
         ]);
     }
 
@@ -136,6 +137,19 @@ class NavigationSettings extends Page implements HasForms
                             ->regex('/^(\/|https?:\/\/).+/')
                             ->validationMessages(['regex' => 'Must be a relative path starting with / or a full https:// URL.']),
                     ]),
+
+                Section::make('Post-Login Redirect')
+                    ->description('Where users land after signing in. If they were heading to a protected page, they return there instead.')
+                    ->columns(2)
+                    ->schema([
+                        TextInput::make('login_redirect')
+                            ->label('Redirect Path')
+                            ->required()
+                            ->maxLength(500)
+                            ->placeholder('/member/profile')
+                            ->regex('/^\/.+/')
+                            ->validationMessages(['regex' => 'Must be a relative path starting with /.']),
+                    ]),
             ])
             ->statePath('data');
     }
@@ -150,6 +164,7 @@ class NavigationSettings extends Page implements HasForms
         $t->setSetting('nav.cta_href',     $data['cta_href']);
         $t->setSetting('nav.signin_label', $data['signin_label']);
         $t->setSetting('nav.signin_href',  $data['signin_href']);
+        $t->setSetting('nav.login_redirect', $data['login_redirect']);
 
         app(AuditService::class)->log(
             eventType:     'update',
@@ -160,7 +175,7 @@ class NavigationSettings extends Page implements HasForms
             ipAddress:     request()->ip(),
             userAgent:     request()->userAgent(),
             actionSummary: 'Navigation settings updated via admin CMS',
-            changedFields: ['nav.links', 'nav.cta_label', 'nav.cta_href', 'nav.signin_label', 'nav.signin_href'],
+            changedFields: ['nav.links', 'nav.cta_label', 'nav.cta_href', 'nav.signin_label', 'nav.signin_href', 'nav.login_redirect'],
         );
 
         Notification::make()

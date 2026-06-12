@@ -83,6 +83,8 @@ class MfaController extends Controller
             ipAddress:     $request->ip(),
         );
 
-        return redirect()->intended('/member');
+        return redirect()->intended(
+            app(\App\Services\Platform\TenantService::class)->getSetting('nav.login_redirect', '/member/profile')
+        );
     }
 }
