@@ -23,6 +23,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Schema;
 
 class EditPropertyV2 extends EditRecord
@@ -161,20 +162,22 @@ class EditPropertyV2 extends EditRecord
                         ->label('Tags')
                         ->suggestions(PropertyFormV2::photoTagSuggestions())
                         ->helperText('Press Enter after each tag. Used for gallery filtering.'),
-                    TextInput::make('latitude')
-                        ->label('Latitude')
-                        ->numeric()
-                        ->minValue(-90)
-                        ->maxValue(90)
-                        ->placeholder('30.267153')
-                        ->helperText('Where the photo was taken (WGS84). Auto-filled from the photo\'s EXIF GPS data when available.'),
-                    TextInput::make('longitude')
-                        ->label('Longitude')
-                        ->numeric()
-                        ->minValue(-180)
-                        ->maxValue(180)
-                        ->placeholder('-97.743057')
-                        ->helperText('Negative values are West.'),
+                    Grid::make(2)->schema([
+                        TextInput::make('latitude')
+                            ->label('Latitude')
+                            ->numeric()
+                            ->minValue(-90)
+                            ->maxValue(90)
+                            ->placeholder('30.267153')
+                            ->helperText('Where the photo was taken (WGS84). Auto-filled from the photo\'s EXIF GPS data when available.'),
+                        TextInput::make('longitude')
+                            ->label('Longitude')
+                            ->numeric()
+                            ->minValue(-180)
+                            ->maxValue(180)
+                            ->placeholder('-97.743057')
+                            ->helperText('Negative values are West.'),
+                    ]),
                     Toggle::make('is_primary')
                         ->label('Primary (cover) photo')
                         ->disabled($isPrimary)
@@ -289,18 +292,20 @@ class EditPropertyV2 extends EditRecord
                         ->label('Description')
                         ->rows(2)
                         ->maxLength(255),
-                    TextInput::make('latitude')
-                        ->label('Latitude')
-                        ->numeric()
-                        ->minValue(-90)
-                        ->maxValue(90)
-                        ->helperText('Map reference point (WGS84). Auto-filled from EXIF GPS when available.'),
-                    TextInput::make('longitude')
-                        ->label('Longitude')
-                        ->numeric()
-                        ->minValue(-180)
-                        ->maxValue(180)
-                        ->helperText('Negative values are West.'),
+                    Grid::make(2)->schema([
+                        TextInput::make('latitude')
+                            ->label('Latitude')
+                            ->numeric()
+                            ->minValue(-90)
+                            ->maxValue(90)
+                            ->helperText('Map reference point (WGS84). Auto-filled from EXIF GPS when available.'),
+                        TextInput::make('longitude')
+                            ->label('Longitude')
+                            ->numeric()
+                            ->minValue(-180)
+                            ->maxValue(180)
+                            ->helperText('Negative values are West.'),
+                    ]),
                     Toggle::make('is_boundary')
                         ->label('Boundary map')
                         ->disabled($isBoundary)
@@ -383,17 +388,19 @@ class EditPropertyV2 extends EditRecord
                 ColorPicker::make('color')
                     ->label('Pin Color')
                     ->helperText('Optional — leave empty to use the type\'s default color.'),
-                TextInput::make('latitude')
-                    ->label('Latitude')
-                    ->numeric()
-                    ->minValue(-90)
-                    ->maxValue(90)
-                    ->helperText('Optional — real-world GPS position of this point.'),
-                TextInput::make('longitude')
-                    ->label('Longitude')
-                    ->numeric()
-                    ->minValue(-180)
-                    ->maxValue(180),
+                Grid::make(2)->schema([
+                    TextInput::make('latitude')
+                        ->label('Latitude')
+                        ->numeric()
+                        ->minValue(-90)
+                        ->maxValue(90)
+                        ->helperText('Optional — real-world GPS position of this point.'),
+                    TextInput::make('longitude')
+                        ->label('Longitude')
+                        ->numeric()
+                        ->minValue(-180)
+                        ->maxValue(180),
+                ]),
                 Textarea::make('notes')
                     ->label('Notes')
                     ->rows(2)
@@ -445,17 +452,19 @@ class EditPropertyV2 extends EditRecord
                 ColorPicker::make('color')
                     ->label('Pin Color')
                     ->helperText('Matches the type\'s default color until you change it.'),
-                TextInput::make('latitude')
-                    ->label('Latitude')
-                    ->numeric()
-                    ->minValue(-90)
-                    ->maxValue(90)
-                    ->helperText('Optional — real-world GPS position of this point.'),
-                TextInput::make('longitude')
-                    ->label('Longitude')
-                    ->numeric()
-                    ->minValue(-180)
-                    ->maxValue(180),
+                Grid::make(2)->schema([
+                    TextInput::make('latitude')
+                        ->label('Latitude')
+                        ->numeric()
+                        ->minValue(-90)
+                        ->maxValue(90)
+                        ->helperText('Optional — real-world GPS position of this point.'),
+                    TextInput::make('longitude')
+                        ->label('Longitude')
+                        ->numeric()
+                        ->minValue(-180)
+                        ->maxValue(180),
+                ]),
                 Textarea::make('notes')
                     ->label('Notes')
                     ->rows(2)
