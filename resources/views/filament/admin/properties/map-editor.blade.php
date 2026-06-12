@@ -85,17 +85,20 @@
         </div>
 
         {{-- Map canvas --}}
-        <div style="position:relative;border:1px solid #0a1512;border-radius:4px;overflow:hidden;background:#f5f1eb;user-select:none;"
-             x-bind:style="addMode ? 'cursor:crosshair;' : ''"
-             x-on:click="canvasClick($event)">
+        <div style="position:relative;border:1px solid #0a1512;border-radius:4px;overflow:hidden;background:#f5f1eb;user-select:none;">
             <img x-ref="mapimg"
                  src="{{ route('admin.documents.view', $selected->document_id) }}"
                  alt="{{ $selected->description ?? 'Property map' }}"
                  draggable="false"
                  style="display:block;width:100%;height:auto;pointer-events:none;">
 
+            {{-- Click-capture overlay, present only while placing a marker --}}
+            <div x-show="addMode" x-cloak
+                 x-on:click="canvasClick($event)"
+                 style="position:absolute;inset:0;cursor:crosshair;z-index:8;"></div>
+
             @if ($selected->is_boundary)
-                <span style="position:absolute;top:10px;left:10px;background:#0a1512;color:#fff !important;border:1px solid #a89874;font-family:monospace;font-size:10px !important;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:3px;line-height:1.4;white-space:nowrap;z-index:10;">Boundary Map</span>
+                    <span style="position:absolute;top:10px;left:10px;background:#0a1512;color:#fff !important;border:1px solid #a89874;font-family:monospace;font-size:10px !important;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:3px;line-height:1.4;white-space:nowrap;z-index:10;">Boundary Map</span>
             @endif
 
             @foreach ($selected->markers as $m)
