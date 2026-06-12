@@ -752,14 +752,15 @@ export default function HunterProfile({ user, profile, photos, activity, securit
 
             {/* ── LEFT SIDEBAR ─────────────────────────────────────────── */}
             <div style={{ ...fieldCard, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <DashedInset />
 
-              {/* Avatar */}
+              {/* Avatar — inset so it sits inside the dashed border */}
               <div
                 onClick={() => editing && avatarInputRef.current?.click()}
                 style={{
                   position: 'relative',
-                  width: '100%',
-                  paddingBottom: '100%',
+                  margin: '16px 16px 0',
+                  aspectRatio: '1 / 1',
                   background: '#0A1512',
                   cursor: editing ? 'pointer' : 'default',
                   overflow: 'hidden',
@@ -844,7 +845,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               </div>
 
               {/* ── Navigation blades ──────────────────────────────────── */}
-              <div style={{ borderTop: '1px solid #e5ddd0', marginBottom: '4px' }}>
+              <div style={{ borderTop: '1px solid #e5ddd0', margin: '0 16px 4px' }}>
                 {NAV_ITEMS.map(item => {
                   const active = item.key === 'profile'
                   return (
@@ -854,7 +855,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        padding: '11px 18px',
+                        padding: '11px 8px',
                         fontFamily: 'JetBrains Mono, monospace',
                         fontSize: '10px',
                         fontWeight: 600,
@@ -911,7 +912,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               </div>
 
               {/* ── Game Pursued ────────────────────────────────────────── */}
-              <div style={{ padding: '0 18px 20px', borderTop: '1px solid #e5ddd0', paddingTop: '14px' }}>
+              <div style={{ padding: '14px 2px 20px', borderTop: '1px solid #e5ddd0', margin: '0 16px' }}>
                 <SideLabel>Game Pursued</SideLabel>
                 {editing ? (
                   <PillToggle options={SPECIES} selected={form.hunting.species} onChange={v => hunting('species', v)} />
@@ -933,7 +934,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 const active = SOCIAL_PLATFORMS.filter(p => profile.social_links?.[p.key])
                 if (!active.length) return null
                 return (
-                  <div style={{ padding: '0 18px 16px', borderTop: '1px solid #e5ddd0', paddingTop: '14px' }}>
+                  <div style={{ padding: '14px 2px 16px', borderTop: '1px solid #e5ddd0', margin: '0 16px' }}>
                     <SideLabel>Social</SideLabel>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                       {active.map(p => (
@@ -954,7 +955,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               })()}
 
               {/* Member since */}
-              <div style={{ padding: '12px 18px', borderTop: '1px solid #e5ddd0', background: '#F3EDD8', marginTop: 'auto' }}>
+              <div style={{ padding: '12px 10px', borderTop: '1px solid #e5ddd0', background: '#F3EDD8', margin: 'auto 16px 16px' }}>
                 <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874', marginBottom: '3px' }}>
                   Member Since
                 </div>
@@ -1052,8 +1053,9 @@ export default function HunterProfile({ user, profile, photos, activity, securit
 
               {/* Tabs + content */}
               <div style={fieldCard}>
+                <DashedInset />
                 {/* Tab bar */}
-                <div style={{ display: 'flex', borderBottom: '1px solid #e5ddd0', padding: '0 28px' }}>
+                <div style={{ display: 'flex', borderBottom: '1px solid #e5ddd0', margin: '0 16px', padding: '0 12px' }}>
                   {(['about', 'contact', 'social', 'photos', 'gear', 'activity', 'security'] as const).map(t => {
                     const visKey = t as 'about' | 'contact' | 'social' | 'gear' | 'photos'
                     const hasVis = t === 'about' || t === 'contact' || t === 'social' || t === 'gear' || t === 'photos'
