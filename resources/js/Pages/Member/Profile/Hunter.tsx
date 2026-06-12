@@ -1005,7 +1005,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                       AH-{user.id.slice(0, 8).toUpperCase()}
                       {profile.state_code && (
                         <span style={{ color: '#a89874', marginLeft: '12px', fontWeight: 400 }}>
-                          {profile.state_code}{profile.zip_code ? ` · ${profile.zip_code}` : ''}
+                          {STATE_NAMES[profile.state_code] ?? profile.state_code}
                         </span>
                       )}
                     </div>
