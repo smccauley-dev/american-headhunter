@@ -17,16 +17,18 @@ class PropertyMapImage extends BaseModel
         'latitude',
         'longitude',
         'is_boundary',
+        'show_coords_publicly',
     ];
 
     protected function casts(): array
     {
         return array_merge(parent::casts(), [
-            'is_boundary' => 'boolean',
-            'sort_order'  => 'integer',
-            'latitude'    => 'float',
-            'longitude'   => 'float',
-            'deleted_at'  => 'datetime',
+            'is_boundary'          => 'boolean',
+            'show_coords_publicly' => 'boolean',
+            'sort_order'           => 'integer',
+            'latitude'             => 'float',
+            'longitude'            => 'float',
+            'deleted_at'           => 'datetime',
         ]);
     }
 

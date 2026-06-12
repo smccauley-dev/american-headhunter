@@ -39,6 +39,7 @@ interface Property {
     title: string;
     slug: string;
     boundary_map_url: string | null;
+    boundary_map_coords: { lat: number; lng: number } | null;
     description: string | null;
     status: string;
     state_code: string;
@@ -410,13 +411,25 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                             Property Boundary
                         </div>
                         {property.boundary_map_url ? (
-                            <div style={{ border: '1px solid var(--ink)', background: 'var(--ink)' }}>
+                            <div style={{ position: 'relative', border: '1px solid var(--ink)', background: 'var(--ink)' }}>
                                 <img
                                     src={property.boundary_map_url}
                                     alt={`${property.title} boundary map`}
                                     loading="lazy"
                                     style={{ display: 'block', width: '100%', height: 'auto' }}
                                 />
+                                {property.boundary_map_coords && (
+                                    <span style={{
+                                        position: 'absolute', bottom: 10, left: 10,
+                                        background: 'rgba(10,21,18,0.8)', color: 'var(--bone)',
+                                        border: '1px solid var(--brass-dim)',
+                                        fontFamily: 'var(--mono)', fontSize: 10,
+                                        letterSpacing: '0.08em', padding: '4px 10px',
+                                        borderRadius: 2, whiteSpace: 'nowrap',
+                                    }}>
+                                        {property.boundary_map_coords.lat.toFixed(6)}, {property.boundary_map_coords.lng.toFixed(6)}
+                                    </span>
+                                )}
                             </div>
                         ) : (
                             <div style={{

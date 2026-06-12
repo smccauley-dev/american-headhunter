@@ -159,6 +159,7 @@ CREATE TABLE property_map_images (
     latitude    NUMERIC(9,6) NULL,
     longitude   NUMERIC(9,6) NULL,
     is_boundary BOOLEAN      NOT NULL DEFAULT false,
+    show_coords_publicly BOOLEAN NOT NULL DEFAULT true,
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     deleted_at  TIMESTAMPTZ  NULL
 );

@@ -70,6 +70,12 @@ class PropertyController extends Controller
                 'boundary_map_url' => $boundaryMap
                     ? route('property-maps.show', $boundaryMap->document_id)
                     : null,
+                'boundary_map_coords' => (
+                    $boundaryMap
+                    && $boundaryMap->show_coords_publicly
+                    && $boundaryMap->latitude !== null
+                    && $boundaryMap->longitude !== null
+                ) ? ['lat' => $boundaryMap->latitude, 'lng' => $boundaryMap->longitude] : null,
                 'title'          => $property->title,
                 'slug'           => $property->slug,
                 'description'    => $property->description,

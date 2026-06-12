@@ -91,6 +91,7 @@ class PropertyMapService extends BaseService
         ?string $description,
         ?float $latitude = null,
         ?float $longitude = null,
+        bool $showCoordsPublicly = true,
     ): void {
         if ($latitude !== null && ($latitude < -90 || $latitude > 90)) {
             throw new \InvalidArgumentException('Latitude must be between -90 and 90.');
@@ -100,9 +101,10 @@ class PropertyMapService extends BaseService
         }
 
         PropertyMapImage::whereNull('deleted_at')->findOrFail($mapImageId)->update([
-            'description' => $description !== '' ? $description : null,
-            'latitude'    => $latitude,
-            'longitude'   => $longitude,
+            'description'          => $description !== '' ? $description : null,
+            'latitude'             => $latitude,
+            'longitude'            => $longitude,
+            'show_coords_publicly' => $showCoordsPublicly,
         ]);
     }
 
