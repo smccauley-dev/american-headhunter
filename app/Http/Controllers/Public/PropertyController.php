@@ -71,11 +71,17 @@ class PropertyController extends Controller
                 'county'         => $property->county,
                 'total_acres'    => $property->total_acres,
                 'huntable_acres' => $property->huntable_acres,
-                'photos'         => $property->photos->map(fn ($p) => [
-                    'id'         => $p->id,
-                    'caption'    => $p->caption,
-                    'sort_order' => $p->sort_order,
-                ])->values(),
+                'photos'         => $property->photos
+                    ->sortBy([['is_primary', 'desc'], ['sort_order', 'asc']])
+                    ->values()
+                    ->map(fn ($p) => [
+                        'id'         => $p->id,
+                        'url'        => route('property-photos.show', $p->document_id),
+                        'caption'    => $p->caption,
+                        'tags'       => $p->tags ?? [],
+                        'is_primary' => (bool) $p->is_primary,
+                        'sort_order' => $p->sort_order,
+                    ])->values(),
                 'species'        => $property->species->map(fn ($s) => [
                     'species_code' => $s->species_code,
                 ])->values(),
