@@ -478,29 +478,37 @@ class PropertyFormV2
                                         TextInput::make('county')
                                             ->required()
                                             ->maxLength(100),
-                                        TextInput::make('center_lat')
-                                            ->label('Latitude')
-                                            ->numeric()
-                                            ->minValue(-90)
-                                            ->maxValue(90)
-                                            ->placeholder('30.267153')
-                                            ->helperText('WGS84 decimal degrees — map pin only.'),
-                                        TextInput::make('center_lng')
-                                            ->label('Longitude')
-                                            ->numeric()
-                                            ->minValue(-180)
-                                            ->maxValue(180)
-                                            ->placeholder('-97.743057')
-                                            ->helperText('Negative values are West.'),
-                                        TextInput::make('total_acres')
-                                            ->label('Total Acres')
-                                            ->required()
-                                            ->numeric()
-                                            ->minValue(1),
-                                        TextInput::make('huntable_acres')
-                                            ->label('Huntable Acres')
-                                            ->numeric()
-                                            ->minValue(0),
+                                        Grid::make(2)
+                                            ->columnSpanFull()
+                                            ->schema([
+                                                TextInput::make('center_lat')
+                                                    ->label('Latitude')
+                                                    ->numeric()
+                                                    ->minValue(-90)
+                                                    ->maxValue(90)
+                                                    ->placeholder('30.267153')
+                                                    ->helperText('WGS84 decimal degrees — map pin only.'),
+                                                TextInput::make('center_lng')
+                                                    ->label('Longitude')
+                                                    ->numeric()
+                                                    ->minValue(-180)
+                                                    ->maxValue(180)
+                                                    ->placeholder('-97.743057')
+                                                    ->helperText('Negative values are West.'),
+                                            ]),
+                                        Grid::make(2)
+                                            ->columnSpanFull()
+                                            ->schema([
+                                                TextInput::make('total_acres')
+                                                    ->label('Total Acres')
+                                                    ->required()
+                                                    ->numeric()
+                                                    ->minValue(1),
+                                                TextInput::make('huntable_acres')
+                                                    ->label('Huntable Acres')
+                                                    ->numeric()
+                                                    ->minValue(0),
+                                            ]),
                                     ]),
                             ]),
 
