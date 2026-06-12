@@ -2,13 +2,12 @@
 
 namespace App\Mail\Auth;
 
+use App\Mail\TemplatedMailable;
 use Illuminate\Bus\Queueable;
-use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class PasswordResetMail extends Mailable
+class PasswordResetMail extends TemplatedMailable
 {
     use Queueable, SerializesModels;
 
@@ -17,12 +16,25 @@ class PasswordResetMail extends Mailable
         public readonly string $resetUrl,
     ) {}
 
-    public function envelope(): Envelope
+    protected function templateKey(): string
     {
-        return new Envelope(subject: 'Reset Your Password — American Headhunter');
+        return 'auth.password_reset';
     }
 
-    public function content(): Content
+    protected function templateVariables(): array
+    {
+        return [
+            'first_name' => $this->firstName !== '' ? $this->firstName : 'there',
+            'reset_url'  => $this->resetUrl,
+        ];
+    }
+
+    protected function fallbackSubject(): string
+    {
+        return 'Reset Your Password — American Headhunter';
+    }
+
+    protected function fallbackContent(): Content
     {
         return new Content(view: 'emails.auth.password-reset');
     }

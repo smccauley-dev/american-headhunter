@@ -3,22 +3,32 @@
 namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Envelope;
 
-class RecoveryCodesEmail extends Mailable
+class RecoveryCodesEmail extends TemplatedMailable
 {
     use Queueable;
 
     public function __construct(public readonly array $codes) {}
 
-    public function envelope(): Envelope
+    protected function templateKey(): string
     {
-        return new Envelope(subject: 'Your new American Headhunter recovery codes');
+        return 'auth.recovery_codes';
     }
 
-    public function content(): Content
+    protected function templateVariables(): array
+    {
+        return [
+            'codes' => $this->codes,
+        ];
+    }
+
+    protected function fallbackSubject(): string
+    {
+        return 'Your new American Headhunter recovery codes';
+    }
+
+    protected function fallbackContent(): Content
     {
         return new Content(text: 'emails.recovery-codes');
     }

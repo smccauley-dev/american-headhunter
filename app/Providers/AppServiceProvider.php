@@ -37,6 +37,14 @@ class AppServiceProvider extends ServiceProvider
     {
         Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
 
+        // DB-managed mail settings override .env when enabled in the admin panel.
+        // Failure (e.g. platform DB unavailable during migrations) keeps .env config.
+        try {
+            $this->app->make(\App\Services\Communications\MailSettingsService::class)->apply();
+        } catch (\Throwable) {
+            // .env mail config stays in effect
+        }
+
         RateLimiter::for('mfa-verify', function (Request $request) {
             return Limit::perMinute(5)->by($request->input('challenge_token', $request->ip()));
         });

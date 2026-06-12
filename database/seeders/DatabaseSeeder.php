@@ -19,6 +19,9 @@ class DatabaseSeeder extends Seeder
 
             // DB 2 — Property (sample listings for dev)
             PropertySeeder::class,
+
+            // DB 7 — Communications (system email templates)
+            \Database\Seeders\Communications\EmailTemplateSeeder::class,
         ]);
     }
 }
