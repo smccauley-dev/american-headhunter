@@ -100,6 +100,26 @@ Route::get('/property-photos/{documentId}', function (string $documentId) {
     );
 })->name('property-photos.show');
 
+// Public boundary map image — only the live boundary map per property is
+// served publicly; other map images remain behind the admin guard.
+Route::get('/property-maps/{documentId}', function (string $documentId) {
+    $isBoundaryMap = \Illuminate\Support\Facades\DB::connection('property')
+        ->table('property_map_images')
+        ->where('document_id', $documentId)
+        ->where('is_boundary', true)
+        ->whereNull('deleted_at')
+        ->exists();
+    abort_unless($isBoundaryMap, 404);
+
+    $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
+    $disk = config('filesystems.defaults.documents', 'local');
+    return \Illuminate\Support\Facades\Storage::disk($disk)->response(
+        $doc->storage_key,
+        $doc->original_filename,
+        ['Content-Type' => $doc->mime_type ?? 'image/jpeg', 'Cache-Control' => 'public, max-age=3600'],
+    );
+})->name('property-maps.show');
+
 // Member portal
 Route::middleware('auth.session')->prefix('member')->name('member.')->group(function () {
     Route::get('/', [MemberController::class, 'dashboard'])->name('dashboard');

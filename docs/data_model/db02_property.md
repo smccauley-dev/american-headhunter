@@ -145,6 +145,61 @@ CREATE INDEX idx_property_photos_tags_gin    ON property_photos USING GIN (tags)
 
 ---
 
+### `property_map_images`
+
+Boundary and other map images for a property (topo maps, aerials with boundary lines, stand maps). Files live in object storage via DB 11; this table stores metadata.
+
+```sql
+CREATE TABLE property_map_images (
+    id          UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    property_id UUID         NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    document_id UUID         NOT NULL,  -- References DB 11 (Documents) documents.id
+    sort_order  SMALLINT     NOT NULL DEFAULT 0,
+    description VARCHAR(255) NULL,
+    latitude    NUMERIC(9,6) NULL,
+    longitude   NUMERIC(9,6) NULL,
+    is_boundary BOOLEAN      NOT NULL DEFAULT false,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at  TIMESTAMPTZ  NULL
+);
+
+CREATE INDEX idx_property_map_images_property_id ON property_map_images (property_id);
+CREATE INDEX idx_property_map_images_sort_order  ON property_map_images (property_id, sort_order);
+```
+
+**Notes:**
+- Exactly one live row per property has `is_boundary = true` — the first upload becomes the boundary map automatically. Enforced by `PropertyMapService`, not the DB.
+- Only the boundary map is served publicly (`/property-maps/{documentId}` route validates `is_boundary`); other map images stay behind the admin guard.
+- Soft delete keeps the underlying DB 11 document live (lease-documents pattern), so restore is lossless and markers survive.
+
+### `property_map_markers`
+
+Admin-placed annotations on a map image — amenities, game locations, stands, access points. Never rendered into the public image.
+
+```sql
+CREATE TABLE property_map_markers (
+    id           UUID          NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    map_image_id UUID          NOT NULL REFERENCES property_map_images (id) ON DELETE CASCADE,
+    label        VARCHAR(100)  NOT NULL,
+    marker_type  VARCHAR(20)   NOT NULL DEFAULT 'other'
+                     CHECK (marker_type IN ('amenity', 'game', 'stand', 'camera', 'access', 'hazard', 'water', 'other')),
+    x_percent    NUMERIC(6,3)  NOT NULL CHECK (x_percent >= 0 AND x_percent <= 100),
+    y_percent    NUMERIC(6,3)  NOT NULL CHECK (y_percent >= 0 AND y_percent <= 100),
+    latitude     NUMERIC(9,6)  NULL,
+    longitude    NUMERIC(9,6)  NULL,
+    notes        VARCHAR(255)  NULL,
+    created_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    deleted_at   TIMESTAMPTZ   NULL
+);
+
+CREATE INDEX idx_property_map_markers_map_image_id ON property_map_markers (map_image_id);
+```
+
+**Notes:**
+- `x_percent`/`y_percent` anchor the marker to the image (percent from top-left), independent of zoom or image size. `latitude`/`longitude` optionally record the real-world position.
+
+---
+
 ### `property_amenities`
 
 Master list of amenities. Seeded at installation; staff can add new ones via the admin backend.

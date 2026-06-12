@@ -38,6 +38,7 @@ interface Property {
     id: string;
     title: string;
     slug: string;
+    boundary_map_url: string | null;
     description: string | null;
     status: string;
     state_code: string;
@@ -408,19 +409,30 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                             <span style={{ display: 'block', width: 20, height: 1, background: 'var(--blaze)' }} />
                             Property Boundary
                         </div>
-                        <div style={{
-                            height: 320, background: 'var(--ink)', border: '1px solid var(--ink)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexDirection: 'column', gap: 12,
-                        }}>
-                            <span style={{ fontFamily: 'var(--display)', fontSize: 48, fontWeight: 300, color: 'var(--brass)', opacity: 0.4, fontStyle: 'italic' }}>Σ</span>
-                            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.15em', color: 'var(--parch-dim)', textTransform: 'uppercase' }}>
-                                Boundary Map · Mapbox
-                            </span>
-                            <span style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--parch-dim)', fontStyle: 'italic' }}>
-                                Visible after signing in
-                            </span>
-                        </div>
+                        {property.boundary_map_url ? (
+                            <div style={{ border: '1px solid var(--ink)', background: 'var(--ink)' }}>
+                                <img
+                                    src={property.boundary_map_url}
+                                    alt={`${property.title} boundary map`}
+                                    loading="lazy"
+                                    style={{ display: 'block', width: '100%', height: 'auto' }}
+                                />
+                            </div>
+                        ) : (
+                            <div style={{
+                                height: 320, background: 'var(--ink)', border: '1px solid var(--ink)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexDirection: 'column', gap: 12,
+                            }}>
+                                <span style={{ fontFamily: 'var(--display)', fontSize: 48, fontWeight: 300, color: 'var(--brass)', opacity: 0.4, fontStyle: 'italic' }}>Σ</span>
+                                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.15em', color: 'var(--parch-dim)', textTransform: 'uppercase' }}>
+                                    Boundary Map · Mapbox
+                                </span>
+                                <span style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--parch-dim)', fontStyle: 'italic' }}>
+                                    Visible after signing in
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     {/* Description */}

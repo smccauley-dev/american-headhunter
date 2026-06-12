@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
+use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\Request;
 use Inertia\Response;
@@ -60,9 +61,15 @@ class PropertyController extends Controller
 
         $property->load(['activeListings', 'photos', 'species', 'rules']);
 
+        // Base boundary image only — marker overlays are never exposed publicly
+        $boundaryMap = app(PropertyMapService::class)->getBoundaryImage($property->id);
+
         return inertia('Public/PropertyDetail', [
             'property' => [
                 'id'             => $property->id,
+                'boundary_map_url' => $boundaryMap
+                    ? route('property-maps.show', $boundaryMap->document_id)
+                    : null,
                 'title'          => $property->title,
                 'slug'           => $property->slug,
                 'description'    => $property->description,

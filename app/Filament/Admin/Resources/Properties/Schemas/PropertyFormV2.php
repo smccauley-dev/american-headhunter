@@ -5,6 +5,7 @@ namespace App\Filament\Admin\Resources\Properties\Schemas;
 use App\Models\Property\PropertyAmenity;
 use App\Models\Property\PropertyManager;
 use App\Models\Property\PropertyPhoto;
+use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
@@ -149,6 +150,92 @@ class PropertyFormV2
 
         return new HtmlString(view('filament.admin.properties.photo-grid', [
             'photos' => $photos,
+        ])->render());
+    }
+
+    private static function uploadMapImagesAction(): Action
+    {
+        return Action::make('upload_map_images')
+            ->label('Upload Map Images')
+            ->icon('heroicon-o-arrow-up-tray')
+            ->color('gray')
+            ->modalHeading('Upload Map Images')
+            ->form([
+                FileUpload::make('maps')
+                    ->label('Map Images')
+                    ->image()
+                    ->multiple()
+                    ->disk('local')
+                    ->directory('pending-property-maps')
+                    ->maxSize(15360)
+                    ->maxFiles(10)
+                    ->required()
+                    ->helperText('JPG, PNG, or WebP — max 15 MB each. The first map image on a property becomes the boundary map. GPS coordinates are read from EXIF data when present.'),
+                TextInput::make('description')
+                    ->label('Description')
+                    ->maxLength(255)
+                    ->helperText('Optional — applied to every image in this batch. Edit individually afterwards.'),
+            ])
+            ->action(function (array $data, $record): void {
+                $uploaded = 0;
+                foreach ((array) ($data['maps'] ?? []) as $path) {
+                    try {
+                        $file = new \Illuminate\Http\UploadedFile(
+                            Storage::disk('local')->path($path),
+                            basename($path),
+                            Storage::disk('local')->mimeType($path) ?: 'image/jpeg',
+                            null,
+                            true,
+                        );
+                        app(PropertyMapService::class)->addMapImage(
+                            $record->id,
+                            $file,
+                            $data['description'] ?? null,
+                        );
+                        $uploaded++;
+                    } catch (\Throwable $e) {
+                        report($e);
+                    } finally {
+                        Storage::disk('local')->delete($path);
+                    }
+                }
+
+                if ($uploaded > 0) {
+                    Notification::make()
+                        ->title($uploaded === 1 ? 'Map image uploaded' : "{$uploaded} map images uploaded")
+                        ->success()
+                        ->send();
+                } else {
+                    Notification::make()->title('Upload failed')->danger()->send();
+                }
+            });
+    }
+
+    private static function renderMapEditorHtml($record, ?string $selectedMapImageId): HtmlString
+    {
+        if (! $record?->id) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;">Save the property first to manage maps.</p>'
+            );
+        }
+
+        try {
+            $service = app(PropertyMapService::class);
+            $images  = $service->getMapImages($record->id);
+            $deleted = $service->getDeletedMapImages($record->id);
+
+            $selected = ($selectedMapImageId ? $images->firstWhere('id', $selectedMapImageId) : null)
+                ?? $images->first();
+            $selected?->load('markers');
+        } catch (\Throwable $e) {
+            report($e);
+            return new HtmlString('<p style="color:#6b7280;font-size:0.875rem;">Unavailable.</p>');
+        }
+
+        return new HtmlString(view('filament.admin.properties.map-editor', [
+            'images'   => $images,
+            'selected' => $selected,
+            'deleted'  => $deleted,
         ])->render());
     }
 
@@ -421,6 +508,24 @@ class PropertyFormV2
                                             ->hiddenLabel()
                                             ->content(function (Placeholder $component) {
                                                 return static::renderPhotosHtml($component->getRecord());
+                                            }),
+                                    ]),
+                            ]),
+
+                        Tab::make('Map')
+                            ->visible(fn ($record) => $record !== null)
+                            ->schema([
+                                Section::make('Boundary Map')
+                                    ->description('The boundary map is shown on the public listing (without markers). Add markers for amenities, game locations, stands, and other points of interest — markers are admin/member only.')
+                                    ->headerActions([self::uploadMapImagesAction()])
+                                    ->schema([
+                                        Placeholder::make('property_map_editor')
+                                            ->hiddenLabel()
+                                            ->content(function (Placeholder $component, $livewire) {
+                                                return static::renderMapEditorHtml(
+                                                    $component->getRecord(),
+                                                    $livewire->selectedMapImageId ?? null,
+                                                );
                                             }),
                                     ]),
                             ]),
