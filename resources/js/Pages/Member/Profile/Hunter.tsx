@@ -70,6 +70,19 @@ const US_STATES = [
   'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY',
 ]
 
+const STATE_NAMES: Record<string, string> = {
+  AL: 'Alabama',       AK: 'Alaska',        AZ: 'Arizona',      AR: 'Arkansas',      CA: 'California',
+  CO: 'Colorado',      CT: 'Connecticut',   DE: 'Delaware',     FL: 'Florida',       GA: 'Georgia',
+  HI: 'Hawaii',        ID: 'Idaho',         IL: 'Illinois',     IN: 'Indiana',       IA: 'Iowa',
+  KS: 'Kansas',        KY: 'Kentucky',      LA: 'Louisiana',    ME: 'Maine',         MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan',      MN: 'Minnesota',    MS: 'Mississippi',   MO: 'Missouri',
+  MT: 'Montana',       NE: 'Nebraska',      NV: 'Nevada',       NH: 'New Hampshire', NJ: 'New Jersey',
+  NM: 'New Mexico',    NY: 'New York',      NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio',
+  OK: 'Oklahoma',      OR: 'Oregon',        PA: 'Pennsylvania', RI: 'Rhode Island',  SC: 'South Carolina',
+  SD: 'South Dakota',  TN: 'Tennessee',     TX: 'Texas',        UT: 'Utah',          VT: 'Vermont',
+  VA: 'Virginia',      WA: 'Washington',    WV: 'West Virginia', WI: 'Wisconsin',    WY: 'Wyoming',
+}
+
 // ── Military branches & first responder types ─────────────────────────────────
 
 const MILITARY_BRANCHES = [
@@ -1404,7 +1417,7 @@ function AboutTab({ user, profile, form, editing, onField, onHunting, visibility
                 <EditLabel>Home State</EditLabel>
                 <select value={form.state_code} onChange={e => onField('state_code', e.target.value)} style={select}>
                   <option value="">— Select state —</option>
-                  {US_STATES.map(st => <option key={st} value={st}>{st}</option>)}
+                  {US_STATES.map(st => <option key={st} value={st}>{STATE_NAMES[st] ?? st}</option>)}
                 </select>
               </div>
               <div>
@@ -1422,6 +1435,12 @@ function AboutTab({ user, profile, form, editing, onField, onHunting, visibility
               />
             )}
             {profile.gender && <DataRow label="Gender" value={labelFor(GENDERS, profile.gender)} />}
+            {profile.state_code && (
+              <DataRow
+                label="Home State"
+                value={`${STATE_NAMES[profile.state_code] ?? profile.state_code}${profile.zip_code ? ` · ${profile.zip_code}` : ''}`}
+              />
+            )}
             <DataRow label="Member Since" value={user.member_since} />
           </div>
         )}
