@@ -752,7 +752,6 @@ export default function HunterProfile({ user, profile, photos, activity, securit
 
             {/* ── LEFT SIDEBAR ─────────────────────────────────────────── */}
             <div style={{ ...fieldCard, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              <DashedInset />
 
               {/* Avatar */}
               <div
@@ -1053,7 +1052,6 @@ export default function HunterProfile({ user, profile, photos, activity, securit
 
               {/* Tabs + content */}
               <div style={fieldCard}>
-                <DashedInset />
                 {/* Tab bar */}
                 <div style={{ display: 'flex', borderBottom: '1px solid #e5ddd0', padding: '0 28px' }}>
                   {(['about', 'contact', 'social', 'photos', 'gear', 'activity', 'security'] as const).map(t => {
