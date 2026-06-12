@@ -24,6 +24,7 @@ interface Listing {
         description: string | null;
         center_lat: number | null;
         center_lng: number | null;
+        primary_photo_url: string | null;
         species: PropertySpecies[];
     };
 }
@@ -536,7 +537,16 @@ export default function Home({ listings, homeSettings }: HomeProps) {
                     {listings.length > 0 ? listings.slice(0, 6).map((listing, i) => (
                         <Link key={listing.id} href={`/properties/${listing.property.slug}`} className="prop-card">
                             <div className="prop-img">
-                                <div className="prop-img-placeholder" />
+                                {listing.property.primary_photo_url ? (
+                                    <img
+                                        src={listing.property.primary_photo_url}
+                                        alt={listing.property.title}
+                                        className="prop-img-photo"
+                                        loading="lazy"
+                                    />
+                                ) : (
+                                    <div className="prop-img-placeholder" />
+                                )}
                                 <span className={`prop-tag${i === 0 ? ' blaze' : ''}`}>
                                     {i === 0 ? 'Featured' : formatType(listing.listing_type)}
                                 </span>
