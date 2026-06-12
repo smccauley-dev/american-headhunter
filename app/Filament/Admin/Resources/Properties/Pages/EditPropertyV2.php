@@ -10,7 +10,6 @@ use App\Models\Property\PropertyManager;
 use App\Models\Property\PropertyMapImage;
 use App\Models\Property\PropertyMapMarker;
 use App\Models\Property\PropertyPhoto;
-use App\Services\Identity\UserService;
 use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
 use App\Support\AdminAuth;
@@ -69,68 +68,7 @@ class EditPropertyV2 extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [
-            ...$this->standardHeaderActions(),
-
-            Action::make('grant_manager')
-                ->label('Grant Manager Access')
-                ->icon('heroicon-o-user-plus')
-                ->color('primary')
-                ->visible(fn () => AdminAuth::canManageProperties() && $this->getRecord() !== null)
-                ->form([
-                    TextInput::make('user_email')
-                        ->label('User Email')
-                        ->email()
-                        ->required()
-                        ->placeholder('hunter@example.com'),
-                    Select::make('role')
-                        ->label('Role')
-                        ->required()
-                        ->options([
-                            'owner'    => 'Owner',
-                            'co_owner' => 'Co-Owner',
-                            'manager'  => 'Manager',
-                            'operator' => 'Operator',
-                        ]),
-                ])
-                ->action(function (array $data): void {
-                    $user = app(UserService::class)->findByEmail($data['user_email']);
-
-                    if (! $user) {
-                        Notification::make()
-                            ->title('No user found with that email address.')
-                            ->danger()
-                            ->send();
-                        return;
-                    }
-
-                    $exists = PropertyManager::where('property_id', $this->getRecord()->id)
-                        ->where('user_id', $user->id)
-                        ->whereNull('revoked_at')
-                        ->exists();
-
-                    if ($exists) {
-                        Notification::make()
-                            ->title('This user already has active manager access.')
-                            ->warning()
-                            ->send();
-                        return;
-                    }
-
-                    PropertyManager::create([
-                        'property_id'        => $this->getRecord()->id,
-                        'user_id'            => $user->id,
-                        'role'               => $data['role'],
-                        'granted_by_user_id' => auth()->id(),
-                        'granted_at'         => now(),
-                    ]);
-
-                    Notification::make()
-                        ->title('Manager access granted.')
-                        ->success()
-                        ->send();
-                }),
-        ];
+        return $this->standardHeaderActions();
     }
 
     // ── Photo gallery actions (mounted from the photo-grid partial) ────────────

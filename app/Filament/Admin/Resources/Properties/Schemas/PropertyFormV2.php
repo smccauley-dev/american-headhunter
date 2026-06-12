@@ -239,6 +239,68 @@ class PropertyFormV2
         ])->render());
     }
 
+    private static function grantManagerAction(): Action
+    {
+        return Action::make('grant_manager')
+            ->label('Grant Manager Access')
+            ->icon('heroicon-o-user-plus')
+            ->color('primary')
+            ->visible(fn ($record) => \App\Support\AdminAuth::canManageProperties() && $record !== null)
+            ->form([
+                TextInput::make('user_email')
+                    ->label('User Email')
+                    ->email()
+                    ->required()
+                    ->placeholder('hunter@example.com'),
+                Select::make('role')
+                    ->label('Role')
+                    ->required()
+                    ->options([
+                        'owner'    => 'Owner',
+                        'co_owner' => 'Co-Owner',
+                        'manager'  => 'Manager',
+                        'operator' => 'Operator',
+                    ]),
+            ])
+            ->action(function (array $data, $record): void {
+                $user = app(\App\Services\Identity\UserService::class)->findByEmail($data['user_email']);
+
+                if (! $user) {
+                    Notification::make()
+                        ->title('No user found with that email address.')
+                        ->danger()
+                        ->send();
+                    return;
+                }
+
+                $exists = PropertyManager::where('property_id', $record->id)
+                    ->where('user_id', $user->id)
+                    ->whereNull('revoked_at')
+                    ->exists();
+
+                if ($exists) {
+                    Notification::make()
+                        ->title('This user already has active manager access.')
+                        ->warning()
+                        ->send();
+                    return;
+                }
+
+                PropertyManager::create([
+                    'property_id'        => $record->id,
+                    'user_id'            => $user->id,
+                    'role'               => $data['role'],
+                    'granted_by_user_id' => auth()->id(),
+                    'granted_at'         => now(),
+                ]);
+
+                Notification::make()
+                    ->title('Manager access granted.')
+                    ->success()
+                    ->send();
+            });
+    }
+
     private static function renderManagersHtml($record): HtmlString
     {
         if (! $record?->id) {
@@ -259,7 +321,7 @@ class PropertyFormV2
         if ($managers->isEmpty()) {
             return new HtmlString(
                 '<p style="color:#6b7280;font-size:0.875rem;padding:0.75rem 0;">'
-                . 'No active managers assigned. Use <strong>Grant Manager Access</strong> in the page header to add one.'
+                . 'No active managers assigned. Use <strong>Grant Manager Access</strong> in the section header to add one.'
                 . '</p>'
             );
         }
@@ -623,7 +685,8 @@ class PropertyFormV2
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Active Managers')
-                                    ->description('Users who can manage this property on behalf of the owner. Grant access from the page header.')
+                                    ->description('Users who can manage this property on behalf of the owner.')
+                                    ->headerActions([self::grantManagerAction()])
                                     ->schema([
                                         Placeholder::make('property_managers_display')
                                             ->hiddenLabel()
