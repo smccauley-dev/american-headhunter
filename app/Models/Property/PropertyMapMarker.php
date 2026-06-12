@@ -20,6 +20,18 @@ class PropertyMapMarker extends BaseModel
         'other'   => 'Other',
     ];
 
+    /** Default pin color per marker type — overridable per marker via `color`. */
+    public const TYPE_COLORS = [
+        'amenity' => '#1d4ed8',
+        'game'    => '#b91c1c',
+        'stand'   => '#92400e',
+        'camera'  => '#6b21a8',
+        'access'  => '#0f766e',
+        'hazard'  => '#ea580c',
+        'water'   => '#0369a1',
+        'other'   => '#374151',
+    ];
+
     protected $fillable = [
         'map_image_id',
         'label',
@@ -28,8 +40,15 @@ class PropertyMapMarker extends BaseModel
         'y_percent',
         'latitude',
         'longitude',
+        'color',
         'notes',
     ];
+
+    /** Effective pin color — explicit override or the type default. */
+    public function displayColor(): string
+    {
+        return $this->color ?: (self::TYPE_COLORS[$this->marker_type] ?? '#374151');
+    }
 
     protected function casts(): array
     {

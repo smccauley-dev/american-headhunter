@@ -175,8 +175,10 @@ class PropertyMapService extends BaseService
         ?float $latitude = null,
         ?float $longitude = null,
         ?string $notes = null,
+        ?string $color = null,
     ): PropertyMapMarker {
         $this->assertMarkerInput($markerType, $xPercent, $yPercent);
+        $color = $this->normalizeColor($color, $markerType);
 
         PropertyMapImage::whereNull('deleted_at')->findOrFail($mapImageId);
 
@@ -188,6 +190,7 @@ class PropertyMapService extends BaseService
             'y_percent'    => round($yPercent, 3),
             'latitude'     => $latitude,
             'longitude'    => $longitude,
+            'color'        => $color,
             'notes'        => $notes !== '' ? $notes : null,
         ]);
     }
@@ -199,6 +202,7 @@ class PropertyMapService extends BaseService
         ?float $latitude = null,
         ?float $longitude = null,
         ?string $notes = null,
+        ?string $color = null,
     ): void {
         $this->assertMarkerInput($markerType, 0, 0);
 
@@ -207,8 +211,30 @@ class PropertyMapService extends BaseService
             'marker_type' => $markerType,
             'latitude'    => $latitude,
             'longitude'   => $longitude,
+            'color'       => $this->normalizeColor($color, $markerType),
             'notes'       => $notes !== '' ? $notes : null,
         ]);
+    }
+
+    /**
+     * Validate a hex color override; a value matching the type default is
+     * stored as NULL so the marker follows the default if it ever changes.
+     */
+    private function normalizeColor(?string $color, string $markerType): ?string
+    {
+        if ($color === null || $color === '') {
+            return null;
+        }
+
+        $color = strtolower($color);
+
+        if (! preg_match('/^#[0-9a-f]{6}$/', $color)) {
+            throw new \InvalidArgumentException("Invalid marker color '{$color}'. Use a 6-digit hex value like #1d4ed8.");
+        }
+
+        return $color === strtolower(PropertyMapMarker::TYPE_COLORS[$markerType] ?? '')
+            ? null
+            : $color;
     }
 
     /** Reposition a marker on its image (percent coordinates, drag-to-move). */

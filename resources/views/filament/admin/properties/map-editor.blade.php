@@ -9,16 +9,6 @@
 @php
     $btn = 'display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;background:#fff;'
          . 'border:1px solid #e5e7eb;font-size:12px;font-weight:500;color:#374151;cursor:pointer;white-space:nowrap;text-decoration:none;';
-    $markerColors = [
-        'amenity' => '#1d4ed8',
-        'game'    => '#b91c1c',
-        'stand'   => '#92400e',
-        'camera'  => '#6b21a8',
-        'access'  => '#0f766e',
-        'hazard'  => '#ea580c',
-        'water'   => '#0369a1',
-        'other'   => '#374151',
-    ];
 @endphp
 
 @if ($selected)
@@ -102,7 +92,7 @@
             @endif
 
             @foreach ($selected->markers as $m)
-                @php $color = $markerColors[$m->marker_type] ?? '#374151'; @endphp
+                @php $color = $m->displayColor(); @endphp
                 <div
                     x-on:pointerdown.stop="startDrag($event, '{{ $m->id }}')"
                     x-on:pointermove="onMove($event)"

@@ -15,6 +15,7 @@ use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
 use App\Support\AdminAuth;
 use Filament\Actions\Action;
+use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
@@ -379,6 +380,9 @@ class EditPropertyV2 extends EditRecord
                     ->options(PropertyMapMarker::TYPES)
                     ->default('other')
                     ->native(false),
+                ColorPicker::make('color')
+                    ->label('Pin Color')
+                    ->helperText('Optional — leave empty to use the type\'s default color.'),
                 TextInput::make('latitude')
                     ->label('Latitude')
                     ->numeric()
@@ -406,6 +410,7 @@ class EditPropertyV2 extends EditRecord
                     filled($data['latitude'] ?? null) ? (float) $data['latitude'] : null,
                     filled($data['longitude'] ?? null) ? (float) $data['longitude'] : null,
                     $data['notes'] ?? null,
+                    $data['color'] ?? null,
                 );
                 Notification::make()->title('Marker added')->success()->send();
             });
@@ -420,6 +425,7 @@ class EditPropertyV2 extends EditRecord
                 return [
                     'label'         => $m?->label ?? '',
                     'marker_type'   => $m?->marker_type ?? 'other',
+                    'color'         => $m?->displayColor(),
                     'latitude'      => $m?->latitude,
                     'longitude'     => $m?->longitude,
                     'notes'         => $m?->notes ?? '',
@@ -436,6 +442,9 @@ class EditPropertyV2 extends EditRecord
                     ->required()
                     ->options(PropertyMapMarker::TYPES)
                     ->native(false),
+                ColorPicker::make('color')
+                    ->label('Pin Color')
+                    ->helperText('Matches the type\'s default color until you change it.'),
                 TextInput::make('latitude')
                     ->label('Latitude')
                     ->numeric()
@@ -473,6 +482,7 @@ class EditPropertyV2 extends EditRecord
                     filled($data['latitude'] ?? null) ? (float) $data['latitude'] : null,
                     filled($data['longitude'] ?? null) ? (float) $data['longitude'] : null,
                     $data['notes'] ?? null,
+                    $data['color'] ?? null,
                 );
                 Notification::make()->title('Marker updated')->success()->send();
             });

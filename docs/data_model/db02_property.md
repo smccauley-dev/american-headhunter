@@ -187,6 +187,7 @@ CREATE TABLE property_map_markers (
     y_percent    NUMERIC(6,3)  NOT NULL CHECK (y_percent >= 0 AND y_percent <= 100),
     latitude     NUMERIC(9,6)  NULL,
     longitude    NUMERIC(9,6)  NULL,
+    color        VARCHAR(7)    NULL CHECK (color IS NULL OR color ~ '^#[0-9a-fA-F]{6}$'),
     notes        VARCHAR(255)  NULL,
     created_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     deleted_at   TIMESTAMPTZ   NULL
