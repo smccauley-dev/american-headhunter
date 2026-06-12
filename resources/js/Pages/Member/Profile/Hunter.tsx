@@ -432,6 +432,21 @@ function labelFor(opts: { key: string; label: string }[], key: string | null): s
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 
+// Field record card shell — 1px ink border, 8px solid ink drop shadow,
+// inner dashed border at 8px inset (see docs/design_system.md "Field Record Cards")
+const fieldCard: React.CSSProperties = {
+  position: 'relative',
+  background: '#F8F4EB',
+  border: '1px solid #0A1512',
+  boxShadow: '8px 8px 0 #0A1512',
+}
+
+function DashedInset() {
+  return (
+    <div style={{ position: 'absolute', inset: 8, border: '1px dashed #a89874', pointerEvents: 'none', zIndex: 3 }} />
+  )
+}
+
 const input: React.CSSProperties = {
   fontFamily: 'Crimson Pro, Georgia, serif',
   fontSize: '15px',
@@ -486,7 +501,7 @@ function SectionLabel({ children }: { children: string }) {
 
 function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '8px', padding: '7px 0', borderBottom: '1px solid #f5f0e8' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '8px', padding: '7px 0', borderBottom: '1px dotted #d4c9b0' }}>
       <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: '#a89874' }}>
         {label}
       </span>
@@ -736,7 +751,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
           <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: '20px', alignItems: 'stretch' }}>
 
             {/* ── LEFT SIDEBAR ─────────────────────────────────────────── */}
-            <div style={{ background: '#F8F4EB', border: '1px solid #d4c9b0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ ...fieldCard, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <DashedInset />
 
               {/* Avatar */}
               <div
@@ -950,19 +966,33 @@ export default function HunterProfile({ user, profile, photos, activity, securit
             </div>
 
             {/* ── RIGHT MAIN ───────────────────────────────────────────── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
               {/* Header card */}
-              <div style={{ background: '#F8F4EB', border: '1px solid #d4c9b0', padding: '24px 28px' }}>
+              <div style={{ ...fieldCard, padding: '24px 28px' }}>
+                <DashedInset />
+
+                {/* Field record strip — label + ID left, rotated stamp right */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '14px', borderBottom: '1px solid #d4c9b0', marginBottom: '18px' }}>
+                  <div>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.2em', textTransform: 'uppercase', color: '#4a5440', marginBottom: '4px' }}>
+                      Field Record
+                    </div>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: 500, color: '#0A1512' }}>
+                      AH-{user.id.slice(0, 8).toUpperCase()}
+                    </div>
+                  </div>
+                  <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '11px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: '#C84C21', border: '1.5px solid #C84C21', padding: '3px 10px', transform: 'rotate(-6deg)', marginRight: '6px' }}>
+                    Hunter
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '4px' }}>
                       <h1 style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '26px', fontWeight: 400, color: '#0A1512', margin: 0, lineHeight: 1.1 }}>
                         {displayName}
                       </h1>
-                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: '#C84C21', border: '1px solid #C84C21', padding: '3px 8px', flexShrink: 0 }}>
-                        Hunter
-                      </span>
                       {(editing ? form.is_veteran : user.is_veteran) && (() => {
                         const branch = (editing ? form.veteran_branch : profile.veteran_branch) ?? ''
                         const emblem = branch ? BRANCH_EMBLEMS[branch] : null
@@ -1022,7 +1052,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               </div>
 
               {/* Tabs + content */}
-              <div style={{ background: '#F8F4EB', border: '1px solid #d4c9b0' }}>
+              <div style={fieldCard}>
+                <DashedInset />
                 {/* Tab bar */}
                 <div style={{ display: 'flex', borderBottom: '1px solid #e5ddd0', padding: '0 28px' }}>
                   {(['about', 'contact', 'social', 'photos', 'gear', 'activity', 'security'] as const).map(t => {
