@@ -136,8 +136,10 @@ class EditPropertyV2 extends EditRecord
             ->fillForm(function (array $arguments): array {
                 $photo = PropertyPhoto::whereNull('deleted_at')->find($arguments['photoId'] ?? null);
                 return [
-                    'caption' => $photo?->caption ?? '',
-                    'tags'    => $photo?->tags ?? [],
+                    'caption'   => $photo?->caption ?? '',
+                    'tags'      => $photo?->tags ?? [],
+                    'latitude'  => $photo?->latitude,
+                    'longitude' => $photo?->longitude,
                 ];
             })
             ->form([
@@ -149,6 +151,20 @@ class EditPropertyV2 extends EditRecord
                     ->label('Tags')
                     ->suggestions(PropertyFormV2::photoTagSuggestions())
                     ->helperText('Press Enter after each tag. Used for gallery filtering.'),
+                TextInput::make('latitude')
+                    ->label('Latitude')
+                    ->numeric()
+                    ->minValue(-90)
+                    ->maxValue(90)
+                    ->placeholder('30.267153')
+                    ->helperText('Where the photo was taken (WGS84). Auto-filled from the photo\'s EXIF GPS data when available.'),
+                TextInput::make('longitude')
+                    ->label('Longitude')
+                    ->numeric()
+                    ->minValue(-180)
+                    ->maxValue(180)
+                    ->placeholder('-97.743057')
+                    ->helperText('Negative values are West.'),
             ])
             ->action(function (array $arguments, array $data): void {
                 abort_unless(AdminAuth::canManageProperties(), 403);
@@ -156,6 +172,8 @@ class EditPropertyV2 extends EditRecord
                     $arguments['photoId'],
                     $data['caption'] ?? null,
                     $data['tags'] ?? [],
+                    filled($data['latitude'] ?? null) ? (float) $data['latitude'] : null,
+                    filled($data['longitude'] ?? null) ? (float) $data['longitude'] : null,
                 );
                 Notification::make()->title('Photo updated')->success()->send();
                 $this->redirect(PropertyResource::getUrl('edit', ['record' => $this->getRecord()]));

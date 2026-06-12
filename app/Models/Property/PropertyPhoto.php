@@ -15,6 +15,8 @@ class PropertyPhoto extends BaseModel
         'sort_order',
         'caption',
         'tags',
+        'latitude',
+        'longitude',
         'is_primary',
     ];
 
@@ -24,6 +26,8 @@ class PropertyPhoto extends BaseModel
             'is_primary' => 'boolean',
             'sort_order' => 'integer',
             'tags'       => 'array',
+            'latitude'   => 'float',
+            'longitude'  => 'float',
             'deleted_at' => 'datetime',
         ]);
     }

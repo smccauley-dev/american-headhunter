@@ -124,6 +124,8 @@ CREATE TABLE property_photos (
     sort_order  SMALLINT    NOT NULL DEFAULT 0,
     caption     VARCHAR(255) NULL,
     tags        JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    latitude    NUMERIC(9,6) NULL,
+    longitude   NUMERIC(9,6) NULL,
     is_primary  BOOLEAN     NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at  TIMESTAMPTZ NULL
@@ -137,6 +139,7 @@ CREATE INDEX idx_property_photos_tags_gin    ON property_photos USING GIN (tags)
 **Notes:**
 - At most one row should have `is_primary = true` per property. Enforced by `PropertyService` — not a DB constraint, to allow for easy reordering.
 - `tags` is a JSON array of free-form strings (suggested values defined in `PropertyFormV2::photoTagSuggestions()`), used for gallery filtering.
+- `latitude` / `longitude` record where the photo was taken (WGS84) — display only, never used for spatial queries (use DB 13 for that). Auto-extracted from EXIF GPS on upload; editable manually in the admin.
 - `document_id` resolves to a URL via `DocumentService::getUrl($documentId)`.
 - Photos with `deleted_at IS NOT NULL` are soft-deleted; the underlying file in object storage is retained for 30 days then purged by `PurgeOrphanedDocumentsJob`.
 

@@ -375,6 +375,10 @@ class PropertyService extends BaseService
             'photo',
         );
 
+        // Photo location: where the picture was taken, straight from EXIF GPS
+        // when the camera recorded it; editable manually afterwards.
+        [$latitude, $longitude] = $this->extractGpsCoordinates($file);
+
         $isFirst  = ! PropertyPhoto::where('property_id', $propertyId)->whereNull('deleted_at')->exists();
         $nextSort = (int) PropertyPhoto::where('property_id', $propertyId)
             ->whereNull('deleted_at')
@@ -386,6 +390,8 @@ class PropertyService extends BaseService
             'sort_order'  => $isFirst ? 0 : $nextSort,
             'caption'     => $caption,
             'tags'        => array_values($tags),
+            'latitude'    => $latitude,
+            'longitude'   => $longitude,
             'is_primary'  => $isFirst,
         ]);
 
@@ -396,12 +402,84 @@ class PropertyService extends BaseService
         return $photo;
     }
 
-    public function updatePhotoDetails(string $photoId, ?string $caption, array $tags): void
-    {
+    public function updatePhotoDetails(
+        string $photoId,
+        ?string $caption,
+        array $tags,
+        ?float $latitude = null,
+        ?float $longitude = null,
+    ): void {
+        if ($latitude !== null && ($latitude < -90 || $latitude > 90)) {
+            throw new \InvalidArgumentException('Latitude must be between -90 and 90.');
+        }
+        if ($longitude !== null && ($longitude < -180 || $longitude > 180)) {
+            throw new \InvalidArgumentException('Longitude must be between -180 and 180.');
+        }
+
         PropertyPhoto::whereNull('deleted_at')->findOrFail($photoId)->update([
-            'caption' => $caption !== '' ? $caption : null,
-            'tags'    => array_values($tags),
+            'caption'   => $caption !== '' ? $caption : null,
+            'tags'      => array_values($tags),
+            'latitude'  => $latitude,
+            'longitude' => $longitude,
         ]);
+    }
+
+    /**
+     * Pull GPS coordinates out of the image's EXIF block (JPEG/TIFF only).
+     * Returns [null, null] when the camera didn't record a location.
+     *
+     * @return array{0: ?float, 1: ?float}  [latitude, longitude]
+     */
+    private function extractGpsCoordinates(UploadedFile $file): array
+    {
+        if (! function_exists('exif_read_data')
+            || ! in_array($file->getMimeType(), ['image/jpeg', 'image/tiff'], true)) {
+            return [null, null];
+        }
+
+        try {
+            $exif = @exif_read_data($file->getRealPath());
+        } catch (\Throwable) {
+            return [null, null];
+        }
+
+        if (empty($exif['GPSLatitude']) || empty($exif['GPSLongitude'])) {
+            return [null, null];
+        }
+
+        $lat = self::gpsToDecimal((array) $exif['GPSLatitude'], $exif['GPSLatitudeRef'] ?? 'N');
+        $lng = self::gpsToDecimal((array) $exif['GPSLongitude'], $exif['GPSLongitudeRef'] ?? 'E');
+
+        if ($lat === null || $lng === null
+            || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180
+            || ($lat === 0.0 && $lng === 0.0)) {
+            return [null, null];
+        }
+
+        return [round($lat, 6), round($lng, 6)];
+    }
+
+    /** Convert EXIF degrees/minutes/seconds rationals ("123/1") to decimal degrees. */
+    private static function gpsToDecimal(array $parts, string $ref): ?float
+    {
+        $toFloat = function ($v): float {
+            $v = (string) $v;
+            if (str_contains($v, '/')) {
+                [$num, $den] = explode('/', $v, 2);
+                return (float) $den != 0.0 ? (float) $num / (float) $den : 0.0;
+            }
+            return (float) $v;
+        };
+
+        if (! isset($parts[0])) {
+            return null;
+        }
+
+        $decimal = $toFloat($parts[0])
+            + $toFloat($parts[1] ?? 0) / 60
+            + $toFloat($parts[2] ?? 0) / 3600;
+
+        return in_array(strtoupper($ref), ['S', 'W'], true) ? -$decimal : $decimal;
     }
 
     /** Make this photo the property's primary (cover) photo. */

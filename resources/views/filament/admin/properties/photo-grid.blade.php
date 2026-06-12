@@ -28,6 +28,20 @@
                         @endforeach
                     </div>
                 @endif
+                @if ($photo->latitude !== null && $photo->longitude !== null)
+                    <a href="https://maps.google.com/?q={{ $photo->latitude }},{{ $photo->longitude }}"
+                       target="_blank" rel="noopener"
+                       title="Open in Google Maps"
+                       style="font-family:monospace;font-size:11px;color:#6b7280;text-decoration:none;display:inline-flex;align-items:center;gap:4px;">
+                        <svg style="width:11px;height:11px;flex-shrink:0;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        {{ number_format($photo->latitude, 6) }}, {{ number_format($photo->longitude, 6) }}
+                    </a>
+                @else
+                    <span style="font-family:monospace;font-size:11px;color:#c4bdac;">No location</span>
+                @endif
                 <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:4px;">
                     <button type="button" title="Move earlier"
                         wire:click="mountAction('movePropertyPhoto', { photoId: '{{ $photo->id }}', direction: 'up' })"

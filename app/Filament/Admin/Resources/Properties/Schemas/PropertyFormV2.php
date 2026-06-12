@@ -75,7 +75,7 @@ class PropertyFormV2
                     ->maxSize(10240)
                     ->maxFiles(20)
                     ->required()
-                    ->helperText('JPG, PNG, or WebP — max 10 MB each, up to 20 per batch.'),
+                    ->helperText('JPG, PNG, or WebP — max 10 MB each, up to 20 per batch. GPS coordinates are read automatically from each photo\'s EXIF data when present.'),
                 TextInput::make('caption')
                     ->label('Caption')
                     ->maxLength(255)
