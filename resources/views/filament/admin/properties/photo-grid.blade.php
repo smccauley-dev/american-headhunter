@@ -13,7 +13,7 @@
                      loading="lazy"
                      style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">
                 @if ($photo->is_primary)
-                    <span style="position:absolute;top:8px;left:8px;background:#0a1512;color:#e8ddc8;font-family:monospace;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:3px;">Primary</span>
+                    <span style="position:absolute;top:8px;left:8px;background:#0a1512;color:#e8ddc8;border:1px solid #a89874;font-family:monospace;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:3px;display:inline-flex;align-items:center;gap:5px;">&#9733; Primary</span>
                 @endif
                 <span style="position:absolute;top:8px;right:8px;background:rgba(10,21,18,0.65);color:#fff;font-family:monospace;font-size:10px;padding:2px 7px;border-radius:3px;">{{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }} / {{ str_pad((string) $photos->count(), 2, '0', STR_PAD_LEFT) }}</span>
             </div>
@@ -49,11 +49,6 @@
                     <button type="button" title="Move later"
                         wire:click="mountAction('movePropertyPhoto', { photoId: '{{ $photo->id }}', direction: 'down' })"
                         style="{{ $btn }} {{ $loop->last ? 'opacity:0.35;pointer-events:none;' : '' }}">&#8594;</button>
-                    @unless ($photo->is_primary)
-                        <button type="button"
-                            wire:click="mountAction('makePrimaryPropertyPhoto', { photoId: '{{ $photo->id }}' })"
-                            style="{{ $btn }}">&#9733; Primary</button>
-                    @endunless
                     <button type="button"
                         wire:click="mountAction('editPropertyPhoto', { photoId: '{{ $photo->id }}' })"
                         style="{{ $btn }}">Edit</button>

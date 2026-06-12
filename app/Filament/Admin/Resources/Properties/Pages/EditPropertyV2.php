@@ -16,6 +16,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Schema;
@@ -136,57 +137,72 @@ class EditPropertyV2 extends EditRecord
             ->fillForm(function (array $arguments): array {
                 $photo = PropertyPhoto::whereNull('deleted_at')->find($arguments['photoId'] ?? null);
                 return [
-                    'caption'   => $photo?->caption ?? '',
-                    'tags'      => $photo?->tags ?? [],
-                    'latitude'  => $photo?->latitude,
-                    'longitude' => $photo?->longitude,
+                    'caption'    => $photo?->caption ?? '',
+                    'tags'       => $photo?->tags ?? [],
+                    'latitude'   => $photo?->latitude,
+                    'longitude'  => $photo?->longitude,
+                    'is_primary' => (bool) $photo?->is_primary,
                 ];
             })
-            ->form([
-                Textarea::make('caption')
-                    ->label('Caption / Description')
-                    ->rows(3)
-                    ->maxLength(255),
-                TagsInput::make('tags')
-                    ->label('Tags')
-                    ->suggestions(PropertyFormV2::photoTagSuggestions())
-                    ->helperText('Press Enter after each tag. Used for gallery filtering.'),
-                TextInput::make('latitude')
-                    ->label('Latitude')
-                    ->numeric()
-                    ->minValue(-90)
-                    ->maxValue(90)
-                    ->placeholder('30.267153')
-                    ->helperText('Where the photo was taken (WGS84). Auto-filled from the photo\'s EXIF GPS data when available.'),
-                TextInput::make('longitude')
-                    ->label('Longitude')
-                    ->numeric()
-                    ->minValue(-180)
-                    ->maxValue(180)
-                    ->placeholder('-97.743057')
-                    ->helperText('Negative values are West.'),
-            ])
+            ->form(function (array $arguments): array {
+                $isPrimary = (bool) PropertyPhoto::whereNull('deleted_at')
+                    ->find($arguments['photoId'] ?? null)?->is_primary;
+
+                return [
+                    Textarea::make('caption')
+                        ->label('Caption / Description')
+                        ->rows(3)
+                        ->maxLength(255),
+                    TagsInput::make('tags')
+                        ->label('Tags')
+                        ->suggestions(PropertyFormV2::photoTagSuggestions())
+                        ->helperText('Press Enter after each tag. Used for gallery filtering.'),
+                    TextInput::make('latitude')
+                        ->label('Latitude')
+                        ->numeric()
+                        ->minValue(-90)
+                        ->maxValue(90)
+                        ->placeholder('30.267153')
+                        ->helperText('Where the photo was taken (WGS84). Auto-filled from the photo\'s EXIF GPS data when available.'),
+                    TextInput::make('longitude')
+                        ->label('Longitude')
+                        ->numeric()
+                        ->minValue(-180)
+                        ->maxValue(180)
+                        ->placeholder('-97.743057')
+                        ->helperText('Negative values are West.'),
+                    Toggle::make('is_primary')
+                        ->label('Primary (cover) photo')
+                        ->disabled($isPrimary)
+                        ->helperText($isPrimary
+                            ? 'This is the current primary photo. Set another photo as primary to change it.'
+                            : 'Make this the cover photo shown on the public listing.'),
+                ];
+            })
             ->action(function (array $arguments, array $data): void {
                 abort_unless(AdminAuth::canManageProperties(), 403);
-                app(PropertyService::class)->updatePhotoDetails(
+
+                $service = app(PropertyService::class);
+
+                $service->updatePhotoDetails(
                     $arguments['photoId'],
                     $data['caption'] ?? null,
                     $data['tags'] ?? [],
                     filled($data['latitude'] ?? null) ? (float) $data['latitude'] : null,
                     filled($data['longitude'] ?? null) ? (float) $data['longitude'] : null,
                 );
-                Notification::make()->title('Photo updated')->success()->send();
-                $this->redirect(PropertyResource::getUrl('edit', ['record' => $this->getRecord()]));
-            });
-    }
 
-    public function makePrimaryPropertyPhotoAction(): Action
-    {
-        return Action::make('makePrimaryPropertyPhoto')
-            ->action(function (array $arguments): void {
-                abort_unless(AdminAuth::canManageProperties(), 403);
-                app(PropertyService::class)->setPrimaryPhoto($arguments['photoId']);
-                Notification::make()->title('Primary photo updated')->success()->send();
+                // Disabled (already-primary) toggles don't dehydrate, so this
+                // only fires when a non-primary photo was promoted.
+                $madePrimary = ! empty($data['is_primary']);
+                if ($madePrimary) {
+                    $service->setPrimaryPhoto($arguments['photoId']);
+                }
+
+                Notification::make()
+                    ->title($madePrimary ? 'Photo updated — set as primary' : 'Photo updated')
+                    ->success()
+                    ->send();
                 $this->redirect(PropertyResource::getUrl('edit', ['record' => $this->getRecord()]));
             });
     }
