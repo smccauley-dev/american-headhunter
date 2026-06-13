@@ -1059,8 +1059,6 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 {/* Registration marks — surveyor's corner marks between dashed line and content */}
                 {([
                   { top: 13, left: 13, borderTop: '1px solid #a89874', borderLeft: '1px solid #a89874' },
-                  { top: 13, right: 13, borderTop: '1px solid #a89874', borderRight: '1px solid #a89874' },
-                  { bottom: 13, left: 13, borderBottom: '1px solid #a89874', borderLeft: '1px solid #a89874' },
                   { bottom: 13, right: 13, borderBottom: '1px solid #a89874', borderRight: '1px solid #a89874' },
                 ] as React.CSSProperties[]).map((pos, i) => (
                   <div key={i} style={{ position: 'absolute', width: 10, height: 10, pointerEvents: 'none', zIndex: 4, ...pos }} />
