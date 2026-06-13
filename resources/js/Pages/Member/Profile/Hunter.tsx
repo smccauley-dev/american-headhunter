@@ -1282,7 +1282,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               {/* Coffee-ring stain — decorative, rendered last so it tints both
                   cards via multiply blend. Straddles the header/section boundary
                   on the right (see design mock). */}
-              <CoffeeStain style={{ top: '96px', right: '-26px', width: '260px', height: '260px', transform: 'rotate(-9deg)', zIndex: 6 }} />
+              <CoffeeStain style={{ top: '96px', right: '-26px', width: '260px', height: '260px', transform: 'rotate(-9deg)', opacity: 0.45, zIndex: 6 }} />
             </div>
           </div>
         </div>
