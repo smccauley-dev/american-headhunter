@@ -84,7 +84,10 @@ class ViewCustomerUser extends ViewRecord
                     TextEntry::make('profile.address_line1')->label('Street Address')->placeholder('-'),
                     TextEntry::make('profile.address_line2')->label('Apt / Unit')->placeholder('-'),
                     TextEntry::make('profile.city')->label('City')->placeholder('-'),
-                    TextEntry::make('profile.state_code')->label('State')->placeholder('-'),
+                    TextEntry::make('profile.state_code')
+                        ->label('State')
+                        ->formatStateUsing(fn ($state) => \App\Support\UsStates::names()[$state] ?? $state)
+                        ->placeholder('-'),
                     TextEntry::make('profile.zip_code')->label('ZIP')->placeholder('-'),
                     TextEntry::make('profile.emergency_contact_name')
                         ->label('Emergency Contact')
