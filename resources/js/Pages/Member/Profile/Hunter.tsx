@@ -462,7 +462,7 @@ function CoffeeStain({ style }: { style?: React.CSSProperties }) {
       style={{
         position: 'absolute',
         pointerEvents: 'none',
-        backgroundImage: 'url(/images/coffee-stain.png)',
+        backgroundImage: 'url(/images/coffee-stain-01.png)',
         backgroundSize: 'contain',
         backgroundRepeat: 'no-repeat',
         backgroundPosition: 'center',
