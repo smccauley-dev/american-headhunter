@@ -94,17 +94,6 @@ class EditCustomerUser extends EditRecord
                                     TextInput::make('last_name')
                                         ->label('Last Name')
                                         ->maxLength(100),
-                                    TextInput::make('email')
-                                        ->label('Email Address')
-                                        ->email()
-                                        ->required()
-                                        ->maxLength(255)
-                                        ->unique(table: 'users', column: 'email', ignoreRecord: true)
-                                        ->columnSpanFull(),
-                                    TextInput::make('phone')
-                                        ->label('Phone')
-                                        ->tel()
-                                        ->maxLength(20),
                                     Select::make('account_type')
                                         ->label('Primary Portal')
                                         ->helperText('Controls which portal this user is directed to at login.')
@@ -141,20 +130,39 @@ class EditCustomerUser extends EditRecord
                                 ]),
                         ]),
 
-                    // ── Profile ───────────────────────────────────────────────
-                    Tab::make('Profile')
+                    // ── Contact ───────────────────────────────────────────────
+                    Tab::make('Contact')
                         ->schema([
-                            Section::make()
+                            Section::make('Primary Contact')
                                 ->columns(2)
                                 ->schema([
-                                    TextInput::make('display_name')
-                                        ->label('Display Name')
+                                    TextInput::make('email')
+                                        ->label('Email Address')
+                                        ->email()
+                                        ->required()
+                                        ->maxLength(255)
+                                        ->unique(table: 'users', column: 'email', ignoreRecord: true),
+                                    TextInput::make('phone')
+                                        ->label('Phone')
+                                        ->tel()
+                                        ->maxLength(20),
+                                ]),
+
+                            Section::make('Mailing Address')
+                                ->description('Used for tax forms (1099) and mailing legal documents. Encrypted at rest.')
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('address_line1')
+                                        ->label('Street Address')
+                                        ->maxLength(255)
+                                        ->columnSpanFull(),
+                                    TextInput::make('address_line2')
+                                        ->label('Apt / Unit / Suite')
                                         ->maxLength(100)
                                         ->columnSpanFull(),
-                                    Textarea::make('bio')
-                                        ->label('Bio')
-                                        ->rows(3)
-                                        ->columnSpanFull(),
+                                    TextInput::make('city')
+                                        ->label('City')
+                                        ->maxLength(100),
                                     Select::make('state_code')
                                         ->label('State')
                                         ->options(function () {
@@ -171,6 +179,44 @@ class EditCustomerUser extends EditRecord
                                     TextInput::make('zip_code')
                                         ->label('ZIP Code')
                                         ->maxLength(10),
+                                ]),
+
+                            Section::make('Emergency Contact')
+                                ->description('Who to reach in a field emergency or SOS event. Encrypted at rest.')
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('emergency_contact_name')
+                                        ->label('Name')
+                                        ->maxLength(150),
+                                    TextInput::make('emergency_contact_relationship')
+                                        ->label('Relationship')
+                                        ->maxLength(60)
+                                        ->placeholder('e.g. Spouse, Parent'),
+                                    TextInput::make('emergency_contact_phone')
+                                        ->label('Phone')
+                                        ->tel()
+                                        ->maxLength(20),
+                                    TextInput::make('emergency_contact_email')
+                                        ->label('Email')
+                                        ->email()
+                                        ->maxLength(255),
+                                ]),
+                        ]),
+
+                    // ── Profile ───────────────────────────────────────────────
+                    Tab::make('Profile')
+                        ->schema([
+                            Section::make()
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('display_name')
+                                        ->label('Display Name')
+                                        ->maxLength(100)
+                                        ->columnSpanFull(),
+                                    Textarea::make('bio')
+                                        ->label('Bio')
+                                        ->rows(3)
+                                        ->columnSpanFull(),
                                     DatePicker::make('date_of_birth')
                                         ->label('Date of Birth')
                                         ->maxDate(now()->subYears(13)),
@@ -633,8 +679,15 @@ class EditCustomerUser extends EditRecord
         $data['last_name']    = $profile?->last_name    ?? '';
         $data['display_name'] = $profile?->display_name ?? '';
         $data['bio']          = $profile?->bio          ?? '';
+        $data['address_line1'] = $profile?->address_line1 ?? '';
+        $data['address_line2'] = $profile?->address_line2 ?? '';
+        $data['city']          = $profile?->city          ?? '';
         $data['state_code']   = $profile?->state_code   ?? null;
         $data['zip_code']     = $profile?->zip_code     ?? '';
+        $data['emergency_contact_name']         = $profile?->emergency_contact_name         ?? '';
+        $data['emergency_contact_relationship'] = $profile?->emergency_contact_relationship ?? '';
+        $data['emergency_contact_phone']        = $profile?->emergency_contact_phone        ?? '';
+        $data['emergency_contact_email']        = $profile?->emergency_contact_email        ?? '';
         $data['date_of_birth']= $profile?->date_of_birth?->format('Y-m-d') ?? null;
         $data['gender']                = $profile?->gender                ?? null;
         $data['veteran_branch']                = $profile?->veteran_branch                    ?? null;
@@ -685,11 +738,26 @@ class EditCustomerUser extends EditRecord
             'last_name'     => $data['last_name']     ?? null,
             'display_name'  => $data['display_name']  ?? null,
             'bio'           => $data['bio']           ?? null,
+            'address_line1' => $data['address_line1'] ?? null,
+            'address_line2' => $data['address_line2'] ?? null,
+            'city'          => $data['city']          ?? null,
             'state_code'    => $data['state_code']    ?? null,
             'zip_code'      => $data['zip_code']      ?? null,
+            'emergency_contact_name'         => $data['emergency_contact_name']         ?? null,
+            'emergency_contact_relationship' => $data['emergency_contact_relationship'] ?? null,
+            'emergency_contact_phone'        => $data['emergency_contact_phone']        ?? null,
+            'emergency_contact_email'        => $data['emergency_contact_email']        ?? null,
             'date_of_birth' => $data['date_of_birth'] ?? null,
             'gender'        => $data['gender']        ?? null,
         ]);
+
+        // PII fields encrypted at rest — their values must never reach the audit
+        // log. We record only that they changed (field name), never old/new values.
+        $encryptedProfileFields = [
+            'address_line1', 'address_line2', 'city',
+            'emergency_contact_name', 'emergency_contact_relationship',
+            'emergency_contact_phone', 'emergency_contact_email',
+        ];
 
         // Veteran detail fields — only written when the veteran toggle is on
         $profileData['veteran_is_active'] = false;
@@ -717,19 +785,28 @@ class EditCustomerUser extends EditRecord
             );
         }
 
-        // Snapshot profile fields before update
+        // Snapshot profile fields before update. Encrypted fields are excluded
+        // from the value diff (attributesToArray would expose ciphertext) — we
+        // capture their decrypted old values separately, only to detect change.
         $profile = $record->profile;
+        $encOld  = [];
+        foreach ($encryptedProfileFields as $f) {
+            $encOld[$f] = $profile?->{$f}; // decrypted via HasEncryptedFields
+        }
         $oldProfileState = $profile
-            ? array_intersect_key($profile->attributesToArray(), $profileData)
+            ? array_diff_key(
+                array_intersect_key($profile->attributesToArray(), $profileData),
+                array_flip($encryptedProfileFields)
+            )
             : [];
 
         $record->profile()->updateOrCreate(['user_id' => $record->id], $profileData);
 
-        // Build diff — only fields that actually changed
+        // Build diff — only non-encrypted fields that actually changed
         $allOld = array_merge($oldUserState, $oldProfileState);
         $allNew = array_merge(
             array_intersect_key($updateData, $oldUserState),
-            $profileData
+            array_diff_key($profileData, array_flip($encryptedProfileFields))
         );
 
         $oldValues = [];
@@ -746,6 +823,13 @@ class EditCustomerUser extends EditRecord
         $changedFields = array_keys($newValues);
         if (! empty($data['new_password'])) {
             $changedFields[] = 'password_hash';
+        }
+
+        // Encrypted PII: log only the field name when it changed — never the value
+        foreach ($encryptedProfileFields as $f) {
+            if ((string) ($encOld[$f] ?? null) !== (string) ($profileData[$f] ?? null)) {
+                $changedFields[] = $f;
+            }
         }
 
         app(AuditService::class)->log(

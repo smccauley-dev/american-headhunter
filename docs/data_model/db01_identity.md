@@ -89,8 +89,15 @@ CREATE TABLE user_profiles (
     display_name                VARCHAR(100) NULL,
     avatar_document_id          UUID        NULL,  -- References DB 11 (Documents) documents.id
     bio                         TEXT        NULL,
+    address_line1               TEXT        NULL,  -- encrypted (pgp_sym, identity key)
+    address_line2               TEXT        NULL,  -- encrypted (pgp_sym, identity key)
+    city                        TEXT        NULL,  -- encrypted (pgp_sym, identity key)
     state_code                  CHAR(2)     NULL,
     zip_code                    VARCHAR(10) NULL,
+    emergency_contact_name          TEXT    NULL,  -- encrypted (pgp_sym, identity key)
+    emergency_contact_relationship  TEXT    NULL,  -- encrypted (pgp_sym, identity key)
+    emergency_contact_phone         TEXT    NULL,  -- encrypted (pgp_sym, identity key)
+    emergency_contact_email         TEXT    NULL,  -- encrypted (pgp_sym, identity key)
     date_of_birth               DATE        NULL,
     gender                      VARCHAR(20) NULL
                                     CHECK (gender IN ('male', 'female', 'non_binary', 'prefer_not_to_say') OR gender IS NULL),
@@ -134,6 +141,7 @@ CREATE TRIGGER trg_user_profiles_updated_at
 
 **Notes:**
 - No `deleted_at` — profile lifecycle is tied to `users.deleted_at` via CASCADE
+- `address_line1`, `address_line2`, `city`, and all `emergency_contact_*` columns are encrypted at rest via `pgp_sym_encrypt` (identity key) and stored as base64 TEXT. The `UserProfile` model's `HasEncryptedFields` trait encrypts/decrypts transparently — never read these raw, and never log their values. `state_code` and `zip_code` remain plaintext (indexed, used for filtering).
 - `avatar_document_id` is a cross-DB reference: fetch the URL via `DocumentService::getUrl($avatarDocumentId)`
 - `notification_preferences` structure: `{"email": true, "sms": false, "push": true, "in_app": true}`
 - `hunting_profile` structure: `{"species": ["whitetail", "turkey"], "methods": ["rifle", "bow"], "experience_years": 10}`
