@@ -455,7 +455,7 @@ function DashedInset() {
 // Decorative coffee-ring stain — a transparent PNG of a real coffee ring.
 // Multiply blend lets the parchment/card show through the lighter areas so it
 // reads as a stain in the paper. Position/size/rotation come from `style`.
-function CoffeeStain({ style }: { style?: React.CSSProperties }) {
+function CofferStain01({ style }: { style?: React.CSSProperties }) {
   return (
     <div
       aria-hidden
@@ -1282,7 +1282,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               {/* Coffee-ring stain — decorative, rendered last so it tints both
                   cards via multiply blend. Straddles the header/section boundary
                   on the right (see design mock). */}
-              <CoffeeStain style={{ top: '56px', right: '-26px', width: '260px', height: '260px', transform: 'rotate(-9deg)', opacity: 0.45, zIndex: 6 }} />
+              <CofferStain01 style={{ top: '56px', right: '-26px', width: '260px', height: '260px', transform: 'rotate(-9deg)', opacity: 0.45, zIndex: 6 }} />
             </div>
           </div>
         </div>
