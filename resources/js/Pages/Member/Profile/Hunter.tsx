@@ -452,9 +452,9 @@ function DashedInset() {
   )
 }
 
-// Decorative coffee-cup ring stain. Multiply blend tints whatever paper/card
-// sits beneath it; the layered radial gradients give a dark dried rim with a
-// faint pooled interior. Position/size/rotation come from `style`.
+// Decorative coffee-ring stain — a transparent PNG of a real coffee ring.
+// Multiply blend lets the parchment/card show through the lighter areas so it
+// reads as a stain in the paper. Position/size/rotation come from `style`.
 function CoffeeStain({ style }: { style?: React.CSSProperties }) {
   return (
     <div
@@ -462,12 +462,11 @@ function CoffeeStain({ style }: { style?: React.CSSProperties }) {
       style={{
         position: 'absolute',
         pointerEvents: 'none',
-        borderRadius: '50%',
+        backgroundImage: 'url(/images/coffee-stain.png)',
+        backgroundSize: 'contain',
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'center',
         mixBlendMode: 'multiply',
-        filter: 'blur(0.5px)',
-        background:
-          'radial-gradient(circle at 50% 50%, rgba(107,74,43,0) 53%, rgba(107,74,43,0.10) 56%, rgba(107,74,43,0.24) 62%, rgba(120,80,44,0.32) 66%, rgba(107,74,43,0.16) 70%, rgba(107,74,43,0.05) 74%, rgba(107,74,43,0) 78%), ' +
-          'radial-gradient(circle at 47% 45%, rgba(107,74,43,0.07) 0%, rgba(107,74,43,0.03) 42%, rgba(107,74,43,0) 55%)',
         ...style,
       }}
     />
@@ -1280,11 +1279,10 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 </div>
               </div>
 
-              {/* Coffee-ring stains — decorative, rendered last so they tint
-                  both cards via multiply blend. The large ring straddles the
-                  header/section boundary on the right (see design mock). */}
-              <CoffeeStain style={{ top: '116px', right: '-14px', width: '236px', height: '224px', transform: 'rotate(-9deg)', zIndex: 6 }} />
-              <CoffeeStain style={{ top: '352px', left: '34px', width: '120px', height: '116px', transform: 'rotate(14deg)', opacity: 0.7, zIndex: 6 }} />
+              {/* Coffee-ring stain — decorative, rendered last so it tints both
+                  cards via multiply blend. Straddles the header/section boundary
+                  on the right (see design mock). */}
+              <CoffeeStain style={{ top: '96px', right: '-26px', width: '260px', height: '260px', transform: 'rotate(-9deg)', zIndex: 6 }} />
             </div>
           </div>
         </div>
