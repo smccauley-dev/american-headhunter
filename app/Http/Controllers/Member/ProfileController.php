@@ -12,6 +12,7 @@ use App\Models\Lease\CheckIn;
 use App\Models\Wildlife\HarvestLog;
 use App\Services\Documents\DocumentService;
 use App\Services\Lease\LeaseService;
+use App\Services\Platform\ProfileTemplateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -24,7 +25,7 @@ class ProfileController extends Controller
 {
     public function __construct(private readonly DocumentService $documents) {}
 
-    public function show(LeaseService $leaseService, string $initialTab = 'about'): Response
+    public function show(LeaseService $leaseService, ProfileTemplateService $templates, string $initialTab = 'about'): Response
     {
         $userId  = session('auth.user_id');
         $user    = User::findOrFail($userId);
@@ -102,6 +103,7 @@ class ProfileController extends Controller
             'security'    => $this->buildSecurityProps($userId),
             'leases'      => $leaseService->getLeaseSummariesForLessee($userId),
             'initial_tab' => $initialTab,
+            'template'    => $templates->getPublishedConfig('hunter'),
         ]);
     }
 

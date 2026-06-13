@@ -423,6 +423,19 @@ interface Props {
   }
   leases: LeaseSummary[]
   initial_tab: 'about' | 'leases'
+  template: TemplateConfig
+}
+
+// Admin-controlled CMS config for this profile type (DB 12 profile_templates).
+// `order`/`theme` are honored from Slice 2 on; Slice 1 uses decorations + module enable.
+interface TemplateConfig {
+  decorations: {
+    coffee_stain: { enabled: boolean; opacity: number }
+    registration_marks: { enabled: boolean }
+    topo_background: { enabled: boolean }
+  }
+  modules: Record<string, { enabled: boolean; order: number }>
+  theme: { accent: string; paper: string; ink: string }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -654,7 +667,17 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, activity, security, leases, initial_tab }: Props) {
+export default function HunterProfile({ user, profile, photos, activity, security, leases, initial_tab, template }: Props) {
+  // Template-driven decorations + module enablement (admin CMS, DB 12).
+  const deco = template.decorations
+  const mods = template.modules
+  const stainEnabled = deco.coffee_stain.enabled
+  const stainOpacity = Number(deco.coffee_stain.opacity)
+  const showRegMarks = deco.registration_marks.enabled
+  const showTopo     = deco.topo_background.enabled
+  // about + security always render; the rest appear only when enabled for this type.
+  const moduleEnabled = (key: string): boolean =>
+    key === 'about' || key === 'security' || mods[key]?.enabled !== false
   const [editing, setEditing]               = useState(false)
   const [tab, setTab]                       = useState<'about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security' | 'leases'>(initial_tab ?? 'about')
   const [saving, setSaving]                 = useState(false)
@@ -804,7 +827,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
   return (
     <>
       <Head title="My Profile — American Headhunter" />
-      <div className="topo-bg" style={{ minHeight: '100vh', background: '#EDE5D0' }}>
+      <div className={showTopo ? 'topo-bg' : undefined} style={{ minHeight: '100vh', background: '#EDE5D0' }}>
 
         {/* ── Topbar ─────────────────────────────────────────────────────── */}
         <div style={{ background: '#0A1512', borderBottom: '1px solid #b8934a' }}>
@@ -814,8 +837,12 @@ export default function HunterProfile({ user, profile, photos, activity, securit
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
               <div style={{ position: 'relative', width: '42px', height: '42px', flexShrink: 0, margin: '5px' }}>
                 {/* Registration mark corners */}
-                <div style={{ position: 'absolute', top: -5, left: -5, width: 9, height: 9, borderTop: '1.5px solid #a89874', borderLeft: '1.5px solid #a89874' }} />
-                <div style={{ position: 'absolute', bottom: -5, right: -5, width: 9, height: 9, borderBottom: '1.5px solid #a89874', borderRight: '1.5px solid #a89874' }} />
+                {showRegMarks && (
+                  <>
+                    <div style={{ position: 'absolute', top: -5, left: -5, width: 9, height: 9, borderTop: '1.5px solid #a89874', borderLeft: '1.5px solid #a89874' }} />
+                    <div style={{ position: 'absolute', bottom: -5, right: -5, width: 9, height: 9, borderBottom: '1.5px solid #a89874', borderRight: '1.5px solid #a89874' }} />
+                  </>
+                )}
                 <div style={{ width: '42px', height: '42px', border: '1px solid #a89874', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0A1512' }}>
                   <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '15px', fontWeight: 500, color: '#F4ECDC', letterSpacing: '.05em' }}>
                     AH
@@ -1086,7 +1113,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 <DashedInset />
 
                 {/* Registration marks — surveyor's corner marks between dashed line and content */}
-                {([
+                {showRegMarks && ([
                   { top: 13, left: 13, borderTop: '1px solid #a89874', borderLeft: '1px solid #a89874' },
                   { bottom: 13, right: 13, borderBottom: '1px solid #a89874', borderRight: '1px solid #a89874' },
                 ] as React.CSSProperties[]).map((pos, i) => (
@@ -1177,7 +1204,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 <DashedInset />
                 {/* Tab bar — profile sections only; the leases view replaces it */}
                 <div style={{ display: tab === 'leases' ? 'none' : 'flex', borderBottom: '1px solid #e5ddd0', margin: '14px 16px 0', padding: '0 12px' }}>
-                  {(['about', 'contact', 'social', 'photos', 'gear', 'activity', 'security'] as const).map(t => {
+                  {(['about', 'contact', 'social', 'photos', 'gear', 'activity', 'security'] as const).filter(t => moduleEnabled(t)).map(t => {
                     const visKey = t as 'about' | 'contact' | 'social' | 'gear' | 'photos'
                     const hasVis = t === 'about' || t === 'contact' || t === 'social' || t === 'gear' || t === 'photos'
                     const vis = hasVis ? form.visibility?.[visKey] : null
@@ -1282,7 +1309,9 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               {/* Coffee-ring stain — decorative, rendered last so it tints both
                   cards via multiply blend. Straddles the header/section boundary
                   on the right (see design mock). */}
-              <CoffeeStain01 style={{ top: '56px', right: '-26px', width: '260px', height: '260px', transform: 'rotate(-9deg)', opacity: 0.45, zIndex: 6 }} />
+              {stainEnabled && (
+                <CoffeeStain01 style={{ top: '56px', right: '-26px', width: '260px', height: '260px', transform: 'rotate(-9deg)', opacity: stainOpacity, zIndex: 6 }} />
+              )}
             </div>
           </div>
         </div>
