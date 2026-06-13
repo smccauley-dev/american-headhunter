@@ -4,12 +4,13 @@ namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
 use App\Models\Identity\User;
+use App\Services\Platform\ProfileTemplateService;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class HunterPublicProfileController extends Controller
 {
-    public function show(string $username): Response
+    public function show(string $username, ProfileTemplateService $templates): Response
     {
         $user = User::where('username', $username)->first();
 
@@ -17,10 +18,13 @@ class HunterPublicProfileController extends Controller
             abort(404);
         }
 
+        $template = $templates->getPublishedConfig('hunter');
+
         if (! $user->is_profile_public) {
             return Inertia::render('Public/HunterPublicProfile', [
                 'username'  => $username,
                 'is_public' => false,
+                'template'  => $template,
             ]);
         }
 
@@ -35,6 +39,7 @@ class HunterPublicProfileController extends Controller
         return Inertia::render('Public/HunterPublicProfile', [
             'username'     => $username,
             'is_public'    => true,
+            'template'     => $template,
             'display_name' => $displayName,
             'initials'     => $this->initials($profile?->first_name, $profile?->last_name, $displayName),
             'member_since' => $user->created_at?->format('F Y'),

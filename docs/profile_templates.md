@@ -126,7 +126,7 @@ modules per profile type; the hunter profile honors it. No reorder, no theme col
 - [x] `ProfileController::show` passes `template` (published `hunter` config) to the page
 - [x] `Hunter.tsx`: gate `CoffeeStain01` (+ opacity), registration marks, `topo-bg`, and
       optional module tabs (contact/social/photos/gear/activity) on the template config
-- [ ] Sync to WSL2 · `npm run build` · `php -l` · commit + push
+- [x] Sync to WSL2 · `npm run build` · `php -l` · commit + push (2026-06-13, commit 98c1227)
 
 > Public-side note: `HunterPublicProfileController` / `Public/HunterPublicProfile` is a
 > separate, simpler layout that does not carry these decorations/module tabs, so wiring
@@ -137,13 +137,21 @@ modules per profile type; the hunter profile honors it. No reorder, no theme col
 Goal: admin can reorder modules and set theme colors; tokenize the hex in `Hunter.tsx`;
 extend templating to Angler and Outfitter profile pages.
 
-- [ ] Filament: drag/reorder module list (writes `order`) + theme color pickers
-- [ ] Service honors `order`; expose ordered module list to the page
-- [ ] `Hunter.tsx`: introduce a module registry keyed by module key; render in `order`
-- [ ] Tokenize literal hex → CSS custom properties driven by `theme`
-- [ ] Wire `HunterPublicProfileController` + apply template to `Public/HunterPublicProfile`
-- [ ] Apply template prop wiring + gating to Angler and Outfitter profile pages
-- [ ] Build · lint · commit + push
+- [x] Filament: per-module `order` number inputs (writes `order`) + 3 theme color pickers
+      (accent/paper/ink). Numeric inputs over drag-drop — modules are a fixed keyed map,
+      not a list, so a repeater would force a map↔list conversion. Drag-drop = future polish.
+- [x] Service honors `order` — `getPublishedConfig` already merges `order`/`theme` from
+      DEFAULT_TEMPLATE; the page sorts tabs by `order`. No service change needed.
+- [x] `Hunter.tsx`: build `orderedTabs` by filtering enabled modules and sorting by
+      `order`; `security` always appended last. Tab bar maps over the ordered list.
+- [x] Tokenize literal hex → CSS custom properties (`--ah-accent/--ah-paper/--ah-ink`)
+      set on the page wrapper from `theme`; all 3 brand hexes replaced with `var(...)`.
+- [x] Wire `HunterPublicProfileController` (passes `template` in both private + public
+      branches) + apply theme tokens & reg-mark gate to `Public/HunterPublicProfile`.
+- [N/A] Angler / Outfitter profile pages — **do not exist yet** (only `Hunter.tsx`).
+      Template rows are seeded for all three types; their frontends will consume the
+      template when built. Nothing to wire today.
+- [x] Build · lint · commit + push
 
 ---
 

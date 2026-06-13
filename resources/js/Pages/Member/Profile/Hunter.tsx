@@ -454,9 +454,9 @@ function labelFor(opts: { key: string; label: string }[], key: string | null): s
 // inner dashed border at 8px inset (see docs/design_system.md "Field Record Cards")
 const fieldCard: React.CSSProperties = {
   position: 'relative',
-  background: '#F8F4EB',
-  border: '1px solid #0A1512',
-  boxShadow: '8px 8px 0 #0A1512',
+  background: 'var(--ah-paper)',
+  border: '1px solid var(--ah-ink)',
+  boxShadow: '8px 8px 0 var(--ah-ink)',
 }
 
 function DashedInset() {
@@ -536,9 +536,9 @@ function TrustScoreInfo() {
           left: pos.left,
           width: '240px',
           maxWidth: 'calc(100vw - 24px)',
-          background: '#F8F4EB',
-          border: '1px solid #0A1512',
-          boxShadow: '4px 4px 0 #0A1512',
+          background: 'var(--ah-paper)',
+          border: '1px solid var(--ah-ink)',
+          boxShadow: '4px 4px 0 var(--ah-ink)',
           padding: '12px 14px',
           zIndex: 50,
           textTransform: 'none',
@@ -547,7 +547,7 @@ function TrustScoreInfo() {
           <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#4a5440', marginBottom: '6px' }}>
             Trust Score
           </div>
-          <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', lineHeight: 1.5, color: '#0A1512', fontWeight: 400 }}>
+          <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', lineHeight: 1.5, color: 'var(--ah-ink)', fontWeight: 400 }}>
             A 0–100 measure of your standing on American Headhunter. It rises with verified email, phone, and ID, completed leases, and positive reviews — and falls with disputes or early lease terminations. Landowners see it when reviewing applications.
           </div>
         </div>
@@ -559,7 +559,7 @@ function TrustScoreInfo() {
 const input: React.CSSProperties = {
   fontFamily: 'Crimson Pro, Georgia, serif',
   fontSize: '15px',
-  color: '#0A1512',
+  color: 'var(--ah-ink)',
   background: '#fff',
   border: '1px solid #d4c9b0',
   padding: '7px 10px',
@@ -614,7 +614,7 @@ function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
       <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: '#a89874' }}>
         {label}
       </span>
-      <span style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#0A1512' }}>
+      <span style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: 'var(--ah-ink)' }}>
         {value || <span style={{ color: '#ccc' }}>—</span>}
       </span>
     </div>
@@ -650,8 +650,8 @@ function PillToggle({ options, selected, onChange }: {
               letterSpacing: '.06em',
               textTransform: 'uppercase' as const,
               padding: '4px 10px',
-              border: `1px solid ${on ? '#C84C21' : '#d4c9b0'}`,
-              background: on ? '#C84C21' : 'transparent',
+              border: `1px solid ${on ? 'var(--ah-accent)' : '#d4c9b0'}`,
+              background: on ? 'var(--ah-accent)' : 'transparent',
               color: on ? '#fff' : '#999',
               cursor: 'pointer',
               transition: 'all 150ms',
@@ -678,6 +678,19 @@ export default function HunterProfile({ user, profile, photos, activity, securit
   // about + security always render; the rest appear only when enabled for this type.
   const moduleEnabled = (key: string): boolean =>
     key === 'about' || key === 'security' || mods[key]?.enabled !== false
+  // Theme tokens — exposed as CSS custom properties on the page wrapper so every
+  // descendant inline style (var(--ah-…)) recolors without prop drilling.
+  const themeVars = {
+    '--ah-accent': template.theme.accent,
+    '--ah-paper': template.theme.paper,
+    '--ah-ink': template.theme.ink,
+  } as React.CSSProperties
+  // Content tabs in admin-defined order; security is always appended last.
+  const orderedTabs = (['about', 'contact', 'social', 'photos', 'gear', 'activity'] as const)
+    .filter(k => moduleEnabled(k))
+    .sort((a, b) => (Number(mods[a]?.order) || 0) - (Number(mods[b]?.order) || 0))
+  const tabList = [...orderedTabs, 'security'] as
+    ('about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security')[]
   const [editing, setEditing]               = useState(false)
   const [tab, setTab]                       = useState<'about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security' | 'leases'>(initial_tab ?? 'about')
   const [saving, setSaving]                 = useState(false)
@@ -822,15 +835,15 @@ export default function HunterProfile({ user, profile, photos, activity, securit
   ).toUpperCase() || '?'
 
   const trustPct = Math.min(100, Math.max(0, user.trust_score))
-  const trustColor = trustPct >= 75 ? '#4a7c59' : trustPct >= 45 ? '#b8934a' : '#C84C21'
+  const trustColor = trustPct >= 75 ? '#4a7c59' : trustPct >= 45 ? '#b8934a' : 'var(--ah-accent)'
 
   return (
     <>
       <Head title="My Profile — American Headhunter" />
-      <div className={showTopo ? 'topo-bg' : undefined} style={{ minHeight: '100vh', background: '#EDE5D0' }}>
+      <div className={showTopo ? 'topo-bg' : undefined} style={{ ...themeVars, minHeight: '100vh', background: '#EDE5D0' }}>
 
         {/* ── Topbar ─────────────────────────────────────────────────────── */}
-        <div style={{ background: '#0A1512', borderBottom: '1px solid #b8934a' }}>
+        <div style={{ background: 'var(--ah-ink)', borderBottom: '1px solid #b8934a' }}>
           <div style={{ maxWidth: '1160px', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 
             {/* Logo block */}
@@ -843,7 +856,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                     <div style={{ position: 'absolute', bottom: -5, right: -5, width: 9, height: 9, borderBottom: '1.5px solid #a89874', borderRight: '1.5px solid #a89874' }} />
                   </>
                 )}
-                <div style={{ width: '42px', height: '42px', border: '1px solid #a89874', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0A1512' }}>
+                <div style={{ width: '42px', height: '42px', border: '1px solid #a89874', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ah-ink)' }}>
                   <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '15px', fontWeight: 500, color: '#F4ECDC', letterSpacing: '.05em' }}>
                     AH
                   </span>
@@ -884,7 +897,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   position: 'relative',
                   margin: '16px 16px 0',
                   aspectRatio: '1 / 1',
-                  background: '#0A1512',
+                  background: 'var(--ah-ink)',
                   cursor: editing ? 'pointer' : 'default',
                   overflow: 'hidden',
                 }}
@@ -940,7 +953,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   </div>
                 ) : (
                   <div style={{ marginBottom: '14px' }}>
-                    <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '17px', fontWeight: 500, color: '#0A1512', lineHeight: 1.25, marginBottom: '3px' }}>
+                    <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '17px', fontWeight: 500, color: 'var(--ah-ink)', lineHeight: 1.25, marginBottom: '3px' }}>
                       {displayName}
                     </div>
                     {profile.state_code && (
@@ -961,7 +974,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                     <div style={{ flex: 1, height: '4px', background: '#e5ddd0', position: 'relative', overflow: 'hidden' }}>
                       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${trustPct}%`, background: trustColor, transition: 'width 600ms ease' }} />
                     </div>
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: 700, color: '#0A1512', minWidth: '28px', textAlign: 'right' }}>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: 700, color: 'var(--ah-ink)', minWidth: '28px', textAlign: 'right' }}>
                       {trustPct}
                     </span>
                   </div>
@@ -991,9 +1004,9 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                     textTransform: 'uppercase',
                     textDecoration: 'none',
                     textAlign: 'left',
-                    color: active ? '#C84C21' : '#6b7856',
+                    color: active ? 'var(--ah-accent)' : '#6b7856',
                     background: active ? 'rgba(200,76,33,0.05)' : 'transparent',
-                    borderLeft: active ? '2px solid #C84C21' : '2px solid transparent',
+                    borderLeft: active ? '2px solid var(--ah-accent)' : '2px solid transparent',
                     cursor: 'pointer',
                     transition: 'all 150ms',
                   }
@@ -1028,8 +1041,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                           onClick={() => hunting('preferred_states', toggle(form.hunting.preferred_states, st))}
                           style={{
                             fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600,
-                            padding: '2px 5px', border: `1px solid ${on ? '#C84C21' : '#d4c9b0'}`,
-                            background: on ? '#C84C21' : 'transparent', color: on ? '#fff' : '#bbb',
+                            padding: '2px 5px', border: `1px solid ${on ? 'var(--ah-accent)' : '#d4c9b0'}`,
+                            background: on ? 'var(--ah-accent)' : 'transparent', color: on ? '#fff' : '#bbb',
                             cursor: 'pointer',
                           }}
                         >
@@ -1041,7 +1054,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 ) : profile.hunting.preferred_states.length > 0 ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                     {profile.hunting.preferred_states.map(st => (
-                      <span key={st} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, padding: '2px 8px', background: '#0A1512', color: '#b8934a', letterSpacing: '.06em' }}>
+                      <span key={st} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, padding: '2px 8px', background: 'var(--ah-ink)', color: '#b8934a', letterSpacing: '.06em' }}>
                         {st}
                       </span>
                     ))}
@@ -1126,7 +1139,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                     <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.2em', textTransform: 'uppercase', color: '#4a5440', marginBottom: '4px' }}>
                       Field Record
                     </div>
-                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: 500, color: '#0A1512' }}>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: 500, color: 'var(--ah-ink)' }}>
                       AH-{user.id.slice(0, 8).toUpperCase()}
                       {profile.state_code && (
                         <span style={{ color: '#a89874', marginLeft: '8px', fontWeight: 400 }}>
@@ -1135,7 +1148,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                       )}
                     </div>
                   </div>
-                  <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '11px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: '#C84C21', border: '1.5px solid #C84C21', padding: '3px 10px', transform: 'rotate(-6deg)', marginRight: '6px' }}>
+                  <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '11px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ah-accent)', border: '1.5px solid var(--ah-accent)', padding: '3px 10px', transform: 'rotate(-6deg)', marginRight: '6px' }}>
                     Hunter
                   </div>
                 </div>
@@ -1143,7 +1156,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                      <h1 style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '26px', fontWeight: 400, color: '#0A1512', margin: 0, lineHeight: 1.1 }}>
+                      <h1 style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '26px', fontWeight: 400, color: 'var(--ah-ink)', margin: 0, lineHeight: 1.1 }}>
                         {displayName}
                       </h1>
                       {(editing ? form.is_veteran : user.is_veteran) && (() => {
@@ -1174,13 +1187,13 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                       <button
                         onClick={handleSave}
                         disabled={saving}
-                        style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: '#0A1512', color: '#F4ECDC', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
+                        style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'var(--ah-ink)', color: '#F4ECDC', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
                       >
                         {saving ? 'Saving…' : 'Save Changes'}
                       </button>
                       <button
                         onClick={handleCancel}
-                        style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: '#0A1512', border: '1px solid #d4c9b0', cursor: 'pointer' }}
+                        style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: 'var(--ah-ink)', border: '1px solid #d4c9b0', cursor: 'pointer' }}
                       >
                         Cancel
                       </button>
@@ -1188,7 +1201,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   ) : (
                     <button
                       onClick={() => setEditing(true)}
-                      style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: '#0A1512', border: '1px solid #d4c9b0', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}
+                      style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: 'var(--ah-ink)', border: '1px solid #d4c9b0', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}
                     >
                       <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
@@ -1204,7 +1217,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 <DashedInset />
                 {/* Tab bar — profile sections only; the leases view replaces it */}
                 <div style={{ display: tab === 'leases' ? 'none' : 'flex', borderBottom: '1px solid #e5ddd0', margin: '14px 16px 0', padding: '0 12px' }}>
-                  {(['about', 'contact', 'social', 'photos', 'gear', 'activity', 'security'] as const).filter(t => moduleEnabled(t)).map(t => {
+                  {tabList.map(t => {
                     const visKey = t as 'about' | 'contact' | 'social' | 'gear' | 'photos'
                     const hasVis = t === 'about' || t === 'contact' || t === 'social' || t === 'gear' || t === 'photos'
                     const vis = hasVis ? form.visibility?.[visKey] : null
@@ -1217,8 +1230,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                           fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700,
                           letterSpacing: '.12em', textTransform: 'uppercase', padding: '14px 0',
                           marginRight: '24px', background: 'none', border: 'none',
-                          borderBottom: tab === t ? '2px solid #C84C21' : '2px solid transparent',
-                          color: tab === t ? '#0A1512' : '#6b5e50', cursor: 'pointer',
+                          borderBottom: tab === t ? '2px solid var(--ah-accent)' : '2px solid transparent',
+                          color: tab === t ? 'var(--ah-ink)' : '#6b5e50', cursor: 'pointer',
                           display: 'flex', alignItems: 'center', gap: '5px',
                         }}
                       >
@@ -1229,12 +1242,12 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                           </svg>
                         )}
                         {t === 'photos' && photos.length > 0 && (
-                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, background: tab === t ? '#C84C21' : '#e5ddd0', color: tab === t ? '#fff' : '#a89874', borderRadius: '8px', padding: '1px 5px', marginLeft: '1px' }}>
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, background: tab === t ? 'var(--ah-accent)' : '#e5ddd0', color: tab === t ? '#fff' : '#a89874', borderRadius: '8px', padding: '1px 5px', marginLeft: '1px' }}>
                             {photos.length}
                           </span>
                         )}
                         {t === 'gear' && form.gear?.items?.length > 0 && (
-                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, background: tab === t ? '#C84C21' : '#e5ddd0', color: tab === t ? '#fff' : '#a89874', borderRadius: '8px', padding: '1px 5px', marginLeft: '1px' }}>
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, background: tab === t ? 'var(--ah-accent)' : '#e5ddd0', color: tab === t ? '#fff' : '#a89874', borderRadius: '8px', padding: '1px 5px', marginLeft: '1px' }}>
                             {form.gear.items.length}
                           </span>
                         )}
@@ -1329,7 +1342,7 @@ function LeasesTab({ leases }: { leases: LeaseSummary[] }) {
         <svg width="40" height="40" fill="none" stroke="#c2b48f" strokeWidth="1.25" viewBox="0 0 24 24" style={{ margin: '0 auto 16px' }}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z" />
         </svg>
-        <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '18px', color: '#0A1512', marginBottom: '6px' }}>
+        <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '18px', color: 'var(--ah-ink)', marginBottom: '6px' }}>
           No leases yet
         </div>
         <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', maxWidth: '360px', margin: '0 auto 20px', lineHeight: 1.5 }}>
@@ -1337,7 +1350,7 @@ function LeasesTab({ leases }: { leases: LeaseSummary[] }) {
         </p>
         <a
           href="/properties"
-          style={{ display: 'inline-block', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: '#0A1512', color: '#F4ECDC', textDecoration: 'none' }}
+          style={{ display: 'inline-block', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: 'var(--ah-ink)', color: '#F4ECDC', textDecoration: 'none' }}
         >
           Browse Properties
         </a>
@@ -1361,7 +1374,7 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
   return (
     <div style={{ border: '1px solid #d4c9b0', background: '#FBF7EE' }}>
       {/* Dark header strip */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', background: '#0A1512' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', background: 'var(--ah-ink)' }}>
         <div>
           <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '17px', color: '#F4ECDC', lineHeight: 1.1 }}>
             {lease.property?.title ?? 'Property'}
@@ -1395,7 +1408,7 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
             <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874', marginBottom: '4px' }}>
               {cell.label}
             </div>
-            <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '15px', color: '#0A1512' }}>
+            <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '15px', color: 'var(--ah-ink)' }}>
               {cell.value}
             </div>
           </div>
@@ -1403,7 +1416,7 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
       </div>
 
       {expiringSoon && (
-        <div style={{ padding: '8px 18px', background: 'rgba(200,76,33,0.07)', borderTop: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: '#C84C21' }}>
+        <div style={{ padding: '8px 18px', background: 'rgba(200,76,33,0.07)', borderTop: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: 'var(--ah-accent)' }}>
           Expires in {lease.days_until_expiry} day{lease.days_until_expiry === 1 ? '' : 's'}
         </div>
       )}
@@ -1413,14 +1426,14 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
         {pending && (
           <a
             href={`/member/leases/${lease.id}/sign`}
-            style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: '#C84C21', color: '#fff', textDecoration: 'none' }}
+            style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'var(--ah-accent)', color: '#fff', textDecoration: 'none' }}
           >
             Sign Now
           </a>
         )}
         <a
           href={`/member/leases/${lease.id}`}
-          style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: '#0A1512', border: '1px solid #d4c9b0', textDecoration: 'none' }}
+          style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: 'var(--ah-ink)', border: '1px solid #d4c9b0', textDecoration: 'none' }}
         >
           View Lease
         </a>
@@ -2038,7 +2051,7 @@ function PhotosTab({ photos, editing, visibilityValue, onVisibility }: {
             display: 'inline-flex', alignItems: 'center', gap: '7px',
             fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700,
             letterSpacing: '.1em', textTransform: 'uppercase',
-            padding: '8px 18px', background: uploading ? '#e5ddd0' : '#0A1512',
+            padding: '8px 18px', background: uploading ? '#e5ddd0' : 'var(--ah-ink)',
             color: uploading ? '#a89874' : '#F4ECDC',
             border: 'none', cursor: uploading ? 'not-allowed' : 'pointer',
           }}
@@ -2064,7 +2077,7 @@ function PhotosTab({ photos, editing, visibilityValue, onVisibility }: {
           {photos.map(p => (
             <div
               key={p.id}
-              style={{ position: 'relative', paddingBottom: '100%', background: '#0A1512', overflow: 'hidden' }}
+              style={{ position: 'relative', paddingBottom: '100%', background: 'var(--ah-ink)', overflow: 'hidden' }}
             >
               <img
                 src={p.url}
@@ -2166,7 +2179,7 @@ function GearTab({ items, editing, onGear, visibilityValue, onVisibility }: {
               <button
                 type="button"
                 onClick={() => { setAdding(true); setErr('') }}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 18px', background: '#0A1512', color: '#F4ECDC', border: 'none', cursor: 'pointer' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 18px', background: 'var(--ah-ink)', color: '#F4ECDC', border: 'none', cursor: 'pointer' }}
               >
                 <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                 Add Gear
@@ -2206,9 +2219,9 @@ function GearTab({ items, editing, onGear, visibilityValue, onVisibility }: {
                   value={newItem.model}
                   onChange={e => { setNewItem(n => ({ ...n, model: e.target.value })); setErr('') }}
                   placeholder="e.g. Model 700, Kelvin Down Hoody, Razor HD"
-                  style={{ ...input, borderColor: err ? '#C84C21' : '#d4c9b0' }}
+                  style={{ ...input, borderColor: err ? 'var(--ah-accent)' : '#d4c9b0' }}
                 />
-                {err && <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#C84C21', marginTop: '4px' }}>{err}</div>}
+                {err && <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: 'var(--ah-accent)', marginTop: '4px' }}>{err}</div>}
               </div>
               <div style={{ marginBottom: '14px' }}>
                 <EditLabel>Notes (optional)</EditLabel>
@@ -2223,14 +2236,14 @@ function GearTab({ items, editing, onGear, visibilityValue, onVisibility }: {
                 <button
                   type="button"
                   onClick={handleAdd}
-                  style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 18px', background: '#0A1512', color: '#F4ECDC', border: 'none', cursor: 'pointer' }}
+                  style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 18px', background: 'var(--ah-ink)', color: '#F4ECDC', border: 'none', cursor: 'pointer' }}
                 >
                   Add to List
                 </button>
                 <button
                   type="button"
                   onClick={() => { setAdding(false); setErr(''); setNewItem({ ...BLANK_ITEM }) }}
-                  style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 18px', background: 'transparent', color: '#0A1512', border: '1px solid #d4c9b0', cursor: 'pointer' }}
+                  style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 18px', background: 'transparent', color: 'var(--ah-ink)', border: '1px solid #d4c9b0', cursor: 'pointer' }}
                 >
                   Cancel
                 </button>
@@ -2245,7 +2258,7 @@ function GearTab({ items, editing, onGear, visibilityValue, onVisibility }: {
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#b8934a', minWidth: '110px', flexShrink: 0 }}>
                     {catLabel(item.category)}
                   </span>
-                  <span style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#0A1512', flex: 1 }}>
+                  <span style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: 'var(--ah-ink)', flex: 1 }}>
                     {item.brand ? `${item.brand} ` : ''}<strong>{item.model}</strong>
                     {item.notes && <span style={{ color: '#a89874', fontSize: '13px' }}> — {item.notes}</span>}
                   </span>
@@ -2274,7 +2287,7 @@ function GearTab({ items, editing, onGear, visibilityValue, onVisibility }: {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   {catItems.map(item => (
                     <div key={item.id} style={{ padding: '8px 0', borderBottom: '1px solid #f5f0e8', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '16px', color: '#0A1512' }}>
+                      <span style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '16px', color: 'var(--ah-ink)' }}>
                         {item.brand ? `${item.brand} ` : ''}<strong>{item.model}</strong>
                       </span>
                       {item.notes && (
@@ -2399,7 +2412,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
   }
 
   const cardStyle: React.CSSProperties = {
-    background: '#F8F4EB',
+    background: 'var(--ah-paper)',
     border: '1px solid #e5ddd0',
     padding: '20px 22px',
     display: 'flex',
@@ -2439,8 +2452,8 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
       )}
       {flash?.error && (
         <div style={{
-          background: '#fdf0ed', border: '1px solid #C84C21', padding: '10px 16px',
-          fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: '#C84C21', letterSpacing: '.04em',
+          background: '#fdf0ed', border: '1px solid var(--ah-accent)', padding: '10px 16px',
+          fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: 'var(--ah-accent)', letterSpacing: '.04em',
         }}>
           {flash.error}
         </div>
@@ -2461,7 +2474,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
               style={input}
             />
             {errors.current_password && (
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#C84C21', marginTop: '4px' }}>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--ah-accent)', marginTop: '4px' }}>
                 {errors.current_password}
               </div>
             )}
@@ -2477,7 +2490,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
               style={input}
             />
             {errors.password && (
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#C84C21', marginTop: '4px' }}>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--ah-accent)', marginTop: '4px' }}>
                 {errors.password}
               </div>
             )}
@@ -2503,7 +2516,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                 fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700,
                 letterSpacing: '.1em', textTransform: 'uppercase',
                 padding: '9px 22px',
-                background: pwSaving ? '#d4c9b0' : '#0A1512',
+                background: pwSaving ? '#d4c9b0' : 'var(--ah-ink)',
                 color: pwSaving ? '#a89874' : '#F4ECDC',
                 border: 'none', cursor: pwSaving ? 'not-allowed' : 'pointer',
               }}
@@ -2543,7 +2556,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                 display: 'inline-flex', alignItems: 'center', gap: '5px',
                 fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
                 letterSpacing: '.12em', textTransform: 'uppercase',
-                color: '#a89874', background: '#F8F4EB', padding: '3px 8px', border: '1px solid #d4c9b0',
+                color: '#a89874', background: 'var(--ah-paper)', padding: '3px 8px', border: '1px solid #d4c9b0',
               }}>
                 <EyeSlashIcon style={{ width: '11px', height: '11px' }} /> Private
               </span>
@@ -2557,7 +2570,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                   fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
                   letterSpacing: '.1em', textTransform: 'uppercase',
                   padding: '5px 12px', background: 'transparent',
-                  color: '#C84C21', border: '1px solid #C84C21',
+                  color: 'var(--ah-accent)', border: '1px solid var(--ah-accent)',
                   cursor: visibilitySaving ? 'not-allowed' : 'pointer',
                 }}
               >
@@ -2571,7 +2584,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                   display: 'inline-flex', alignItems: 'center', gap: '6px',
                   fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
                   letterSpacing: '.1em', textTransform: 'uppercase',
-                  padding: '5px 12px', background: '#0A1512',
+                  padding: '5px 12px', background: 'var(--ah-ink)',
                   color: '#F4ECDC', border: 'none', cursor: 'pointer',
                 }}
               >
@@ -2590,7 +2603,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
             <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
               <ShieldExclamationIcon style={{ width: '18px', height: '18px', color: '#b8934a', flexShrink: 0, marginTop: '1px' }} />
               <div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', color: '#0A1512', marginBottom: '4px' }}>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', color: 'var(--ah-ink)', marginBottom: '4px' }}>
                   {username ? 'Make your profile public?' : 'Choose your username first'}
                 </div>
                 <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', color: '#666', margin: 0 }}>
@@ -2620,12 +2633,12 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                   />
                 </div>
                 {errors.username && (
-                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#C84C21' }}>
+                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--ah-accent)' }}>
                     {errors.username}
                   </div>
                 )}
                 {usernameInput && !usernameValid && (
-                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#C84C21', letterSpacing: '.04em' }}>
+                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: 'var(--ah-accent)', letterSpacing: '.04em' }}>
                     3–30 chars, must start with a letter, letters/numbers/underscores only.
                   </div>
                 )}
@@ -2642,7 +2655,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                       </div>
                     )}
                     {!usernameChecking && usernameAvailable === false && (
-                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#C84C21', letterSpacing: '.04em' }}>
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: 'var(--ah-accent)', letterSpacing: '.04em' }}>
                         ✗ Already taken — try another
                       </div>
                     )}
@@ -2678,7 +2691,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                   fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
                   letterSpacing: '.1em', textTransform: 'uppercase',
                   padding: '7px 16px',
-                  background: (visibilitySaving || (!username && (!usernameValid || usernameAvailable !== true))) ? '#d4c9b0' : '#0A1512',
+                  background: (visibilitySaving || (!username && (!usernameValid || usernameAvailable !== true))) ? '#d4c9b0' : 'var(--ah-ink)',
                   color: (visibilitySaving || (!username && (!usernameValid || usernameAvailable !== true))) ? '#a89874' : '#F4ECDC',
                   border: 'none',
                   cursor: (visibilitySaving || (!username && (!usernameValid || usernameAvailable !== true))) ? 'not-allowed' : 'pointer',
@@ -2723,7 +2736,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
-                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: 700, color: '#0A1512', letterSpacing: '.04em' }}>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: 700, color: 'var(--ah-ink)', letterSpacing: '.04em' }}>
                       {m.label}
                     </div>
                     <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', color: '#888', marginTop: '2px' }}>
@@ -2747,7 +2760,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                             fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
                             letterSpacing: '.1em', textTransform: 'uppercase',
                             padding: '5px 12px', background: 'transparent',
-                            color: '#C84C21', border: '1px solid #C84C21', cursor: 'pointer',
+                            color: 'var(--ah-accent)', border: '1px solid var(--ah-accent)', cursor: 'pointer',
                           }}
                         >
                           <LockOpenIcon style={{ width: '13px', height: '13px', flexShrink: 0 }} />
@@ -2761,7 +2774,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                           display: 'inline-flex', alignItems: 'center', gap: '6px',
                           fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
                           letterSpacing: '.1em', textTransform: 'uppercase',
-                          padding: '5px 12px', background: '#0A1512',
+                          padding: '5px 12px', background: 'var(--ah-ink)',
                           color: '#F4ECDC', border: 'none', cursor: 'pointer',
                         }}
                       >
@@ -2780,7 +2793,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
 
                 {isDisabling && (
                   <div style={{ background: '#fff8f6', border: '1px solid #f3d0c8', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '360px' }}>
-                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#C84C21' }}>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ah-accent)' }}>
                       Confirm your password to disable
                     </div>
                     <input
@@ -2792,7 +2805,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                       style={{ ...input, fontSize: '13px' }}
                     />
                     {errors.mfa_password && (
-                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#C84C21' }}>
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--ah-accent)' }}>
                         {errors.mfa_password}
                       </div>
                     )}
@@ -2804,7 +2817,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                           display: 'inline-flex', alignItems: 'center', gap: '6px',
                           fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
                           letterSpacing: '.1em', textTransform: 'uppercase',
-                          padding: '6px 14px', background: disableSaving ? '#d4c9b0' : '#C84C21',
+                          padding: '6px 14px', background: disableSaving ? '#d4c9b0' : 'var(--ah-accent)',
                           color: '#fff', border: 'none', cursor: disableSaving ? 'not-allowed' : 'pointer',
                         }}
                       >
@@ -2850,7 +2863,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                 gap: '12px', alignItems: 'start',
               }}>
                 <div>
-                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#0A1512', letterSpacing: '.04em' }}>
+                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--ah-ink)', letterSpacing: '.04em' }}>
                     {entry.at}
                   </div>
                   <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#a89874', letterSpacing: '.04em', marginTop: '3px' }}>
@@ -2874,7 +2887,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                   letterSpacing: '.1em', textTransform: 'uppercase',
                   padding: '3px 8px',
                   background: entry.success ? '#e8f3ec' : '#fdf0ed',
-                  color: entry.success ? '#4a7c59' : '#C84C21',
+                  color: entry.success ? '#4a7c59' : 'var(--ah-accent)',
                   border: `1px solid ${entry.success ? '#c3deca' : '#f3c4b5'}`,
                   whiteSpace: 'nowrap',
                 }}>
@@ -2925,12 +2938,12 @@ function ActivityTab({ events }: { events: ActivityEvent[] }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
       {events.map((ev, i) => ev.type === 'harvest' ? (
-        <div key={i} style={{ background: '#F8F4EB', border: '1px solid #e8e0d0', padding: '14px 16px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-          <div style={{ ...mono, fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#b8934a', background: '#0A1512', padding: '4px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        <div key={i} style={{ background: 'var(--ah-paper)', border: '1px solid #e8e0d0', padding: '14px 16px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+          <div style={{ ...mono, fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#b8934a', background: 'var(--ah-ink)', padding: '4px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
             Harvest
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ ...mono, fontSize: '11px', fontWeight: 700, color: '#0A1512', marginBottom: '2px' }}>
+            <div style={{ ...mono, fontSize: '11px', fontWeight: 700, color: 'var(--ah-ink)', marginBottom: '2px' }}>
               {SPECIES_LABELS[ev.species ?? ''] ?? ev.species}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
@@ -2943,13 +2956,13 @@ function ActivityTab({ events }: { events: ActivityEvent[] }) {
           </div>
         </div>
       ) : (
-        <div key={i} style={{ background: '#F8F4EB', border: '1px solid #e8e0d0', padding: '14px 16px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-          <div style={{ ...mono, fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', background: '#0A1512', padding: '4px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        <div key={i} style={{ background: 'var(--ah-paper)', border: '1px solid #e8e0d0', padding: '14px 16px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+          <div style={{ ...mono, fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', background: 'var(--ah-ink)', padding: '4px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
             {ev.checked_out ? 'Hunt' : 'Check-in'}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-              <span style={{ ...mono, fontSize: '11px', fontWeight: 700, color: '#0A1512' }}>{ev.date_label}</span>
+              <span style={{ ...mono, fontSize: '11px', fontWeight: 700, color: 'var(--ah-ink)' }}>{ev.date_label}</span>
               <span style={{ ...mono, fontSize: '9px', color: '#9ca3af' }}>
                 {ev.time_label}{ev.checked_out ? ` — ${ev.checked_out}` : ' · still in field'}
               </span>

@@ -7,6 +7,7 @@ use App\Filament\Admin\Resources\ProfileTemplates\Pages\ListProfileTemplates;
 use App\Models\Platform\ProfileTemplate;
 use App\Support\AdminAuth;
 use BackedEnum;
+use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
@@ -69,24 +70,62 @@ class ProfileTemplateResource extends Resource
                 ->columns(2),
 
             Section::make('Modules')
-                ->description('Which content sections appear on the profile. About is always shown. This is separate from a member\'s public/private visibility choice.')
+                ->description('Which content sections appear on the profile and in what order. About is always shown. Enable is separate from a member\'s public/private visibility choice. Lower order numbers appear first; Security is always last.')
                 ->schema([
                     Toggle::make('draft_config.modules.about.enabled')
                         ->label('About')
                         ->disabled()
                         ->helperText('Always shown.'),
+                    TextInput::make('draft_config.modules.about.order')
+                        ->label('About order')
+                        ->numeric()->minValue(1)->step(1),
+
                     Toggle::make('draft_config.modules.contact.enabled')
                         ->label('Contact'),
+                    TextInput::make('draft_config.modules.contact.order')
+                        ->label('Contact order')
+                        ->numeric()->minValue(1)->step(1),
+
                     Toggle::make('draft_config.modules.social.enabled')
                         ->label('Social links'),
+                    TextInput::make('draft_config.modules.social.order')
+                        ->label('Social order')
+                        ->numeric()->minValue(1)->step(1),
+
                     Toggle::make('draft_config.modules.photos.enabled')
                         ->label('Photos'),
+                    TextInput::make('draft_config.modules.photos.order')
+                        ->label('Photos order')
+                        ->numeric()->minValue(1)->step(1),
+
                     Toggle::make('draft_config.modules.gear.enabled')
                         ->label('Gear'),
+                    TextInput::make('draft_config.modules.gear.order')
+                        ->label('Gear order')
+                        ->numeric()->minValue(1)->step(1),
+
                     Toggle::make('draft_config.modules.activity.enabled')
                         ->label('Activity'),
+                    TextInput::make('draft_config.modules.activity.order')
+                        ->label('Activity order')
+                        ->numeric()->minValue(1)->step(1),
                 ])
                 ->columns(2),
+
+            Section::make('Theme')
+                ->description('Accent, paper, and ink colors for this profile type. Defaults: accent #C84C21, paper #F8F4EB, ink #0A1512.')
+                ->schema([
+                    ColorPicker::make('draft_config.theme.accent')
+                        ->label('Accent')
+                        ->helperText('Highlights — active tabs, pills, links.'),
+                    ColorPicker::make('draft_config.theme.paper')
+                        ->label('Paper')
+                        ->helperText('Card background.'),
+                    ColorPicker::make('draft_config.theme.ink')
+                        ->label('Ink')
+                        ->helperText('Primary text, borders, drop shadows.'),
+                ])
+                ->columns(3),
         ]);
     }
 
