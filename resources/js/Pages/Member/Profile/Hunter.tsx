@@ -840,7 +840,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
   return (
     <>
       <Head title="My Profile — American Headhunter" />
-      <div className={showTopo ? 'topo-bg' : undefined} style={{ ...themeVars, minHeight: '100vh', background: '#EDE5D0' }}>
+      <div className={showTopo ? 'topo-bg' : undefined} style={{ ...themeVars, minHeight: '100vh', backgroundColor: '#EDE5D0' }}>
 
         {/* ── Topbar ─────────────────────────────────────────────────────── */}
         <div style={{ background: 'var(--ah-ink)', borderBottom: '1px solid #b8934a' }}>
