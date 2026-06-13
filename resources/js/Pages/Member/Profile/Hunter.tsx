@@ -954,7 +954,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                       key={item.key}
                       type="button"
                       onClick={() => setTab(item.key === 'leases' ? 'leases' : 'about')}
-                      style={{ ...itemStyle, border: 'none', borderLeft: itemStyle.borderLeft, font: 'inherit', ...{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 600, letterSpacing: '.1em' } }}
+                      style={{ ...itemStyle, borderTop: 'none', borderRight: 'none', borderBottom: 'none', borderRadius: 0, margin: 0, appearance: 'none' }}
                     >
                       {item.label}
                     </button>
