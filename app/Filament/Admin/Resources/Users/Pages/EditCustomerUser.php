@@ -167,6 +167,9 @@ class EditCustomerUser extends EditRecord
                                         ->label('State')
                                         ->options(\App\Support\UsStates::names())
                                         ->searchable(),
+                                    TextInput::make('county')
+                                        ->label('County / Parish / District')
+                                        ->maxLength(100),
                                     TextInput::make('zip_code')
                                         ->label('ZIP Code')
                                         ->maxLength(10),
@@ -673,6 +676,7 @@ class EditCustomerUser extends EditRecord
         $data['address_line1'] = $profile?->address_line1 ?? '';
         $data['address_line2'] = $profile?->address_line2 ?? '';
         $data['city']          = $profile?->city          ?? '';
+        $data['county']        = $profile?->county        ?? '';
         $data['state_code']   = $profile?->state_code   ?? null;
         $data['zip_code']     = $profile?->zip_code     ?? '';
         $data['emergency_contact_name']         = $profile?->emergency_contact_name         ?? '';
@@ -732,6 +736,7 @@ class EditCustomerUser extends EditRecord
             'address_line1' => $data['address_line1'] ?? null,
             'address_line2' => $data['address_line2'] ?? null,
             'city'          => $data['city']          ?? null,
+            'county'        => $data['county']        ?? null,
             'state_code'    => $data['state_code']    ?? null,
             'zip_code'      => $data['zip_code']      ?? null,
             'emergency_contact_name'         => $data['emergency_contact_name']         ?? null,
@@ -745,7 +750,7 @@ class EditCustomerUser extends EditRecord
         // PII fields encrypted at rest — their values must never reach the audit
         // log. We record only that they changed (field name), never old/new values.
         $encryptedProfileFields = [
-            'address_line1', 'address_line2', 'city',
+            'address_line1', 'address_line2', 'city', 'county',
             'emergency_contact_name', 'emergency_contact_relationship',
             'emergency_contact_phone', 'emergency_contact_email',
         ];

@@ -88,6 +88,7 @@ class ViewCustomerUser extends ViewRecord
                         ->label('State')
                         ->formatStateUsing(fn ($state) => \App\Support\UsStates::names()[$state] ?? $state)
                         ->placeholder('-'),
+                    TextEntry::make('profile.county')->label('County / Parish / District')->placeholder('-'),
                     TextEntry::make('profile.zip_code')->label('ZIP')->placeholder('-'),
                     TextEntry::make('profile.emergency_contact_name')
                         ->label('Emergency Contact')
