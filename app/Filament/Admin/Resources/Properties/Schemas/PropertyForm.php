@@ -41,11 +41,11 @@ class PropertyForm
                 Section::make('Location')
                     ->columns(2)
                     ->schema([
-                        TextInput::make('state_code')
-                            ->label('State Code')
-                            ->required()
-                            ->maxLength(2)
-                            ->placeholder('TX'),
+                        Select::make('state_code')
+                            ->label('State')
+                            ->options(\App\Support\UsStates::names())
+                            ->searchable()
+                            ->required(),
                         TextInput::make('county')
                             ->required()
                             ->maxLength(100),

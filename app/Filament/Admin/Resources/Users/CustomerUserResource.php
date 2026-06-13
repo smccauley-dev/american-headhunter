@@ -153,8 +153,11 @@ class CustomerUserResource extends Resource
                     ]),
                 SelectFilter::make('state_code')
                     ->label('State')
-                    ->relationship('profile', 'state_code')
-                    ->searchable(),
+                    ->options(\App\Support\UsStates::names())
+                    ->searchable()
+                    ->query(fn ($query, array $data) => filled($data['value'] ?? null)
+                        ? $query->whereHas('profile', fn ($q) => $q->where('state_code', $data['value']))
+                        : $query),
             ])
             ->defaultSort('created_at', 'desc')
             ->recordActions([

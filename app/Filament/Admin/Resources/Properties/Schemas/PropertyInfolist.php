@@ -41,7 +41,8 @@ class PropertyInfolist
                     ->columns(2)
                     ->schema([
                         TextEntry::make('state_code')
-                            ->label('State'),
+                            ->label('State')
+                            ->formatStateUsing(fn ($state) => \App\Support\UsStates::names()[$state] ?? $state),
                         TextEntry::make('county'),
                         TextEntry::make('center_lat')
                             ->label('Latitude')

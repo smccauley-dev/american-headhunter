@@ -1,5 +1,6 @@
 import { Head, router, usePage } from '@inertiajs/react'
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { US_STATE_CODES, US_STATE_NAMES } from '@/lib/usStates'
 import {
   EyeIcon,
   EyeSlashIcon,
@@ -61,27 +62,6 @@ const GENDERS = [
   { key: 'nonbinary',         label: 'Non-binary' },
   { key: 'prefer_not_to_say', label: 'Prefer not to say' },
 ]
-
-const US_STATES = [
-  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
-  'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
-  'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
-  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
-  'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY',
-]
-
-const STATE_NAMES: Record<string, string> = {
-  AL: 'Alabama',       AK: 'Alaska',        AZ: 'Arizona',      AR: 'Arkansas',      CA: 'California',
-  CO: 'Colorado',      CT: 'Connecticut',   DE: 'Delaware',     FL: 'Florida',       GA: 'Georgia',
-  HI: 'Hawaii',        ID: 'Idaho',         IL: 'Illinois',     IN: 'Indiana',       IA: 'Iowa',
-  KS: 'Kansas',        KY: 'Kentucky',      LA: 'Louisiana',    ME: 'Maine',         MD: 'Maryland',
-  MA: 'Massachusetts', MI: 'Michigan',      MN: 'Minnesota',    MS: 'Mississippi',   MO: 'Missouri',
-  MT: 'Montana',       NE: 'Nebraska',      NV: 'Nevada',       NH: 'New Hampshire', NJ: 'New Jersey',
-  NM: 'New Mexico',    NY: 'New York',      NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio',
-  OK: 'Oklahoma',      OR: 'Oregon',        PA: 'Pennsylvania', RI: 'Rhode Island',  SC: 'South Carolina',
-  SD: 'South Dakota',  TN: 'Tennessee',     TX: 'Texas',        UT: 'Utah',          VT: 'Vermont',
-  VA: 'Virginia',      WA: 'Washington',    WV: 'West Virginia', WI: 'Wisconsin',    WY: 'Wyoming',
-}
 
 // ── Military branches & first responder types ─────────────────────────────────
 
@@ -963,7 +943,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 <SideLabel>Hunting Areas</SideLabel>
                 {editing ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
-                    {US_STATES.map(st => {
+                    {US_STATE_CODES.map(st => {
                       const on = form.hunting.preferred_states.includes(st)
                       return (
                         <button
@@ -1074,7 +1054,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                       AH-{user.id.slice(0, 8).toUpperCase()}
                       {profile.state_code && (
                         <span style={{ color: '#a89874', marginLeft: '8px', fontWeight: 400 }}>
-                          · {STATE_NAMES[profile.state_code] ?? profile.state_code}
+                          · {US_STATE_NAMES[profile.state_code] ?? profile.state_code}
                         </span>
                       )}
                     </div>
@@ -1486,7 +1466,7 @@ function AboutTab({ user, profile, form, editing, onField, onHunting, visibility
                 <EditLabel>Home State</EditLabel>
                 <select value={form.state_code} onChange={e => onField('state_code', e.target.value)} style={select}>
                   <option value="">— Select state —</option>
-                  {US_STATES.map(st => <option key={st} value={st}>{STATE_NAMES[st] ?? st}</option>)}
+                  {US_STATE_CODES.map(st => <option key={st} value={st}>{US_STATE_NAMES[st] ?? st}</option>)}
                 </select>
               </div>
               <div>
@@ -1507,7 +1487,7 @@ function AboutTab({ user, profile, form, editing, onField, onHunting, visibility
             {profile.state_code && (
               <DataRow
                 label="Home State"
-                value={`${STATE_NAMES[profile.state_code] ?? profile.state_code}${profile.zip_code ? ` · ${profile.zip_code}` : ''}`}
+                value={`${US_STATE_NAMES[profile.state_code] ?? profile.state_code}${profile.zip_code ? ` · ${profile.zip_code}` : ''}`}
               />
             )}
             <DataRow label="Member Since" value={user.member_since} />

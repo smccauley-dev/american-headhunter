@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, router, usePage } from '@inertiajs/react'
 import { Head } from '@inertiajs/react'
+import { US_STATES } from '@/lib/usStates'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,22 +65,6 @@ const SPECIES_OPTIONS = [
 const SPECIES_NAMES: Record<string, string> = Object.fromEntries(
     SPECIES_OPTIONS.map(s => [s.code, s.label])
 )
-
-const US_STATES = [
-    ['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],
-    ['CA','California'],['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],
-    ['FL','Florida'],['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],
-    ['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],['KS','Kansas'],
-    ['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],
-    ['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],
-    ['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],
-    ['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],
-    ['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],['OK','Oklahoma'],
-    ['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],
-    ['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],
-    ['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],
-    ['WI','Wisconsin'],['WY','Wyoming'],
-]
 
 const TYPE_LABELS: Record<string, string> = {
     annual_lease:   'Annual Lease',

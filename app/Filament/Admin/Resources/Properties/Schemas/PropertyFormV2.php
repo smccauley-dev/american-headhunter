@@ -470,11 +470,11 @@ class PropertyFormV2
                                                 'archived'  => 'Archived',
                                             ])
                                             ->default('draft'),
-                                        TextInput::make('state_code')
-                                            ->label('State Code')
-                                            ->required()
-                                            ->maxLength(2)
-                                            ->placeholder('TX'),
+                                        Select::make('state_code')
+                                            ->label('State')
+                                            ->options(\App\Support\UsStates::names())
+                                            ->searchable()
+                                            ->required(),
                                         TextInput::make('county')
                                             ->required()
                                             ->maxLength(100),

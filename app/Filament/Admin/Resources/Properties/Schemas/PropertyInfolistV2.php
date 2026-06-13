@@ -44,7 +44,8 @@ class PropertyInfolistV2
                                             default     => 'gray',
                                         }),
                                     TextEntry::make('state_code')
-                                        ->label('State Code'),
+                                        ->label('State')
+                                        ->formatStateUsing(fn ($state) => \App\Support\UsStates::names()[$state] ?? $state),
                                     TextEntry::make('county'),
                                     TextEntry::make('center_lat')
                                         ->label('Latitude')
