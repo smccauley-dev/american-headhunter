@@ -59,6 +59,7 @@ class PropertyMapService extends BaseService
         string $propertyId,
         UploadedFile $file,
         ?string $description = null,
+        bool $importExif = true,
     ): PropertyMapImage {
         $property = Property::findOrFail($propertyId);
 
@@ -68,7 +69,10 @@ class PropertyMapService extends BaseService
             'photo',
         );
 
-        [$latitude, $longitude] = ExifGps::extract($file);
+        // Map reference point from EXIF GPS, unless the uploader opted out.
+        [$latitude, $longitude] = $importExif
+            ? ExifGps::extract($file)
+            : [null, null];
 
         $isFirst  = ! PropertyMapImage::where('property_id', $propertyId)->whereNull('deleted_at')->exists();
         $nextSort = (int) PropertyMapImage::where('property_id', $propertyId)
