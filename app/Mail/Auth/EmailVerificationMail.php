@@ -2,13 +2,12 @@
 
 namespace App\Mail\Auth;
 
+use App\Mail\TemplatedMailable;
 use Illuminate\Bus\Queueable;
-use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class EmailVerificationMail extends Mailable
+class EmailVerificationMail extends TemplatedMailable
 {
     use Queueable, SerializesModels;
 
@@ -17,12 +16,25 @@ class EmailVerificationMail extends Mailable
         public readonly string $verificationUrl,
     ) {}
 
-    public function envelope(): Envelope
+    protected function templateKey(): string
     {
-        return new Envelope(subject: 'Verify Your Email — American Headhunter');
+        return 'auth.verify_email';
     }
 
-    public function content(): Content
+    protected function templateVariables(): array
+    {
+        return [
+            'first_name'       => $this->firstName !== '' ? $this->firstName : 'there',
+            'verification_url' => $this->verificationUrl,
+        ];
+    }
+
+    protected function fallbackSubject(): string
+    {
+        return 'Verify Your Email — American Headhunter';
+    }
+
+    protected function fallbackContent(): Content
     {
         return new Content(view: 'emails.auth.verify-email');
     }

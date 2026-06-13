@@ -3,12 +3,28 @@
 namespace App\Models\Identity;
 
 use App\Models\BaseModel;
+use App\Models\Traits\HasEncryptedFields;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class UserProfile extends BaseModel
 {
+    use HasEncryptedFields;
+
     protected $connection = 'identity';
     protected $table      = 'user_profiles';
+
+    // -- encrypted via pgp_sym_encrypt (identity key). state_code/zip_code stay
+    // plaintext: they are indexed and used for filtering.
+    protected array $encryptedFields = [
+        'address_line1',
+        'address_line2',
+        'city',
+        'county',
+        'emergency_contact_name',
+        'emergency_contact_relationship',
+        'emergency_contact_phone',
+        'emergency_contact_email',
+    ];
 
     protected $fillable = [
         'user_id',
@@ -17,8 +33,16 @@ class UserProfile extends BaseModel
         'display_name',
         'avatar_document_id',
         'bio',
+        'address_line1',
+        'address_line2',
+        'city',
+        'county',
         'state_code',
         'zip_code',
+        'emergency_contact_name',
+        'emergency_contact_relationship',
+        'emergency_contact_phone',
+        'emergency_contact_email',
         'date_of_birth',
         'gender',
         'veteran_branch',

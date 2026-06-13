@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
+use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\Request;
 use Inertia\Response;
@@ -60,9 +61,21 @@ class PropertyController extends Controller
 
         $property->load(['activeListings', 'photos', 'species', 'rules']);
 
+        // Base boundary image only — marker overlays are never exposed publicly
+        $boundaryMap = app(PropertyMapService::class)->getBoundaryImage($property->id);
+
         return inertia('Public/PropertyDetail', [
             'property' => [
                 'id'             => $property->id,
+                'boundary_map_url' => $boundaryMap
+                    ? route('property-maps.show', $boundaryMap->document_id)
+                    : null,
+                'boundary_map_coords' => (
+                    $boundaryMap
+                    && $boundaryMap->show_coords_publicly
+                    && $boundaryMap->latitude !== null
+                    && $boundaryMap->longitude !== null
+                ) ? ['lat' => $boundaryMap->latitude, 'lng' => $boundaryMap->longitude] : null,
                 'title'          => $property->title,
                 'slug'           => $property->slug,
                 'description'    => $property->description,
@@ -71,11 +84,17 @@ class PropertyController extends Controller
                 'county'         => $property->county,
                 'total_acres'    => $property->total_acres,
                 'huntable_acres' => $property->huntable_acres,
-                'photos'         => $property->photos->map(fn ($p) => [
-                    'id'         => $p->id,
-                    'caption'    => $p->caption,
-                    'sort_order' => $p->sort_order,
-                ])->values(),
+                'photos'         => $property->photos
+                    ->sortBy([['is_primary', 'desc'], ['sort_order', 'asc']])
+                    ->values()
+                    ->map(fn ($p) => [
+                        'id'         => $p->id,
+                        'url'        => route('property-photos.show', $p->document_id),
+                        'caption'    => $p->caption,
+                        'tags'       => $p->tags ?? [],
+                        'is_primary' => (bool) $p->is_primary,
+                        'sort_order' => $p->sort_order,
+                    ])->values(),
                 'species'        => $property->species->map(fn ($s) => [
                     'species_code' => $s->species_code,
                 ])->values(),

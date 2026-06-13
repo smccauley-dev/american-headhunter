@@ -1,5 +1,6 @@
 import { Head, router, usePage } from '@inertiajs/react'
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { US_STATE_CODES, US_STATE_NAMES } from '@/lib/usStates'
 import {
   EyeIcon,
   EyeSlashIcon,
@@ -60,14 +61,6 @@ const GENDERS = [
   { key: 'female',            label: 'Female' },
   { key: 'nonbinary',         label: 'Non-binary' },
   { key: 'prefer_not_to_say', label: 'Prefer not to say' },
-]
-
-const US_STATES = [
-  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
-  'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
-  'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
-  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
-  'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY',
 ]
 
 // ── Military branches & first responder types ─────────────────────────────────
@@ -432,6 +425,91 @@ function labelFor(opts: { key: string; label: string }[], key: string | null): s
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 
+// Field record card shell — 1px ink border, 8px solid ink drop shadow,
+// inner dashed border at 8px inset (see docs/design_system.md "Field Record Cards")
+const fieldCard: React.CSSProperties = {
+  position: 'relative',
+  background: '#F8F4EB',
+  border: '1px solid #0A1512',
+  boxShadow: '8px 8px 0 #0A1512',
+}
+
+function DashedInset() {
+  return (
+    <div style={{ position: 'absolute', inset: 8, border: '1px dashed #a89874', pointerEvents: 'none', zIndex: 3 }} />
+  )
+}
+
+// Small "!" marker beside the Trust Score label — hover or tap for explanation.
+// The popover is position:fixed so it escapes the sidebar card's overflow:hidden.
+function TrustScoreInfo() {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const btnRef = useRef<HTMLButtonElement>(null)
+
+  const place = useCallback(() => {
+    const r = btnRef.current?.getBoundingClientRect()
+    if (r) setPos({ top: r.bottom + 8, left: r.left })
+  }, [])
+
+  const show = () => { place(); setOpen(true) }
+
+  return (
+    <span style={{ display: 'inline-flex', marginLeft: '6px', verticalAlign: 'middle' }}>
+      <button
+        ref={btnRef}
+        type="button"
+        onMouseEnter={show}
+        onMouseLeave={() => setOpen(false)}
+        onClick={() => (open ? setOpen(false) : show())}
+        aria-label="What is the trust score?"
+        style={{
+          width: '13px',
+          height: '13px',
+          padding: 0,
+          border: '1px solid #a89874',
+          borderRadius: '50%',
+          background: 'transparent',
+          color: '#a89874',
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: '9px',
+          fontWeight: 700,
+          lineHeight: 1,
+          cursor: 'help',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        !
+      </button>
+      {open && (
+        <div style={{
+          position: 'fixed',
+          top: pos.top,
+          left: pos.left,
+          width: '240px',
+          maxWidth: 'calc(100vw - 24px)',
+          background: '#F8F4EB',
+          border: '1px solid #0A1512',
+          boxShadow: '4px 4px 0 #0A1512',
+          padding: '12px 14px',
+          zIndex: 50,
+          textTransform: 'none',
+          letterSpacing: 'normal',
+        }}>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#4a5440', marginBottom: '6px' }}>
+            Trust Score
+          </div>
+          <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', lineHeight: 1.5, color: '#0A1512', fontWeight: 400 }}>
+            A 0–100 measure of your standing on American Headhunter. It rises with verified email, phone, and ID, completed leases, and positive reviews — and falls with disputes or early lease terminations. Landowners see it when reviewing applications.
+          </div>
+        </div>
+      )}
+    </span>
+  )
+}
+
 const input: React.CSSProperties = {
   fontFamily: 'Crimson Pro, Georgia, serif',
   fontSize: '15px',
@@ -486,7 +564,7 @@ function SectionLabel({ children }: { children: string }) {
 
 function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '8px', padding: '7px 0', borderBottom: '1px solid #f5f0e8' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '8px', padding: '7px 0', borderBottom: '1px dotted #d4c9b0' }}>
       <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: '#a89874' }}>
         {label}
       </span>
@@ -693,7 +771,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
   return (
     <>
       <Head title="My Profile — American Headhunter" />
-      <div style={{ minHeight: '100vh', background: '#EDE5D0' }}>
+      <div className="topo-bg" style={{ minHeight: '100vh', background: '#EDE5D0' }}>
 
         {/* ── Topbar ─────────────────────────────────────────────────────── */}
         <div style={{ background: '#0A1512', borderBottom: '1px solid #b8934a' }}>
@@ -736,15 +814,16 @@ export default function HunterProfile({ user, profile, photos, activity, securit
           <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: '20px', alignItems: 'stretch' }}>
 
             {/* ── LEFT SIDEBAR ─────────────────────────────────────────── */}
-            <div style={{ background: '#F8F4EB', border: '1px solid #d4c9b0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ ...fieldCard, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <DashedInset />
 
-              {/* Avatar */}
+              {/* Avatar — inset so it sits inside the dashed border */}
               <div
                 onClick={() => editing && avatarInputRef.current?.click()}
                 style={{
                   position: 'relative',
-                  width: '100%',
-                  paddingBottom: '100%',
+                  margin: '16px 16px 0',
+                  aspectRatio: '1 / 1',
                   background: '#0A1512',
                   cursor: editing ? 'pointer' : 'default',
                   overflow: 'hidden',
@@ -816,6 +895,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874', marginBottom: '5px' }}>
                     Trust Score
+                    <TrustScoreInfo />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ flex: 1, height: '4px', background: '#e5ddd0', position: 'relative', overflow: 'hidden' }}>
@@ -829,7 +909,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               </div>
 
               {/* ── Navigation blades ──────────────────────────────────── */}
-              <div style={{ borderTop: '1px solid #e5ddd0', marginBottom: '4px' }}>
+              <div style={{ borderTop: '1px solid #e5ddd0', margin: '0 16px 4px' }}>
                 {NAV_ITEMS.map(item => {
                   const active = item.key === 'profile'
                   return (
@@ -839,7 +919,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        padding: '11px 18px',
+                        padding: '11px 8px',
                         fontFamily: 'JetBrains Mono, monospace',
                         fontSize: '10px',
                         fontWeight: 600,
@@ -863,7 +943,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 <SideLabel>Hunting Areas</SideLabel>
                 {editing ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
-                    {US_STATES.map(st => {
+                    {US_STATE_CODES.map(st => {
                       const on = form.hunting.preferred_states.includes(st)
                       return (
                         <button
@@ -896,7 +976,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               </div>
 
               {/* ── Game Pursued ────────────────────────────────────────── */}
-              <div style={{ padding: '0 18px 20px', borderTop: '1px solid #e5ddd0', paddingTop: '14px' }}>
+              <div style={{ padding: '14px 2px 20px', borderTop: '1px solid #e5ddd0', margin: '0 16px' }}>
                 <SideLabel>Game Pursued</SideLabel>
                 {editing ? (
                   <PillToggle options={SPECIES} selected={form.hunting.species} onChange={v => hunting('species', v)} />
@@ -918,7 +998,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 const active = SOCIAL_PLATFORMS.filter(p => profile.social_links?.[p.key])
                 if (!active.length) return null
                 return (
-                  <div style={{ padding: '0 18px 16px', borderTop: '1px solid #e5ddd0', paddingTop: '14px' }}>
+                  <div style={{ padding: '14px 2px 16px', borderTop: '1px solid #e5ddd0', margin: '0 16px' }}>
                     <SideLabel>Social</SideLabel>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                       {active.map(p => (
@@ -939,7 +1019,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               })()}
 
               {/* Member since */}
-              <div style={{ padding: '12px 18px', borderTop: '1px solid #e5ddd0', background: '#F3EDD8', marginTop: 'auto' }}>
+              <div style={{ padding: '12px 10px', borderTop: '1px solid #e5ddd0', background: '#F3EDD8', margin: 'auto 16px 16px' }}>
                 <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874', marginBottom: '3px' }}>
                   Member Since
                 </div>
@@ -950,42 +1030,64 @@ export default function HunterProfile({ user, profile, photos, activity, securit
             </div>
 
             {/* ── RIGHT MAIN ───────────────────────────────────────────── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
               {/* Header card */}
-              <div style={{ background: '#F8F4EB', border: '1px solid #d4c9b0', padding: '24px 28px' }}>
+              <div style={{ ...fieldCard, padding: '24px 28px' }}>
+                <DashedInset />
+
+                {/* Registration marks — surveyor's corner marks between dashed line and content */}
+                {([
+                  { top: 13, left: 13, borderTop: '1px solid #a89874', borderLeft: '1px solid #a89874' },
+                  { bottom: 13, right: 13, borderBottom: '1px solid #a89874', borderRight: '1px solid #a89874' },
+                ] as React.CSSProperties[]).map((pos, i) => (
+                  <div key={i} style={{ position: 'absolute', width: 10, height: 10, pointerEvents: 'none', zIndex: 4, ...pos }} />
+                ))}
+
+                {/* Field record strip — label + ID left, rotated stamp right */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '14px', borderBottom: '1px solid #d4c9b0', marginBottom: '18px' }}>
+                  <div>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.2em', textTransform: 'uppercase', color: '#4a5440', marginBottom: '4px' }}>
+                      Field Record
+                    </div>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: 500, color: '#0A1512' }}>
+                      AH-{user.id.slice(0, 8).toUpperCase()}
+                      {profile.state_code && (
+                        <span style={{ color: '#a89874', marginLeft: '8px', fontWeight: 400 }}>
+                          · {US_STATE_NAMES[profile.state_code] ?? profile.state_code}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '11px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: '#C84C21', border: '1.5px solid #C84C21', padding: '3px 10px', transform: 'rotate(-6deg)', marginRight: '6px' }}>
+                    Hunter
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '4px' }}>
                       <h1 style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '26px', fontWeight: 400, color: '#0A1512', margin: 0, lineHeight: 1.1 }}>
                         {displayName}
                       </h1>
-                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: '#C84C21', border: '1px solid #C84C21', padding: '3px 8px', flexShrink: 0 }}>
-                        Hunter
-                      </span>
                       {(editing ? form.is_veteran : user.is_veteran) && (() => {
                         const branch = (editing ? form.veteran_branch : profile.veteran_branch) ?? ''
                         const emblem = branch ? BRANCH_EMBLEMS[branch] : null
                         return (
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#b8934a', border: '1px solid #b8934a', padding: '3px 8px', flexShrink: 0 }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#b8934a', border: '1.5px solid #b8934a', padding: '3px 10px', flexShrink: 0, transform: 'rotate(-3deg)' }}>
                             {emblem}
-                            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase' }}>
+                            <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '11px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase' }}>
                               Veteran
                             </span>
                           </div>
                         )
                       })()}
                       {(editing ? form.is_first_responder : user.is_first_responder) && (
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: '#4a7c59', border: '1px solid #4a7c59', padding: '3px 8px', flexShrink: 0 }}>
+                        <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '11px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: '#4a7c59', border: '1.5px solid #4a7c59', padding: '3px 10px', flexShrink: 0, transform: 'rotate(2deg)', display: 'inline-block' }}>
                           First Responder
                         </span>
                       )}
                     </div>
-                    {profile.state_code && (
-                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#a89874', letterSpacing: '.06em' }}>
-                        {profile.state_code}{profile.zip_code ? ` · ${profile.zip_code}` : ''}
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -1022,9 +1124,10 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               </div>
 
               {/* Tabs + content */}
-              <div style={{ background: '#F8F4EB', border: '1px solid #d4c9b0' }}>
+              <div style={fieldCard}>
+                <DashedInset />
                 {/* Tab bar */}
-                <div style={{ display: 'flex', borderBottom: '1px solid #e5ddd0', padding: '0 28px' }}>
+                <div style={{ display: 'flex', borderBottom: '1px solid #e5ddd0', margin: '14px 16px 0', padding: '0 12px' }}>
                   {(['about', 'contact', 'social', 'photos', 'gear', 'activity', 'security'] as const).map(t => {
                     const visKey = t as 'about' | 'contact' | 'social' | 'gear' | 'photos'
                     const hasVis = t === 'about' || t === 'contact' || t === 'social' || t === 'gear' || t === 'photos'
@@ -1065,7 +1168,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 </div>
 
                 {/* Tab content */}
-                <div style={{ padding: '28px' }}>
+                <div style={{ padding: '18px 28px 28px' }}>
                   {tab === 'about' ? (
                     <AboutTab
                       user={user}
@@ -1241,7 +1344,7 @@ function TabPrivacyHeader({ value, editing, onChange }: {
   onChange: (val: 'public' | 'private') => void
 }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '22px' }}>
+    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
       <PrivacyToggle value={value} editing={editing} onChange={onChange} />
     </div>
   )
@@ -1363,7 +1466,7 @@ function AboutTab({ user, profile, form, editing, onField, onHunting, visibility
                 <EditLabel>Home State</EditLabel>
                 <select value={form.state_code} onChange={e => onField('state_code', e.target.value)} style={select}>
                   <option value="">— Select state —</option>
-                  {US_STATES.map(st => <option key={st} value={st}>{st}</option>)}
+                  {US_STATE_CODES.map(st => <option key={st} value={st}>{US_STATE_NAMES[st] ?? st}</option>)}
                 </select>
               </div>
               <div>
@@ -1381,6 +1484,12 @@ function AboutTab({ user, profile, form, editing, onField, onHunting, visibility
               />
             )}
             {profile.gender && <DataRow label="Gender" value={labelFor(GENDERS, profile.gender)} />}
+            {profile.state_code && (
+              <DataRow
+                label="Home State"
+                value={`${US_STATE_NAMES[profile.state_code] ?? profile.state_code}${profile.zip_code ? ` · ${profile.zip_code}` : ''}`}
+              />
+            )}
             <DataRow label="Member Since" value={user.member_since} />
           </div>
         )}

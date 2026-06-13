@@ -70,6 +70,56 @@ Route::middleware('auth:web')->get('/admin/documents/{documentId}/download', fun
     );
 })->name('admin.documents.download');
 
+// Admin inline document view (images in admin galleries) — protected by Filament web guard
+Route::middleware('auth:web')->get('/admin/documents/{documentId}/view', function (string $documentId) {
+    $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
+    $disk = config('filesystems.defaults.documents', 'local');
+    return \Illuminate\Support\Facades\Storage::disk($disk)->response(
+        $doc->storage_key,
+        $doc->original_filename,
+        ['Content-Type' => $doc->mime_type ?? 'application/octet-stream'],
+    );
+})->name('admin.documents.view');
+
+// Public property photo — only documents referenced by a live property_photos
+// row are served; everything else in the documents store stays private.
+Route::get('/property-photos/{documentId}', function (string $documentId) {
+    $isPropertyPhoto = \Illuminate\Support\Facades\DB::connection('property')
+        ->table('property_photos')
+        ->where('document_id', $documentId)
+        ->whereNull('deleted_at')
+        ->exists();
+    abort_unless($isPropertyPhoto, 404);
+
+    $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
+    $disk = config('filesystems.defaults.documents', 'local');
+    return \Illuminate\Support\Facades\Storage::disk($disk)->response(
+        $doc->storage_key,
+        $doc->original_filename,
+        ['Content-Type' => $doc->mime_type ?? 'image/jpeg', 'Cache-Control' => 'public, max-age=86400'],
+    );
+})->name('property-photos.show');
+
+// Public boundary map image — only the live boundary map per property is
+// served publicly; other map images remain behind the admin guard.
+Route::get('/property-maps/{documentId}', function (string $documentId) {
+    $isBoundaryMap = \Illuminate\Support\Facades\DB::connection('property')
+        ->table('property_map_images')
+        ->where('document_id', $documentId)
+        ->where('is_boundary', true)
+        ->whereNull('deleted_at')
+        ->exists();
+    abort_unless($isBoundaryMap, 404);
+
+    $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
+    $disk = config('filesystems.defaults.documents', 'local');
+    return \Illuminate\Support\Facades\Storage::disk($disk)->response(
+        $doc->storage_key,
+        $doc->original_filename,
+        ['Content-Type' => $doc->mime_type ?? 'image/jpeg', 'Cache-Control' => 'public, max-age=3600'],
+    );
+})->name('property-maps.show');
+
 // Member portal
 Route::middleware('auth.session')->prefix('member')->name('member.')->group(function () {
     Route::get('/', [MemberController::class, 'dashboard'])->name('dashboard');

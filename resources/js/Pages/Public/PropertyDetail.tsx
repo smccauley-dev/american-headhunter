@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 
 interface PropertySpecies {
@@ -13,7 +13,10 @@ interface PropertyRule {
 
 interface PropertyPhoto {
     id: string;
+    url: string;
     caption: string | null;
+    tags: string[];
+    is_primary: boolean;
     sort_order: number;
 }
 
@@ -35,6 +38,8 @@ interface Property {
     id: string;
     title: string;
     slug: string;
+    boundary_map_url: string | null;
+    boundary_map_coords: { lat: number; lng: number } | null;
     description: string | null;
     status: string;
     state_code: string;
@@ -92,11 +97,47 @@ function formatSeason(listing: PropertyListing): string {
     return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 }
 
+function GalleryTile({ photo, onClick, moreCount = 0 }: { photo: PropertyPhoto; onClick: () => void; moreCount?: number }) {
+    return (
+        <div onClick={onClick} style={{ position: 'relative', height: '100%', overflow: 'hidden', cursor: 'pointer' }}>
+            <img
+                src={photo.url}
+                alt={photo.caption ?? 'Property photo'}
+                loading="lazy"
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+            {moreCount > 0 && (
+                <div style={{
+                    position: 'absolute', inset: 0, background: 'rgba(10,21,18,0.6)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600,
+                    letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--bone)',
+                }}>
+                    + {moreCount} more
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function PropertyDetail({ property }: PropertyDetailProps) {
     const [scrolled, setScrolled] = useState(false);
+    const [lightbox, setLightbox] = useState<number | null>(null);
     const listing = property.active_listings?.[0] ?? null;
     const { auth } = usePage<{ auth: { authenticated: boolean } }>().props;
     const applyHref = auth?.authenticated && listing ? `/apply/${listing.id}` : '/get-started';
+    const photos = property.photos ?? [];
+
+    useEffect(() => {
+        if (lightbox === null) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setLightbox(null);
+            if (e.key === 'ArrowRight') setLightbox(i => (i === null ? null : (i + 1) % photos.length));
+            if (e.key === 'ArrowLeft') setLightbox(i => (i === null ? null : (i - 1 + photos.length) % photos.length));
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [lightbox, photos.length]);
 
     return (
         <div className="ah-page">
@@ -244,25 +285,115 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                 </div>
             </div>
 
-            {/* ── PHOTO GALLERY PLACEHOLDER ────────────────────────────────── */}
+            {/* ── PHOTO GALLERY ────────────────────────────────────────────── */}
             <div style={{ background: 'var(--ink-soft)', borderTop: '1px solid var(--brass-dim)' }}>
                 <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 40px' }}>
                     <div style={{
                         height: 480,
                         display: 'grid',
-                        gridTemplateColumns: property.photos?.length > 1 ? '2fr 1fr' : '1fr',
+                        gridTemplateColumns: photos.length > 1 ? '2fr 1fr' : '1fr',
                         gap: 4,
                     }}>
-                        <div className="prop-img-placeholder" style={{ height: '100%' }} />
-                        {property.photos?.length > 1 && (
-                            <div style={{ display: 'grid', gridTemplateRows: '1fr 1fr', gap: 4 }}>
-                                <div className="prop-img-placeholder" style={{ height: '100%', filter: 'brightness(0.8)' }} />
-                                <div className="prop-img-placeholder" style={{ height: '100%', filter: 'brightness(0.65)' }} />
-                            </div>
+                        {photos.length > 0 ? (
+                            <>
+                                <GalleryTile photo={photos[0]} onClick={() => setLightbox(0)} />
+                                {photos.length > 1 && (
+                                    <div style={{ display: 'grid', gridTemplateRows: photos.length > 2 ? '1fr 1fr' : '1fr', gap: 4 }}>
+                                        <GalleryTile photo={photos[1]} onClick={() => setLightbox(1)} />
+                                        {photos.length > 2 && (
+                                            <GalleryTile
+                                                photo={photos[2]}
+                                                onClick={() => setLightbox(2)}
+                                                moreCount={photos.length - 3}
+                                            />
+                                        )}
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <div className="prop-img-placeholder" style={{ height: '100%' }} />
                         )}
                     </div>
                 </div>
             </div>
+
+            {/* ── PHOTO LIGHTBOX ───────────────────────────────────────────── */}
+            {lightbox !== null && photos[lightbox] && (
+                <div
+                    onClick={() => setLightbox(null)}
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 300,
+                        background: 'rgba(10,21,18,0.95)',
+                        display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center', gap: 20,
+                        padding: 40,
+                    }}
+                >
+                    <img
+                        src={photos[lightbox].url}
+                        alt={photos[lightbox].caption ?? 'Property photo'}
+                        onClick={e => e.stopPropagation()}
+                        style={{ maxWidth: '90vw', maxHeight: '74vh', objectFit: 'contain', border: '1px solid var(--brass-dim)' }}
+                    />
+                    <div onClick={e => e.stopPropagation()} style={{ textAlign: 'center', maxWidth: 720 }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.15em', color: 'var(--brass)', textTransform: 'uppercase', marginBottom: 8 }}>
+                            {String(lightbox + 1).padStart(2, '0')} / {String(photos.length).padStart(2, '0')}
+                            {photos[lightbox].is_primary && ' · Primary'}
+                        </div>
+                        {photos[lightbox].caption && (
+                            <div style={{ fontFamily: 'var(--body)', fontSize: 16, fontStyle: 'italic', color: 'var(--bone)', marginBottom: 10 }}>
+                                {photos[lightbox].caption}
+                            </div>
+                        )}
+                        {photos[lightbox].tags?.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                                {photos[lightbox].tags.map(tag => (
+                                    <span key={tag} style={{
+                                        fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.12em',
+                                        textTransform: 'uppercase', color: 'var(--parch-dim)',
+                                        border: '1px solid var(--brass-dim)', padding: '3px 9px',
+                                    }}>
+                                        {tag}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    {photos.length > 1 && (
+                        <>
+                            <button
+                                onClick={e => { e.stopPropagation(); setLightbox((lightbox - 1 + photos.length) % photos.length); }}
+                                aria-label="Previous photo"
+                                style={{
+                                    position: 'absolute', left: 24, top: '50%', transform: 'translateY(-50%)',
+                                    background: 'transparent', border: '1px solid var(--brass-dim)',
+                                    color: 'var(--bone)', fontSize: 22, padding: '12px 18px', cursor: 'pointer',
+                                }}
+                            >‹</button>
+                            <button
+                                onClick={e => { e.stopPropagation(); setLightbox((lightbox + 1) % photos.length); }}
+                                aria-label="Next photo"
+                                style={{
+                                    position: 'absolute', right: 24, top: '50%', transform: 'translateY(-50%)',
+                                    background: 'transparent', border: '1px solid var(--brass-dim)',
+                                    color: 'var(--bone)', fontSize: 22, padding: '12px 18px', cursor: 'pointer',
+                                }}
+                            >›</button>
+                        </>
+                    )}
+                    <button
+                        onClick={() => setLightbox(null)}
+                        aria-label="Close gallery"
+                        style={{
+                            position: 'absolute', top: 24, right: 24,
+                            background: 'transparent', border: '1px solid var(--brass-dim)',
+                            color: 'var(--bone)', fontFamily: 'var(--mono)', fontSize: 11,
+                            letterSpacing: '0.15em', textTransform: 'uppercase',
+                            padding: '10px 16px', cursor: 'pointer',
+                        }}
+                    >Close ✕</button>
+                </div>
+            )}
 
             {/* ── MAIN CONTENT ─────────────────────────────────────────────── */}
             <div style={{ maxWidth: 1400, margin: '0 auto', padding: '80px 40px', display: 'grid', gridTemplateColumns: '1fr 360px', gap: 80 }}>
@@ -279,19 +410,42 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                             <span style={{ display: 'block', width: 20, height: 1, background: 'var(--blaze)' }} />
                             Property Boundary
                         </div>
-                        <div style={{
-                            height: 320, background: 'var(--ink)', border: '1px solid var(--ink)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexDirection: 'column', gap: 12,
-                        }}>
-                            <span style={{ fontFamily: 'var(--display)', fontSize: 48, fontWeight: 300, color: 'var(--brass)', opacity: 0.4, fontStyle: 'italic' }}>Σ</span>
-                            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.15em', color: 'var(--parch-dim)', textTransform: 'uppercase' }}>
-                                Boundary Map · Mapbox
-                            </span>
-                            <span style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--parch-dim)', fontStyle: 'italic' }}>
-                                Visible after signing in
-                            </span>
-                        </div>
+                        {property.boundary_map_url ? (
+                            <div style={{ position: 'relative', border: '1px solid var(--ink)', background: 'var(--ink)' }}>
+                                <img
+                                    src={property.boundary_map_url}
+                                    alt={`${property.title} boundary map`}
+                                    loading="lazy"
+                                    style={{ display: 'block', width: '100%', height: 'auto' }}
+                                />
+                                {property.boundary_map_coords && (
+                                    <span style={{
+                                        position: 'absolute', bottom: 10, left: 10,
+                                        background: 'rgba(10,21,18,0.8)', color: 'var(--bone)',
+                                        border: '1px solid var(--brass-dim)',
+                                        fontFamily: 'var(--mono)', fontSize: 10,
+                                        letterSpacing: '0.08em', padding: '4px 10px',
+                                        borderRadius: 2, whiteSpace: 'nowrap',
+                                    }}>
+                                        {property.boundary_map_coords.lat.toFixed(6)}, {property.boundary_map_coords.lng.toFixed(6)}
+                                    </span>
+                                )}
+                            </div>
+                        ) : (
+                            <div style={{
+                                height: 320, background: 'var(--ink)', border: '1px solid var(--ink)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexDirection: 'column', gap: 12,
+                            }}>
+                                <span style={{ fontFamily: 'var(--display)', fontSize: 48, fontWeight: 300, color: 'var(--brass)', opacity: 0.4, fontStyle: 'italic' }}>Σ</span>
+                                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.15em', color: 'var(--parch-dim)', textTransform: 'uppercase' }}>
+                                    Boundary Map · Mapbox
+                                </span>
+                                <span style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--parch-dim)', fontStyle: 'italic' }}>
+                                    Visible after signing in
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     {/* Description */}

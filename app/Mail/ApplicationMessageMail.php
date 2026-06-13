@@ -3,12 +3,10 @@
 namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class ApplicationMessageMail extends Mailable
+class ApplicationMessageMail extends TemplatedMailable
 {
     use Queueable, SerializesModels;
 
@@ -20,17 +18,29 @@ class ApplicationMessageMail extends Mailable
         public readonly string $loginUrl,
     ) {}
 
-    public function envelope(): Envelope
+    protected function templateKey(): string
     {
-        return new Envelope(
-            subject: 'New message regarding your application — American Headhunter',
-        );
+        return 'application.message';
     }
 
-    public function content(): Content
+    protected function templateVariables(): array
     {
-        return new Content(
-            markdown: 'emails.application-message',
-        );
+        return [
+            'recipient_name'  => $this->recipientName,
+            'sender_role'     => $this->senderRoleLabel,
+            'message_body'    => $this->messageBody,
+            'application_ref' => strtoupper(substr($this->applicationId, 0, 8)),
+            'login_url'       => $this->loginUrl,
+        ];
+    }
+
+    protected function fallbackSubject(): string
+    {
+        return 'New message regarding your application — American Headhunter';
+    }
+
+    protected function fallbackContent(): Content
+    {
+        return new Content(markdown: 'emails.application-message');
     }
 }

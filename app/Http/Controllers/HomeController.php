@@ -23,7 +23,14 @@ class HomeController extends Controller
 
         try {
             $page     = $this->propertyService->searchListings(['per_page' => max(6, $cardCount + 5)]);
-            $listings = $page->items();
+            $listings = collect($page->items())->map(function ($listing) {
+                $docId = $listing->property?->primary_photo_document_id;
+                $listing->property?->setAttribute(
+                    'primary_photo_url',
+                    $docId ? route('property-photos.show', $docId) : null,
+                );
+                return $listing;
+            })->all();
         } catch (\Throwable $e) {
             Log::error('HomeController: failed to load listings', ['error' => $e->getMessage()]);
             $listings = [];

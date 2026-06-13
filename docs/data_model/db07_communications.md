@@ -379,6 +379,67 @@ CREATE TRIGGER trg_discord_webhooks_updated_at
 
 ---
 
+### `email_templates`
+
+Admin-managed email templates. System templates (`category = 'system'`) are wired to Mailables in application code via `template_key` and cannot be deleted — only re-versioned. The `owner_type` / `owner_user_id` columns are reserved for Phase 2 third-party senders (advertisers, outfitters, charters, clubs, corporate) and are NULL for platform-owned templates.
+
+```sql
+CREATE TABLE email_templates (
+    id            UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    template_key  VARCHAR(100) NOT NULL,  -- e.g. 'auth.password_reset' — stable lookup key used by Mailables
+    name          VARCHAR(150) NOT NULL,
+    category      VARCHAR(20)  NOT NULL DEFAULT 'custom'
+                      CHECK (category IN ('system', 'custom')),
+    owner_type    VARCHAR(30)  NULL,      -- NULL = platform-owned
+    owner_user_id UUID         NULL,      -- References DB 1 (Identity) users.id
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at    TIMESTAMPTZ  NULL
+);
+
+CREATE UNIQUE INDEX uq_email_templates_template_key
+    ON email_templates (template_key) WHERE deleted_at IS NULL;
+CREATE INDEX idx_email_templates_owner ON email_templates (owner_type, owner_user_id);
+```
+
+### `email_template_versions`
+
+Immutable-once-active version history per template. Exactly one `active` version per template, enforced by a partial unique index and `EmailTemplateService::activateVersion()` (activating archives the previous active version). Only `draft` versions may be edited or deleted. Bodies use `{snake_case}` placeholder tokens substituted at send time; the variable catalog per `template_key` lives in `App\Support\EmailTemplateVariables`.
+
+```sql
+CREATE TABLE email_template_versions (
+    id                 UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    template_id        UUID         NOT NULL REFERENCES email_templates (id) ON DELETE CASCADE,
+    version_number     INTEGER      NOT NULL,
+    subject            VARCHAR(255) NOT NULL,
+    html_body          TEXT         NULL,      -- NULL for plain-text-only emails
+    text_body          TEXT         NULL,      -- plain-text alternative / fallback
+    status             VARCHAR(10)  NOT NULL DEFAULT 'draft'
+                           CHECK (status IN ('draft', 'active', 'archived')),
+    notes              VARCHAR(255) NULL,
+    created_by_user_id UUID         NULL,      -- References DB 1 (Identity) users.id
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_email_template_versions_has_body
+        CHECK (html_body IS NOT NULL OR text_body IS NOT NULL)
+);
+
+CREATE UNIQUE INDEX uq_email_template_versions_number
+    ON email_template_versions (template_id, version_number);
+CREATE UNIQUE INDEX uq_email_template_versions_active
+    ON email_template_versions (template_id) WHERE status = 'active';
+CREATE INDEX idx_email_template_versions_template_id
+    ON email_template_versions (template_id);
+```
+
+**Notes:**
+- Mailables extend `App\Mail\TemplatedMailable` — they render the active version via `EmailTemplateService::render()` and fall back to their original hardcoded Blade view when no active version exists or rendering throws. Auth-critical mail never stops sending because of a template problem.
+- Variable values are HTML-escaped when substituted into `html_body` (data cannot inject markup) and inserted raw into `text_body`. Array values become multi-line blocks.
+- The active version per `template_key` is cached in Valkey Cluster 2 (`email_template:{key}`, 30 min) and invalidated on activate/delete.
+- Outbound SMTP settings are NOT in this database — they live in DB 12 `tenant_settings` under `mail.*` keys (password encrypted via Laravel Crypt), managed by `MailSettingsService` and the admin Email Settings page.
+
+---
+
 ## Eloquent Models
 
 ### `App\Models\Communications\MessageThread`

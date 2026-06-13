@@ -36,6 +36,7 @@ class PropertiesTable
                     ->sortable(),
                 TextColumn::make('state_code')
                     ->label('State')
+                    ->formatStateUsing(fn ($state) => \App\Support\UsStates::names()[$state] ?? $state)
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('county')
@@ -73,8 +74,9 @@ class PropertiesTable
                         \App\Models\Property\Property::on('property_read')
                             ->whereNull('deleted_at')
                             ->distinct()
-                            ->pluck('state_code', 'state_code')
+                            ->pluck('state_code')
                             ->sort()
+                            ->mapWithKeys(fn ($code) => [$code => \App\Support\UsStates::names()[$code] ?? $code])
                             ->toArray()
                     ),
                 TrashedFilter::make(),

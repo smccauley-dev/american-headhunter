@@ -4,20 +4,28 @@ namespace App\Filament\Admin\Resources\Properties\Schemas;
 
 use App\Models\Property\PropertyAmenity;
 use App\Models\Property\PropertyManager;
+use App\Models\Property\PropertyPhoto;
+use App\Services\Property\PropertyMapService;
+use App\Services\Property\PropertyService;
+use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\Alignment;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 
 class PropertyFormV2
@@ -40,6 +48,259 @@ class PropertyFormV2
         'other'          => 'Other',
     ];
 
+    /** Suggested photo tags — free-form entry is also allowed. */
+    public static function photoTagSuggestions(): array
+    {
+        return [
+            'aerial', 'habitat', 'food plot', 'stand', 'blind', 'trail camera',
+            'water', 'creek', 'pond', 'access', 'road', 'gate', 'cabin',
+            'lodging', 'harvest', 'wildlife', 'boundary', 'terrain',
+        ];
+    }
+
+    private static function uploadPhotosAction(): Action
+    {
+        return Action::make('upload_photos')
+            ->label('Upload Photos')
+            ->icon('heroicon-o-arrow-up-tray')
+            ->color('gray')
+            ->modalHeading('Upload Property Photos')
+            ->form([
+                FileUpload::make('photos')
+                    ->label('Photos')
+                    ->image()
+                    ->multiple()
+                    ->disk('local')
+                    ->directory('pending-property-photos')
+                    ->maxSize(10240)
+                    ->maxFiles(20)
+                    ->required()
+                    ->helperText('JPG, PNG, or WebP — max 10 MB each, up to 20 per batch. GPS coordinates are read automatically from each photo\'s EXIF data when present.'),
+                TextInput::make('caption')
+                    ->label('Caption')
+                    ->maxLength(255)
+                    ->helperText('Optional — applied to every photo in this batch. Edit photos individually afterwards.'),
+                TagsInput::make('tags')
+                    ->label('Tags')
+                    ->suggestions(self::photoTagSuggestions())
+                    ->helperText('Optional — applied to every photo in this batch. Press Enter after each tag.'),
+            ])
+            ->action(function (array $data, $record): void {
+                $uploaded = 0;
+                foreach ((array) ($data['photos'] ?? []) as $path) {
+                    try {
+                        $file = new \Illuminate\Http\UploadedFile(
+                            Storage::disk('local')->path($path),
+                            basename($path),
+                            Storage::disk('local')->mimeType($path) ?: 'image/jpeg',
+                            null,
+                            true,
+                        );
+                        app(PropertyService::class)->addPhoto(
+                            $record->id,
+                            $file,
+                            $data['caption'] ?? null,
+                            $data['tags'] ?? [],
+                        );
+                        $uploaded++;
+                    } catch (\Throwable $e) {
+                        report($e);
+                    } finally {
+                        Storage::disk('local')->delete($path);
+                    }
+                }
+
+                if ($uploaded > 0) {
+                    Notification::make()
+                        ->title($uploaded === 1 ? 'Photo uploaded' : "{$uploaded} photos uploaded")
+                        ->success()
+                        ->send();
+                } else {
+                    Notification::make()->title('Upload failed')->danger()->send();
+                }
+            });
+    }
+
+    private static function renderPhotosHtml($record): HtmlString
+    {
+        if (! $record?->id) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;">Save the property first to manage photos.</p>'
+            );
+        }
+
+        try {
+            $photos = PropertyPhoto::where('property_id', $record->id)
+                ->whereNull('deleted_at')
+                ->orderBy('sort_order')
+                ->orderBy('created_at')
+                ->get();
+        } catch (\Throwable $e) {
+            report($e);
+            return new HtmlString('<p style="color:#6b7280;font-size:0.875rem;">Unavailable.</p>');
+        }
+
+        if ($photos->isEmpty()) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;padding:0.75rem 0;">'
+                . 'No photos yet. Use <strong>Upload Photos</strong> in the section header to add some.'
+                . '</p>'
+            );
+        }
+
+        return new HtmlString(view('filament.admin.properties.photo-grid', [
+            'photos' => $photos,
+        ])->render());
+    }
+
+    private static function uploadMapImagesAction(): Action
+    {
+        return Action::make('upload_map_images')
+            ->label('Upload Map Images')
+            ->icon('heroicon-o-arrow-up-tray')
+            ->color('gray')
+            ->modalHeading('Upload Map Images')
+            ->form([
+                FileUpload::make('maps')
+                    ->label('Map Images')
+                    ->image()
+                    ->multiple()
+                    ->disk('local')
+                    ->directory('pending-property-maps')
+                    ->maxSize(15360)
+                    ->maxFiles(10)
+                    ->required()
+                    ->helperText('JPG, PNG, or WebP — max 15 MB each. The first map image on a property becomes the boundary map. GPS coordinates are read from EXIF data when present.'),
+                TextInput::make('description')
+                    ->label('Description')
+                    ->maxLength(255)
+                    ->helperText('Optional — applied to every image in this batch. Edit individually afterwards.'),
+            ])
+            ->action(function (array $data, $record): void {
+                $uploaded = 0;
+                foreach ((array) ($data['maps'] ?? []) as $path) {
+                    try {
+                        $file = new \Illuminate\Http\UploadedFile(
+                            Storage::disk('local')->path($path),
+                            basename($path),
+                            Storage::disk('local')->mimeType($path) ?: 'image/jpeg',
+                            null,
+                            true,
+                        );
+                        app(PropertyMapService::class)->addMapImage(
+                            $record->id,
+                            $file,
+                            $data['description'] ?? null,
+                        );
+                        $uploaded++;
+                    } catch (\Throwable $e) {
+                        report($e);
+                    } finally {
+                        Storage::disk('local')->delete($path);
+                    }
+                }
+
+                if ($uploaded > 0) {
+                    Notification::make()
+                        ->title($uploaded === 1 ? 'Map image uploaded' : "{$uploaded} map images uploaded")
+                        ->success()
+                        ->send();
+                } else {
+                    Notification::make()->title('Upload failed')->danger()->send();
+                }
+            });
+    }
+
+    private static function renderMapEditorHtml($record, ?string $selectedMapImageId): HtmlString
+    {
+        if (! $record?->id) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;">Save the property first to manage maps.</p>'
+            );
+        }
+
+        try {
+            $service = app(PropertyMapService::class);
+            $images  = $service->getMapImages($record->id);
+            $deleted = $service->getDeletedMapImages($record->id);
+
+            $selected = ($selectedMapImageId ? $images->firstWhere('id', $selectedMapImageId) : null)
+                ?? $images->first();
+            $selected?->load('markers');
+        } catch (\Throwable $e) {
+            report($e);
+            return new HtmlString('<p style="color:#6b7280;font-size:0.875rem;">Unavailable.</p>');
+        }
+
+        return new HtmlString(view('filament.admin.properties.map-editor', [
+            'images'   => $images,
+            'selected' => $selected,
+            'deleted'  => $deleted,
+        ])->render());
+    }
+
+    private static function grantManagerAction(): Action
+    {
+        return Action::make('grant_manager')
+            ->label('Grant Manager Access')
+            ->icon('heroicon-o-user-plus')
+            ->color('primary')
+            ->visible(fn ($record) => \App\Support\AdminAuth::canManageProperties() && $record !== null)
+            ->form([
+                TextInput::make('user_email')
+                    ->label('User Email')
+                    ->email()
+                    ->required()
+                    ->placeholder('hunter@example.com'),
+                Select::make('role')
+                    ->label('Role')
+                    ->required()
+                    ->options([
+                        'owner'    => 'Owner',
+                        'co_owner' => 'Co-Owner',
+                        'manager'  => 'Manager',
+                        'operator' => 'Operator',
+                    ]),
+            ])
+            ->action(function (array $data, $record): void {
+                $user = app(\App\Services\Identity\UserService::class)->findByEmail($data['user_email']);
+
+                if (! $user) {
+                    Notification::make()
+                        ->title('No user found with that email address.')
+                        ->danger()
+                        ->send();
+                    return;
+                }
+
+                $exists = PropertyManager::where('property_id', $record->id)
+                    ->where('user_id', $user->id)
+                    ->whereNull('revoked_at')
+                    ->exists();
+
+                if ($exists) {
+                    Notification::make()
+                        ->title('This user already has active manager access.')
+                        ->warning()
+                        ->send();
+                    return;
+                }
+
+                PropertyManager::create([
+                    'property_id'        => $record->id,
+                    'user_id'            => $user->id,
+                    'role'               => $data['role'],
+                    'granted_by_user_id' => auth()->id(),
+                    'granted_at'         => now(),
+                ]);
+
+                Notification::make()
+                    ->title('Manager access granted.')
+                    ->success()
+                    ->send();
+            });
+    }
+
     private static function renderManagersHtml($record): HtmlString
     {
         if (! $record?->id) {
@@ -60,7 +321,7 @@ class PropertyFormV2
         if ($managers->isEmpty()) {
             return new HtmlString(
                 '<p style="color:#6b7280;font-size:0.875rem;padding:0.75rem 0;">'
-                . 'No active managers assigned. Use <strong>Grant Manager Access</strong> in the page header to add one.'
+                . 'No active managers assigned. Use <strong>Grant Manager Access</strong> in the section header to add one.'
                 . '</p>'
             );
         }
@@ -179,6 +440,7 @@ class PropertyFormV2
         return $schema
             ->components([
                 Tabs::make()
+                    ->persistTabInQueryString()
                     ->columnSpanFull()
                     ->tabs([
 
@@ -208,37 +470,45 @@ class PropertyFormV2
                                                 'archived'  => 'Archived',
                                             ])
                                             ->default('draft'),
-                                        TextInput::make('state_code')
-                                            ->label('State Code')
-                                            ->required()
-                                            ->maxLength(2)
-                                            ->placeholder('TX'),
+                                        Select::make('state_code')
+                                            ->label('State')
+                                            ->options(\App\Support\UsStates::names())
+                                            ->searchable()
+                                            ->required(),
                                         TextInput::make('county')
                                             ->required()
                                             ->maxLength(100),
-                                        TextInput::make('center_lat')
-                                            ->label('Latitude')
-                                            ->numeric()
-                                            ->minValue(-90)
-                                            ->maxValue(90)
-                                            ->placeholder('30.267153')
-                                            ->helperText('WGS84 decimal degrees — map pin only.'),
-                                        TextInput::make('center_lng')
-                                            ->label('Longitude')
-                                            ->numeric()
-                                            ->minValue(-180)
-                                            ->maxValue(180)
-                                            ->placeholder('-97.743057')
-                                            ->helperText('Negative values are West.'),
-                                        TextInput::make('total_acres')
-                                            ->label('Total Acres')
-                                            ->required()
-                                            ->numeric()
-                                            ->minValue(1),
-                                        TextInput::make('huntable_acres')
-                                            ->label('Huntable Acres')
-                                            ->numeric()
-                                            ->minValue(0),
+                                        Grid::make(2)
+                                            ->columnSpanFull()
+                                            ->schema([
+                                                TextInput::make('center_lat')
+                                                    ->label('Latitude')
+                                                    ->numeric()
+                                                    ->minValue(-90)
+                                                    ->maxValue(90)
+                                                    ->placeholder('30.267153')
+                                                    ->helperText('WGS84 decimal degrees — map pin only.'),
+                                                TextInput::make('center_lng')
+                                                    ->label('Longitude')
+                                                    ->numeric()
+                                                    ->minValue(-180)
+                                                    ->maxValue(180)
+                                                    ->placeholder('-97.743057')
+                                                    ->helperText('Negative values are West.'),
+                                            ]),
+                                        Grid::make(2)
+                                            ->columnSpanFull()
+                                            ->schema([
+                                                TextInput::make('total_acres')
+                                                    ->label('Total Acres')
+                                                    ->required()
+                                                    ->numeric()
+                                                    ->minValue(1),
+                                                TextInput::make('huntable_acres')
+                                                    ->label('Huntable Acres')
+                                                    ->numeric()
+                                                    ->minValue(0),
+                                            ]),
                                     ]),
                             ]),
 
@@ -296,6 +566,39 @@ class PropertyFormV2
 
                         Tab::make('Amenities')
                             ->schema(static::amenitiesTabSchema()),
+
+                        Tab::make('Photos')
+                            ->visible(fn ($record) => $record !== null)
+                            ->schema([
+                                Section::make('Photo Gallery')
+                                    ->description('Photos shown on the public listing. The primary photo is the cover image; use the arrows to set display order.')
+                                    ->headerActions([self::uploadPhotosAction()])
+                                    ->schema([
+                                        Placeholder::make('property_photos_display')
+                                            ->hiddenLabel()
+                                            ->content(function (Placeholder $component) {
+                                                return static::renderPhotosHtml($component->getRecord());
+                                            }),
+                                    ]),
+                            ]),
+
+                        Tab::make('Map')
+                            ->visible(fn ($record) => $record !== null)
+                            ->schema([
+                                Section::make('Boundary Map')
+                                    ->description('The boundary map is shown on the public listing (without markers). Add markers for amenities, game locations, stands, and other points of interest — markers are admin/member only.')
+                                    ->headerActions([self::uploadMapImagesAction()])
+                                    ->schema([
+                                        Placeholder::make('property_map_editor')
+                                            ->hiddenLabel()
+                                            ->content(function (Placeholder $component, $livewire) {
+                                                return static::renderMapEditorHtml(
+                                                    $component->getRecord(),
+                                                    $livewire->selectedMapImageId ?? null,
+                                                );
+                                            }),
+                                    ]),
+                            ]),
 
                         Tab::make('Listings')
                             ->schema([
@@ -390,7 +693,8 @@ class PropertyFormV2
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Active Managers')
-                                    ->description('Users who can manage this property on behalf of the owner. Grant access from the page header.')
+                                    ->description('Users who can manage this property on behalf of the owner.')
+                                    ->headerActions([self::grantManagerAction()])
                                     ->schema([
                                         Placeholder::make('property_managers_display')
                                             ->hiddenLabel()

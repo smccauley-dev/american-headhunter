@@ -39,8 +39,6 @@ class ViewCustomerUser extends ViewRecord
             Section::make('Identity')
                 ->columns(3)
                 ->schema([
-                    TextEntry::make('email')->label('Email'),
-                    TextEntry::make('phone')->label('Phone')->placeholder('-'),
                     TextEntry::make('account_type')
                         ->label('Primary Portal')
                         ->badge()
@@ -75,14 +73,40 @@ class ViewCustomerUser extends ViewRecord
                         ->dateTime('M j, Y'),
                 ]),
 
+            Section::make('Contact')
+                ->columns(3)
+                ->schema([
+                    TextEntry::make('email')->label('Email'),
+                    TextEntry::make('phone')->label('Phone')->placeholder('-'),
+                    TextEntry::make('profile.emergency_contact_phone')
+                        ->label('Emergency Phone')
+                        ->placeholder('-'),
+                    TextEntry::make('profile.address_line1')->label('Street Address')->placeholder('-'),
+                    TextEntry::make('profile.address_line2')->label('Apt / Unit')->placeholder('-'),
+                    TextEntry::make('profile.city')->label('City')->placeholder('-'),
+                    TextEntry::make('profile.state_code')
+                        ->label('State')
+                        ->formatStateUsing(fn ($state) => \App\Support\UsStates::names()[$state] ?? $state)
+                        ->placeholder('-'),
+                    TextEntry::make('profile.county')->label('County / Parish / District')->placeholder('-'),
+                    TextEntry::make('profile.zip_code')->label('ZIP')->placeholder('-'),
+                    TextEntry::make('profile.emergency_contact_name')
+                        ->label('Emergency Contact')
+                        ->placeholder('-'),
+                    TextEntry::make('profile.emergency_contact_relationship')
+                        ->label('Relationship')
+                        ->placeholder('-'),
+                    TextEntry::make('profile.emergency_contact_email')
+                        ->label('Emergency Email')
+                        ->placeholder('-'),
+                ]),
+
             Section::make('Profile')
                 ->columns(3)
                 ->schema([
                     TextEntry::make('profile.first_name')->label('First Name')->placeholder('-'),
                     TextEntry::make('profile.last_name')->label('Last Name')->placeholder('-'),
                     TextEntry::make('profile.display_name')->label('Display Name')->placeholder('-'),
-                    TextEntry::make('profile.state_code')->label('State')->placeholder('-'),
-                    TextEntry::make('profile.zip_code')->label('ZIP')->placeholder('-'),
                     TextEntry::make('profile.date_of_birth')
                         ->label('Date of Birth')
                         ->date('M j, Y')

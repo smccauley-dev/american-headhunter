@@ -289,6 +289,30 @@ class ViewLeaseApplication extends ViewRecord
                 Section::make('Communications')
                     ->columnSpan(3)
                     ->description('Messages between staff, landowner, and applicant regarding this application.')
+                    ->headerActions([
+                        Action::make('send_message')
+                            ->label('Send Message')
+                            ->color('gray')
+                            ->icon(Heroicon::OutlinedChatBubbleLeft)
+                            ->form([
+                                Textarea::make('message')
+                                    ->label('Message to Applicant')
+                                    ->required()
+                                    ->maxLength(2000)
+                                    ->rows(5)
+                                    ->helperText('The applicant will receive an email notification with this message.'),
+                            ])
+                            ->action(function (LeaseApplication $record, array $data): void {
+                                app(ApplicationMessageService::class)->send(
+                                    $record->id,
+                                    auth()->id(),
+                                    'admin',
+                                    $data['message'],
+                                );
+                                Notification::make()->title('Message sent to applicant')->success()->send();
+                                $this->redirect(LeaseApplicationResource::getUrl('view', ['record' => $record]));
+                            }),
+                    ])
                     ->schema([
                         TextEntry::make('communications_thread')
                             ->label('')
@@ -344,29 +368,6 @@ class ViewLeaseApplication extends ViewRecord
                 ->icon(Heroicon::OutlinedPrinter)
                 ->url(fn (LeaseApplication $record): string => route('admin.applications.print', $record->id))
                 ->openUrlInNewTab(),
-
-            Action::make('send_message')
-                ->label('Send Message')
-                ->color('gray')
-                ->icon(Heroicon::OutlinedChatBubbleLeft)
-                ->form([
-                    Textarea::make('message')
-                        ->label('Message to Applicant')
-                        ->required()
-                        ->maxLength(2000)
-                        ->rows(5)
-                        ->helperText('The applicant will receive an email notification with this message.'),
-                ])
-                ->action(function (LeaseApplication $record, array $data): void {
-                    app(ApplicationMessageService::class)->send(
-                        $record->id,
-                        auth()->id(),
-                        'admin',
-                        $data['message'],
-                    );
-                    Notification::make()->title('Message sent to applicant')->success()->send();
-                    $this->redirect(LeaseApplicationResource::getUrl('view', ['record' => $record]));
-                }),
 
             // Sign as Lessor — visible after approval, while lessor signature is pending
             Action::make('sign_as_lessor')

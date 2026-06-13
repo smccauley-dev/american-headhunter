@@ -133,7 +133,9 @@ class AuthController extends Controller
         $request->session()->regenerate();
         $request->session()->put('auth.user_id', $user->id);
 
-        return redirect()->intended('/member');
+        return redirect()->intended(
+            app(\App\Services\Platform\TenantService::class)->getSetting('nav.login_redirect', '/member/profile')
+        );
     }
 
     public function logout(Request $request): RedirectResponse
