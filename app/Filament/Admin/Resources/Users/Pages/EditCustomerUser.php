@@ -70,7 +70,7 @@ class EditCustomerUser extends EditRecord
                     // ── Identity ──────────────────────────────────────────────
                     Tab::make('Identity')
                         ->schema([
-                            Section::make()
+                            Section::make('Account')
                                 ->columns(2)
                                 ->schema([
                                     Placeholder::make('user_id_display')
@@ -121,10 +121,10 @@ class EditCustomerUser extends EditRecord
                     // ── Roles ─────────────────────────────────────────────────
                     Tab::make('Roles')
                         ->schema([
-                            Section::make()
+                            Section::make('Platform Roles')
                                 ->schema([
                                     CheckboxList::make('roles')
-                                        ->label('Platform Roles')
+                                        ->hiddenLabel()
                                         ->helperText('Multi-role: controls what the user can do. The Primary Portal on the Identity tab controls where they log in.')
                                         ->relationship(
                                             'roles',
@@ -208,7 +208,7 @@ class EditCustomerUser extends EditRecord
                     // ── Profile ───────────────────────────────────────────────
                     Tab::make('Profile')
                         ->schema([
-                            Section::make()
+                            Section::make('Profile Details')
                                 ->columns(2)
                                 ->schema([
                                     TextInput::make('display_name')
@@ -537,10 +537,10 @@ class EditCustomerUser extends EditRecord
                     // ── Admin Notes ───────────────────────────────────────────
                     Tab::make('Admin Notes')
                         ->schema([
-                            Section::make()
+                            Section::make('Staff Notes')
                                 ->schema([
                                     Placeholder::make('admin_notes_list')
-                                        ->label('Staff Notes')
+                                        ->hiddenLabel()
                                         ->content(function () {
                                             $notes = UserAdminNote::where('user_id', $this->getRecord()->id)
                                                 ->orderByDesc('created_at')
@@ -563,7 +563,7 @@ class EditCustomerUser extends EditRecord
                     // ── Audit Log ─────────────────────────────────────────────
                     Tab::make('Audit Log')
                         ->schema([
-                            Section::make()
+                            Section::make('Audit Log')
                                 ->schema([
                                     Placeholder::make('audit_log')
                                         ->label('')
