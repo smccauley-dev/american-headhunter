@@ -2,6 +2,8 @@
 
 namespace App\Services\Lease;
 
+use App\Models\Lease\Club;
+use App\Models\Lease\ClubMember;
 use App\Models\Lease\Lease;
 use App\Services\BaseService;
 use App\Services\Property\PropertyService;
@@ -49,6 +51,58 @@ class LeaseService extends BaseService
     {
         return $this->cache("lease:lessor:{$userId}:active", function () use ($userId) {
             return Lease::scopeActive()->where('lessor_user_id', $userId)->get();
+        }, 5);
+    }
+
+    /**
+     * All leases where the user is lessee or lessor — plain arrays for the
+     * admin user detail page. Cached 5 min.
+     */
+    public function getLeaseSummariesForUser(string $userId): array
+    {
+        return $this->cache("lease:user:{$userId}:summaries", function () use ($userId) {
+            return Lease::on('lease')
+                ->where(fn ($q) => $q
+                    ->where('lessee_user_id', $userId)
+                    ->orWhere('lessor_user_id', $userId))
+                ->whereNull('deleted_at')
+                ->orderByDesc('created_at')
+                ->get(['id', 'lessee_user_id', 'lessor_user_id', 'status', 'start_date', 'end_date'])
+                ->map(fn ($l) => [
+                    'id'         => $l->id,
+                    'role'       => $l->lessee_user_id === $userId ? 'Lessee' : 'Lessor',
+                    'status'     => $l->status,
+                    'start_date' => $l->start_date?->format('M j Y'),
+                    'end_date'   => $l->end_date?->format('M j Y'),
+                ])->all();
+        }, 5);
+    }
+
+    /**
+     * Clubs the user owns plus clubs they belong to — plain arrays for the
+     * admin user detail page. Cached 5 min.
+     */
+    public function getClubAffiliationsForUser(string $userId): array
+    {
+        return $this->cache("lease:user:{$userId}:clubs", function () use ($userId) {
+            $owned = Club::on('lease')
+                ->where('owner_user_id', $userId)
+                ->whereNull('deleted_at')
+                ->get(['id', 'name', 'status'])
+                ->map(fn ($c) => ['name' => $c->name, 'role' => 'Owner', 'status' => $c->status]);
+
+            $memberships = ClubMember::on('lease')
+                ->where('user_id', $userId)
+                ->whereNull('deleted_at')
+                ->with('club')
+                ->get()
+                ->map(fn ($m) => [
+                    'name'   => $m->club?->name ?? '—',
+                    'role'   => ucfirst($m->role),
+                    'status' => $m->status,
+                ]);
+
+            return $owned->concat($memberships)->values()->all();
         }, 5);
     }
 
