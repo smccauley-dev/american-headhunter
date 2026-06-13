@@ -87,7 +87,7 @@ class PropertyFormV2
                 Toggle::make('import_exif')
                     ->label('Import photo metadata (EXIF)')
                     ->default(true)
-                    ->helperText('When on, we read the metadata each camera or phone embeds in a photo — including any GPS coordinates recorded when the picture was taken — and use it to auto-fill the photo\'s location. Turn it off to ignore that metadata and leave the location blank. Imported coordinates stay private to staff and lessees and are never shown publicly unless you separately enable that.'),
+                    ->helperText('When on, we read the metadata each camera or phone embeds in a photo — including any GPS coordinates recorded when the picture was taken — and use it to auto-fill the photo\'s location. Turn it off to ignore that metadata and leave the location blank. Imported coordinates stay private to staff and lessees; they are never shown publicly unless you separately enable that.'),
             ])
             ->action(function (array $data, $record): void {
                 $uploaded = 0;
@@ -183,7 +183,7 @@ class PropertyFormV2
                 Toggle::make('import_exif')
                     ->label('Import image metadata (EXIF)')
                     ->default(true)
-                    ->helperText('When on, we read the metadata embedded in each image — including any GPS coordinates recorded when it was captured — and use it to set the map\'s reference point. Turn it off to ignore that metadata and leave the reference point blank. Imported coordinates stay private to staff and lessees and are never shown on the public listing unless you separately enable that on the boundary map.'),
+                    ->helperText('When on, we read the metadata each camera or phone embeds in a photo — including any GPS coordinates recorded when the picture was taken — and use it to auto-fill the photo\'s location. Turn it off to ignore that metadata and leave the location blank. Imported coordinates stay private to staff and lessees; they are never shown publicly unless you separately enable that.'),
             ])
             ->action(function (array $data, $record): void {
                 $uploaded = 0;
