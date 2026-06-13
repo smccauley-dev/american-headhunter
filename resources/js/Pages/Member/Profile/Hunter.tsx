@@ -460,18 +460,28 @@ function DashedInset() {
   )
 }
 
-// Small "!" marker beside the Trust Score label — hover or tap for explanation
+// Small "!" marker beside the Trust Score label — hover or tap for explanation.
+// The popover is position:fixed so it escapes the sidebar card's overflow:hidden.
 function TrustScoreInfo() {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const btnRef = useRef<HTMLButtonElement>(null)
+
+  const place = useCallback(() => {
+    const r = btnRef.current?.getBoundingClientRect()
+    if (r) setPos({ top: r.bottom + 8, left: r.left })
+  }, [])
+
+  const show = () => { place(); setOpen(true) }
+
   return (
-    <span
-      style={{ position: 'relative', display: 'inline-flex', marginLeft: '6px', verticalAlign: 'middle' }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
+    <span style={{ display: 'inline-flex', marginLeft: '6px', verticalAlign: 'middle' }}>
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onMouseEnter={show}
+        onMouseLeave={() => setOpen(false)}
+        onClick={() => (open ? setOpen(false) : show())}
         aria-label="What is the trust score?"
         style={{
           width: '13px',
@@ -495,15 +505,16 @@ function TrustScoreInfo() {
       </button>
       {open && (
         <div style={{
-          position: 'absolute',
-          bottom: 'calc(100% + 8px)',
-          left: '-8px',
-          width: '230px',
+          position: 'fixed',
+          top: pos.top,
+          left: pos.left,
+          width: '240px',
+          maxWidth: 'calc(100vw - 24px)',
           background: '#F8F4EB',
           border: '1px solid #0A1512',
           boxShadow: '4px 4px 0 #0A1512',
           padding: '12px 14px',
-          zIndex: 20,
+          zIndex: 50,
           textTransform: 'none',
           letterSpacing: 'normal',
         }}>
