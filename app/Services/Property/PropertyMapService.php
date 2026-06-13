@@ -91,7 +91,7 @@ class PropertyMapService extends BaseService
         ?string $description,
         ?float $latitude = null,
         ?float $longitude = null,
-        bool $showCoordsPublicly = true,
+        bool $showCoordsPublicly = false,
     ): void {
         if ($latitude !== null && ($latitude < -90 || $latitude > 90)) {
             throw new \InvalidArgumentException('Latitude must be between -90 and 90.');

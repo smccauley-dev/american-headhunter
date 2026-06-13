@@ -159,7 +159,7 @@ CREATE TABLE property_map_images (
     latitude    NUMERIC(9,6) NULL,
     longitude   NUMERIC(9,6) NULL,
     is_boundary BOOLEAN      NOT NULL DEFAULT false,
-    show_coords_publicly BOOLEAN NOT NULL DEFAULT true,
+    show_coords_publicly BOOLEAN NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     deleted_at  TIMESTAMPTZ  NULL
 );
@@ -170,12 +170,13 @@ CREATE INDEX idx_property_map_images_sort_order  ON property_map_images (propert
 
 **Notes:**
 - Exactly one live row per property has `is_boundary = true` — the first upload becomes the boundary map automatically. Enforced by `PropertyMapService`, not the DB.
-- Only the boundary map is served publicly (`/property-maps/{documentId}` route validates `is_boundary`); other map images stay behind the admin guard.
+- Only the boundary map is served publicly, and only for an **active** property (`/property-maps/{documentId}` joins `properties` and validates `is_boundary` + `status = 'active'` + not soft-deleted — SEC-025). Other map images stay behind the admin guard, or are served to active lessees via the mobile API (see below).
+- `show_coords_publicly` is **opt-in (defaults to `false`)** — SEC-024. `latitude`/`longitude` are auto-extracted from EXIF GPS on upload and can pinpoint a stand, cabin or gate, so the boundary map's reference point is shown on the public listing only when an admin explicitly enables this toggle.
 - Soft delete keeps the underlying DB 11 document live (lease-documents pattern), so restore is lossless and markers survive.
 
 ### `property_map_markers`
 
-Admin-placed annotations on a map image — amenities, game locations, stands, access points. Never rendered into the public image.
+Admin-placed annotations on a map image — amenities, game locations, stands, access points. Never rendered into the public image, and never exposed to the public API. They are exposed to **active lessees of the property** via the mobile field-ops API (see below), because they carry precise on-property GPS.
 
 ```sql
 CREATE TABLE property_map_markers (
@@ -198,7 +199,19 @@ CREATE INDEX idx_property_map_markers_map_image_id ON property_map_markers (map_
 ```
 
 **Notes:**
-- `x_percent`/`y_percent` anchor the marker to the image (percent from top-left), independent of zoom or image size. `latitude`/`longitude` optionally record the real-world position.
+- `x_percent`/`y_percent` anchor the marker to the image (percent from top-left), independent of zoom or image size. `latitude`/`longitude` optionally record the real-world position (used for native-map rendering on mobile).
+
+#### Map access surfaces
+
+| Surface | Route | Audience | Returns |
+|---|---|---|---|
+| Public listing (web) | `Public/PropertyController::show` | Anyone | Boundary map URL + coords (only if `show_coords_publicly`). No markers. |
+| Public detail (mobile) | `GET /api/v1/properties/{id}` | Any authed token | Same as web — `boundary_map_url`, `boundary_map_coords`. No markers. |
+| Member field-ops (mobile) | `GET /api/v1/properties/{id}/map` | **Active lessee/lessor only** | All live map images **with markers** (label, type, color, x/y%, lat/lng, notes). |
+| Member image bytes (mobile) | `GET /api/v1/properties/{id}/map-images/{documentId}` | **Active lessee/lessor only** | The raster image, served by bearer token. |
+| Admin | Filament `EditPropertyV2` map tab | Staff | Full CRUD on images + markers. |
+
+- The member endpoints gate on `LeaseService::userHasActiveLeaseForProperty()` and return **404** (never 403) to non-lessees, so property existence isn't disclosed. Markers must never be exposed to the generic `hunter:read` public ability (SEC-024).
 
 ---
 

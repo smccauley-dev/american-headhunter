@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\DropboxSignWebhookController;
 use App\Http\Controllers\Api\LeaseSigningController;
 use App\Http\Controllers\Api\MfaController;
 use App\Http\Controllers\Api\PropertyController;
+use App\Http\Controllers\Api\PropertyMapController;
 use App\Http\Controllers\Api\RecoveryController;
 use Illuminate\Support\Facades\Route;
 
@@ -17,7 +18,15 @@ $propertyRoutes = function () {
 // v1 property routes — auth + hunter:read ability required
 Route::prefix('v1/properties')
     ->middleware(['auth:sanctum', 'abilities:hunter:read'])
-    ->group($propertyRoutes);
+    ->group(function () use ($propertyRoutes) {
+        $propertyRoutes();
+
+        // Member field-ops map data — additionally gated to active lessees
+        // inside the controller (markers carry precise GPS, see SEC-024).
+        Route::get('/{id}/map', [PropertyMapController::class, 'show']);
+        Route::get('/{id}/map-images/{documentId}', [PropertyMapController::class, 'image'])
+            ->name('api.property-maps.image');
+    });
 
 // Legacy property routes — no auth, backward-compat for web app
 Route::prefix('properties')->group($propertyRoutes);

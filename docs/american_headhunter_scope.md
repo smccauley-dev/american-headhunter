@@ -1462,7 +1462,7 @@ This document defines the complete product scope for a full-stack hunting lease 
 | Quarantine workflow | Flagged files quarantined — uploader notified |
 | Scan result logging | Every result logged against upload record |
 | Retroactive scanning | Historical uploads re-scanned on definition updates |
-| Image EXIF stripping | GPS and device metadata removed |
+| EXIF GPS handling | GPS metadata is retained, not stripped — but any use or public display of it is opt-in, off by default (e.g. property map images auto-fill a reference point from EXIF, kept private unless the owner enables it; see SEC-024) |
 
 ---
 
@@ -1774,7 +1774,7 @@ This document defines the complete product scope for a full-stack hunting lease 
 | Bulk generation | Mass renewal packets |
 | File storage | Azure Blob — tiered |
 | Virus scanning | ClamAV / VirusTotal on every upload |
-| EXIF stripping | GPS and device metadata removed |
+| EXIF GPS handling | GPS metadata retained, not stripped; any use/display is opt-in and off by default (SEC-024) |
 | Video processing | FFmpeg — HLS streaming |
 | Print generation | Optimized layouts for all document types |
 
@@ -1795,7 +1795,7 @@ This document defines the complete product scope for a full-stack hunting lease 
 | Authorization | Spatie Laravel-Permission — RBAC |
 | Database security | PostgreSQL Row-Level Security per tenant |
 | Field encryption | pgcrypto — gate codes, sensitive data |
-| File security | ClamAV virus scanning + EXIF stripping |
+| File security | ClamAV virus scanning; EXIF GPS retained but opt-in to use/display (SEC-024) |
 | Signed URLs | Time-limited — no public document links |
 | Audit trail | Immutable audit_logs — all mutations |
 | OFAC/AML | Sanctions screening at registration and transactions |

@@ -55,6 +55,24 @@ class LeaseService extends BaseService
     }
 
     /**
+     * Whether the user is party to an active lease on the property (as lessee or
+     * lessor). Gate for member-only property data such as map markers and access
+     * info — markers carry precise on-property GPS (see SEC-024), so this must
+     * never be relaxed to a generic "authenticated hunter" check.
+     */
+    public function userHasActiveLeaseForProperty(string $userId, string $propertyId): bool
+    {
+        return Lease::on('lease')
+            ->where('property_id', $propertyId)
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->where(fn ($q) => $q
+                ->where('lessee_user_id', $userId)
+                ->orWhere('lessor_user_id', $userId))
+            ->exists();
+    }
+
+    /**
      * All leases where the user is lessee or lessor — plain arrays for the
      * admin user detail page. Cached 5 min.
      */
