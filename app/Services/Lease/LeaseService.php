@@ -125,6 +125,21 @@ class LeaseService extends BaseService
         $this->invalidate("lease_detail:{$leaseId}");
     }
 
+    /**
+     * Cancel a lease that never went into effect (no signatures recorded).
+     * Use terminate() for leases that were active.
+     */
+    public function cancel(string $leaseId, string $reason): void
+    {
+        $lease = Lease::findOrFail($leaseId);
+        $lease->update([
+            'status'             => 'cancelled',
+            'terminated_at'      => now(),
+            'termination_reason' => $reason,
+        ]);
+        $this->invalidate("lease_detail:{$leaseId}");
+    }
+
     public function terminate(string $leaseId, string $reason): void
     {
         $lease = Lease::findOrFail($leaseId);
