@@ -11,6 +11,8 @@ use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -50,82 +52,92 @@ class ProfileTemplateResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Decorations')
-                ->description('Decorative elements drawn on the profile page. Changes apply to every profile of this type once published.')
+            Grid::make(2)
+                ->columnSpanFull()
                 ->schema([
-                    Toggle::make('draft_config.decorations.coffee_stain.enabled')
-                        ->label('Coffee-ring stain'),
-                    TextInput::make('draft_config.decorations.coffee_stain.opacity')
-                        ->label('Coffee-stain opacity')
-                        ->numeric()
-                        ->minValue(0)
-                        ->maxValue(1)
-                        ->step(0.05)
-                        ->helperText('0 = invisible, 1 = full strength. Default 0.45.'),
-                    Toggle::make('draft_config.decorations.registration_marks.enabled')
-                        ->label('Registration marks (corner crop marks)'),
-                    Toggle::make('draft_config.decorations.topo_background.enabled')
-                        ->label('Topographic background'),
-                ])
-                ->columns(2),
+                    // Left column: Decorations stacked above Theme, so Theme fills the
+                    // space beside the taller Modules section instead of wrapping below it.
+                    Group::make([
+                        Section::make('Decorations')
+                            ->description('Decorative elements drawn on the profile page. Changes apply to every profile of this type once published.')
+                            ->schema([
+                                Toggle::make('draft_config.decorations.coffee_stain.enabled')
+                                    ->label('Coffee-ring stain'),
+                                TextInput::make('draft_config.decorations.coffee_stain.opacity')
+                                    ->label('Coffee-stain opacity')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->maxValue(1)
+                                    ->step(0.05)
+                                    ->helperText('0 = invisible, 1 = full strength. Default 0.45.'),
+                                Toggle::make('draft_config.decorations.registration_marks.enabled')
+                                    ->label('Registration marks (corner crop marks)'),
+                                Toggle::make('draft_config.decorations.topo_background.enabled')
+                                    ->label('Topographic background'),
+                            ])
+                            ->columns(2),
 
-            Section::make('Modules')
-                ->description('Which content sections appear on the profile and in what order. About is always shown. Enable is separate from a member\'s public/private visibility choice. Lower order numbers appear first; Security is always last.')
-                ->schema([
-                    Toggle::make('draft_config.modules.about.enabled')
-                        ->label('About')
-                        ->disabled()
-                        ->helperText('Always shown.'),
-                    TextInput::make('draft_config.modules.about.order')
-                        ->label('About order')
-                        ->numeric()->minValue(1)->step(1),
+                        Section::make('Theme')
+                            ->description('Accent, paper, and ink colors for this profile type. Defaults: accent #C84C21, paper #F8F4EB, ink #0A1512.')
+                            ->schema([
+                                ColorPicker::make('draft_config.theme.accent')
+                                    ->label('Accent')
+                                    ->helperText('Highlights — active tabs, pills, links.'),
+                                ColorPicker::make('draft_config.theme.paper')
+                                    ->label('Paper')
+                                    ->helperText('Card background.'),
+                                ColorPicker::make('draft_config.theme.ink')
+                                    ->label('Ink')
+                                    ->helperText('Primary text, borders, drop shadows.'),
+                            ])
+                            ->columns(3),
+                    ])
+                        ->columnSpan(1),
 
-                    Toggle::make('draft_config.modules.contact.enabled')
-                        ->label('Contact'),
-                    TextInput::make('draft_config.modules.contact.order')
-                        ->label('Contact order')
-                        ->numeric()->minValue(1)->step(1),
+                    Section::make('Modules')
+                        ->description('Which content sections appear on the profile and in what order. About is always shown. Enable is separate from a member\'s public/private visibility choice. Lower order numbers appear first; Security is always last.')
+                        ->columnSpan(1)
+                        ->schema([
+                            Toggle::make('draft_config.modules.about.enabled')
+                                ->label('About')
+                                ->disabled()
+                                ->helperText('Always shown.'),
+                            TextInput::make('draft_config.modules.about.order')
+                                ->label('About order')
+                                ->numeric()->minValue(1)->step(1),
 
-                    Toggle::make('draft_config.modules.social.enabled')
-                        ->label('Social links'),
-                    TextInput::make('draft_config.modules.social.order')
-                        ->label('Social order')
-                        ->numeric()->minValue(1)->step(1),
+                            Toggle::make('draft_config.modules.contact.enabled')
+                                ->label('Contact'),
+                            TextInput::make('draft_config.modules.contact.order')
+                                ->label('Contact order')
+                                ->numeric()->minValue(1)->step(1),
 
-                    Toggle::make('draft_config.modules.photos.enabled')
-                        ->label('Photos'),
-                    TextInput::make('draft_config.modules.photos.order')
-                        ->label('Photos order')
-                        ->numeric()->minValue(1)->step(1),
+                            Toggle::make('draft_config.modules.social.enabled')
+                                ->label('Social links'),
+                            TextInput::make('draft_config.modules.social.order')
+                                ->label('Social order')
+                                ->numeric()->minValue(1)->step(1),
 
-                    Toggle::make('draft_config.modules.gear.enabled')
-                        ->label('Gear'),
-                    TextInput::make('draft_config.modules.gear.order')
-                        ->label('Gear order')
-                        ->numeric()->minValue(1)->step(1),
+                            Toggle::make('draft_config.modules.photos.enabled')
+                                ->label('Photos'),
+                            TextInput::make('draft_config.modules.photos.order')
+                                ->label('Photos order')
+                                ->numeric()->minValue(1)->step(1),
 
-                    Toggle::make('draft_config.modules.activity.enabled')
-                        ->label('Activity'),
-                    TextInput::make('draft_config.modules.activity.order')
-                        ->label('Activity order')
-                        ->numeric()->minValue(1)->step(1),
-                ])
-                ->columns(2),
+                            Toggle::make('draft_config.modules.gear.enabled')
+                                ->label('Gear'),
+                            TextInput::make('draft_config.modules.gear.order')
+                                ->label('Gear order')
+                                ->numeric()->minValue(1)->step(1),
 
-            Section::make('Theme')
-                ->description('Accent, paper, and ink colors for this profile type. Defaults: accent #C84C21, paper #F8F4EB, ink #0A1512.')
-                ->schema([
-                    ColorPicker::make('draft_config.theme.accent')
-                        ->label('Accent')
-                        ->helperText('Highlights — active tabs, pills, links.'),
-                    ColorPicker::make('draft_config.theme.paper')
-                        ->label('Paper')
-                        ->helperText('Card background.'),
-                    ColorPicker::make('draft_config.theme.ink')
-                        ->label('Ink')
-                        ->helperText('Primary text, borders, drop shadows.'),
-                ])
-                ->columns(3),
+                            Toggle::make('draft_config.modules.activity.enabled')
+                                ->label('Activity'),
+                            TextInput::make('draft_config.modules.activity.order')
+                                ->label('Activity order')
+                                ->numeric()->minValue(1)->step(1),
+                        ])
+                        ->columns(2),
+                ]),
         ]);
     }
 
