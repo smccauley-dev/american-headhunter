@@ -288,7 +288,7 @@ const SOCIAL_PLATFORMS: SocialPlatform[] = [
 // ── Member portal nav items ───────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { label: 'My Leases',    href: '/member',           key: 'leases' },
+  { label: 'My Leases',    href: '/member/myleases',  key: 'leases' },
   { label: 'My Profile',   href: '/member/profile',   key: 'profile' },
   { label: 'Membership',   href: '/member/membership', key: 'membership' },
   { label: 'Find Property', href: '/properties',       key: 'properties' },
@@ -400,6 +400,16 @@ interface ActivityEvent {
   notes?: string | null
 }
 
+interface LeaseSummary {
+  id: string
+  status: 'active' | 'pending_signatures'
+  start_date: string | null
+  end_date: string | null
+  total_price: string
+  days_until_expiry: number | null
+  property: { id: string; title: string; county: string; state: string; acres: string | number } | null
+}
+
 interface Props {
   user: UserData
   profile: ProfileData
@@ -411,6 +421,8 @@ interface Props {
     enabled_methods: string[]
     suggested_username: string
   }
+  leases: LeaseSummary[]
+  initial_tab: 'about' | 'leases'
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -437,6 +449,27 @@ const fieldCard: React.CSSProperties = {
 function DashedInset() {
   return (
     <div style={{ position: 'absolute', inset: 8, border: '1px dashed #a89874', pointerEvents: 'none', zIndex: 3 }} />
+  )
+}
+
+// Decorative coffee-ring stain — a transparent PNG of a real coffee ring.
+// Multiply blend lets the parchment/card show through the lighter areas so it
+// reads as a stain in the paper. Position/size/rotation come from `style`.
+function CoffeeStain({ style }: { style?: React.CSSProperties }) {
+  return (
+    <div
+      aria-hidden
+      style={{
+        position: 'absolute',
+        pointerEvents: 'none',
+        backgroundImage: 'url(/images/coffee-stain-01.png)',
+        backgroundSize: 'contain',
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'center',
+        mixBlendMode: 'multiply',
+        ...style,
+      }}
+    />
   )
 }
 
@@ -621,9 +654,9 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, activity, security }: Props) {
+export default function HunterProfile({ user, profile, photos, activity, security, leases, initial_tab }: Props) {
   const [editing, setEditing]               = useState(false)
-  const [tab, setTab]                       = useState<'about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security'>('about')
+  const [tab, setTab]                       = useState<'about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security' | 'leases'>(initial_tab ?? 'about')
   const [saving, setSaving]                 = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const avatarInputRef                      = useRef<HTMLInputElement>(null)
@@ -911,27 +944,43 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               {/* ── Navigation blades ──────────────────────────────────── */}
               <div style={{ borderTop: '1px solid #e5ddd0', margin: '0 16px 4px' }}>
                 {NAV_ITEMS.map(item => {
-                  const active = item.key === 'profile'
-                  return (
-                    <a
+                  // 'leases' and 'profile' switch the right-hand panel in place
+                  // (same Inertia page); the rest are real page links.
+                  const isPanel = item.key === 'leases' || item.key === 'profile'
+                  const active = item.key === 'leases'
+                    ? tab === 'leases'
+                    : item.key === 'profile'
+                      ? tab !== 'leases'
+                      : false
+                  const itemStyle: React.CSSProperties = {
+                    display: 'flex',
+                    alignItems: 'center',
+                    width: '100%',
+                    padding: '11px 8px',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    letterSpacing: '.1em',
+                    textTransform: 'uppercase',
+                    textDecoration: 'none',
+                    textAlign: 'left',
+                    color: active ? '#C84C21' : '#6b7856',
+                    background: active ? 'rgba(200,76,33,0.05)' : 'transparent',
+                    borderLeft: active ? '2px solid #C84C21' : '2px solid transparent',
+                    cursor: 'pointer',
+                    transition: 'all 150ms',
+                  }
+                  return isPanel ? (
+                    <button
                       key={item.key}
-                      href={item.href}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '11px 8px',
-                        fontFamily: 'JetBrains Mono, monospace',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        letterSpacing: '.1em',
-                        textTransform: 'uppercase',
-                        textDecoration: 'none',
-                        color: active ? '#C84C21' : '#6b7856',
-                        background: active ? 'rgba(200,76,33,0.05)' : 'transparent',
-                        borderLeft: active ? '2px solid #C84C21' : '2px solid transparent',
-                        transition: 'all 150ms',
-                      }}
+                      type="button"
+                      onClick={() => setTab(item.key === 'leases' ? 'leases' : 'about')}
+                      style={{ ...itemStyle, borderTop: 'none', borderRight: 'none', borderBottom: 'none', borderRadius: 0, margin: 0, appearance: 'none' }}
                     >
+                      {item.label}
+                    </button>
+                  ) : (
+                    <a key={item.key} href={item.href} style={itemStyle}>
                       {item.label}
                     </a>
                   )
@@ -1030,7 +1079,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
             </div>
 
             {/* ── RIGHT MAIN ───────────────────────────────────────────── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
 
               {/* Header card */}
               <div style={{ ...fieldCard, padding: '24px 28px' }}>
@@ -1091,8 +1140,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   </div>
                 </div>
 
-                {/* Action buttons */}
-                <div style={{ display: 'flex', gap: '8px' }}>
+                {/* Action buttons — profile editing only, not on the leases tab */}
+                <div style={{ display: tab === 'leases' ? 'none' : 'flex', gap: '8px' }}>
                   {editing ? (
                     <>
                       <button
@@ -1126,8 +1175,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               {/* Tabs + content */}
               <div style={fieldCard}>
                 <DashedInset />
-                {/* Tab bar */}
-                <div style={{ display: 'flex', borderBottom: '1px solid #e5ddd0', margin: '14px 16px 0', padding: '0 12px' }}>
+                {/* Tab bar — profile sections only; the leases view replaces it */}
+                <div style={{ display: tab === 'leases' ? 'none' : 'flex', borderBottom: '1px solid #e5ddd0', margin: '14px 16px 0', padding: '0 12px' }}>
                   {(['about', 'contact', 'social', 'photos', 'gear', 'activity', 'security'] as const).map(t => {
                     const visKey = t as 'about' | 'contact' | 'social' | 'gear' | 'photos'
                     const hasVis = t === 'about' || t === 'contact' || t === 'social' || t === 'gear' || t === 'photos'
@@ -1215,6 +1264,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                     />
                   ) : tab === 'activity' ? (
                     <ActivityTab events={activity.events} />
+                  ) : tab === 'leases' ? (
+                    <LeasesTab leases={leases} />
                   ) : (
                     <SecurityTab
                       mfa={security.mfa}
@@ -1227,11 +1278,125 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   )}
                 </div>
               </div>
+
+              {/* Coffee-ring stain — decorative, rendered last so it tints both
+                  cards via multiply blend. Straddles the header/section boundary
+                  on the right (see design mock). */}
+              <CoffeeStain style={{ top: '96px', right: '-26px', width: '260px', height: '260px', transform: 'rotate(-9deg)', opacity: 0.45, zIndex: 6 }} />
             </div>
           </div>
         </div>
       </div>
     </>
+  )
+}
+
+// ── My Leases tab ─────────────────────────────────────────────────────────────
+
+function LeasesTab({ leases }: { leases: LeaseSummary[] }) {
+  if (leases.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+        <svg width="40" height="40" fill="none" stroke="#c2b48f" strokeWidth="1.25" viewBox="0 0 24 24" style={{ margin: '0 auto 16px' }}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z" />
+        </svg>
+        <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '18px', color: '#0A1512', marginBottom: '6px' }}>
+          No leases yet
+        </div>
+        <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', maxWidth: '360px', margin: '0 auto 20px', lineHeight: 1.5 }}>
+          When you secure a hunting lease, it will appear here with its dates, terms, and signing status.
+        </p>
+        <a
+          href="/properties"
+          style={{ display: 'inline-block', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: '#0A1512', color: '#F4ECDC', textDecoration: 'none' }}
+        >
+          Browse Properties
+        </a>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {leases.map(lease => (
+        <ProfileLeaseCard key={lease.id} lease={lease} />
+      ))}
+    </div>
+  )
+}
+
+function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
+  const pending = lease.status === 'pending_signatures'
+  const expiringSoon = lease.days_until_expiry !== null && lease.days_until_expiry <= 30 && lease.days_until_expiry > 0
+
+  return (
+    <div style={{ border: '1px solid #d4c9b0', background: '#FBF7EE' }}>
+      {/* Dark header strip */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', background: '#0A1512' }}>
+        <div>
+          <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '17px', color: '#F4ECDC', lineHeight: 1.1 }}>
+            {lease.property?.title ?? 'Property'}
+          </div>
+          {lease.property && (
+            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.08em', color: '#9aa890', marginTop: '4px' }}>
+              {[lease.property.county, lease.property.state].filter(Boolean).join(', ')}
+              {lease.property.acres ? ` · ${lease.property.acres} ac` : ''}
+            </div>
+          )}
+        </div>
+        <span style={{
+          fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase',
+          padding: '4px 10px', borderRadius: '2px',
+          background: pending ? 'rgba(184,147,74,0.18)' : 'rgba(74,124,89,0.2)',
+          color: pending ? '#d8b15e' : '#7bbd8e',
+          border: pending ? '1px solid rgba(184,147,74,0.5)' : '1px solid rgba(74,124,89,0.5)',
+        }}>
+          {pending ? 'Awaiting Signature' : 'Active'}
+        </span>
+      </div>
+
+      {/* Detail grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1px', background: '#e5ddd0' }}>
+        {[
+          { label: 'Start', value: lease.start_date ?? '—' },
+          { label: 'End', value: lease.end_date ?? '—' },
+          { label: 'Total', value: `$${lease.total_price}` },
+        ].map(cell => (
+          <div key={cell.label} style={{ background: '#FBF7EE', padding: '12px 18px' }}>
+            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874', marginBottom: '4px' }}>
+              {cell.label}
+            </div>
+            <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '15px', color: '#0A1512' }}>
+              {cell.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {expiringSoon && (
+        <div style={{ padding: '8px 18px', background: 'rgba(200,76,33,0.07)', borderTop: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: '#C84C21' }}>
+          Expires in {lease.days_until_expiry} day{lease.days_until_expiry === 1 ? '' : 's'}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: '8px', padding: '14px 18px', borderTop: '1px solid #e5ddd0' }}>
+        {pending && (
+          <a
+            href={`/member/leases/${lease.id}/sign`}
+            style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: '#C84C21', color: '#fff', textDecoration: 'none' }}
+          >
+            Sign Now
+          </a>
+        )}
+        <a
+          href={`/member/leases/${lease.id}`}
+          style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: '#0A1512', border: '1px solid #d4c9b0', textDecoration: 'none' }}
+        >
+          View Lease
+        </a>
+      </div>
+    </div>
   )
 }
 

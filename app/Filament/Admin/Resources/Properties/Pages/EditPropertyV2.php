@@ -219,7 +219,7 @@ class EditPropertyV2 extends EditRecord
                     'latitude'             => $img?->latitude,
                     'longitude'            => $img?->longitude,
                     'is_boundary'          => (bool) $img?->is_boundary,
-                    'show_coords_publicly' => $img?->show_coords_publicly ?? true,
+                    'show_coords_publicly' => $img?->show_coords_publicly ?? false,
                 ];
             })
             ->form(function (array $arguments): array {
@@ -247,7 +247,7 @@ class EditPropertyV2 extends EditRecord
                     ]),
                     Toggle::make('show_coords_publicly')
                         ->label('Show GPS on public listing')
-                        ->helperText('When enabled (and coordinates are set), the boundary map on the public property page displays them in the corner of the image.'),
+                        ->helperText('Off by default. Coordinates may be auto-filled from photo EXIF and can pinpoint a stand, cabin or gate — only enable this if the exact location is safe to publish. When enabled, the boundary map on the public property page displays it in the corner of the image.'),
                     Toggle::make('is_boundary')
                         ->label('Boundary map')
                         ->disabled($isBoundary)
@@ -266,7 +266,7 @@ class EditPropertyV2 extends EditRecord
                     $data['description'] ?? null,
                     filled($data['latitude'] ?? null) ? (float) $data['latitude'] : null,
                     filled($data['longitude'] ?? null) ? (float) $data['longitude'] : null,
-                    (bool) ($data['show_coords_publicly'] ?? true),
+                    (bool) ($data['show_coords_publicly'] ?? false),
                 );
 
                 $madeBoundary = ! empty($data['is_boundary']);

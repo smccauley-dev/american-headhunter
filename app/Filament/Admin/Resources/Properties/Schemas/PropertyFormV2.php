@@ -75,7 +75,7 @@ class PropertyFormV2
                     ->maxSize(10240)
                     ->maxFiles(20)
                     ->required()
-                    ->helperText('JPG, PNG, or WebP — max 10 MB each, up to 20 per batch. GPS coordinates are read automatically from each photo\'s EXIF data when present.'),
+                    ->helperText('JPG, PNG, or WebP — max 10 MB each, up to 20 per batch.'),
                 TextInput::make('caption')
                     ->label('Caption')
                     ->maxLength(255)
@@ -84,6 +84,10 @@ class PropertyFormV2
                     ->label('Tags')
                     ->suggestions(self::photoTagSuggestions())
                     ->helperText('Optional — applied to every photo in this batch. Press Enter after each tag.'),
+                Toggle::make('import_exif')
+                    ->label('Import photo metadata (EXIF)')
+                    ->default(true)
+                    ->helperText('When on, we read the metadata each camera or phone embeds in a photo — including any GPS coordinates recorded when the picture was taken — and use it to auto-fill the photo\'s location. Turn it off to ignore that metadata and leave the location blank. Imported coordinates stay private to staff and lessees; they are never shown publicly unless you separately enable that.'),
             ])
             ->action(function (array $data, $record): void {
                 $uploaded = 0;
@@ -101,6 +105,7 @@ class PropertyFormV2
                             $file,
                             $data['caption'] ?? null,
                             $data['tags'] ?? [],
+                            (bool) ($data['import_exif'] ?? true),
                         );
                         $uploaded++;
                     } catch (\Throwable $e) {
@@ -170,11 +175,15 @@ class PropertyFormV2
                     ->maxSize(15360)
                     ->maxFiles(10)
                     ->required()
-                    ->helperText('JPG, PNG, or WebP — max 15 MB each. The first map image on a property becomes the boundary map. GPS coordinates are read from EXIF data when present.'),
+                    ->helperText('JPG, PNG, or WebP — max 15 MB each. The first map image on a property becomes the boundary map.'),
                 TextInput::make('description')
                     ->label('Description')
                     ->maxLength(255)
                     ->helperText('Optional — applied to every image in this batch. Edit individually afterwards.'),
+                Toggle::make('import_exif')
+                    ->label('Import image metadata (EXIF)')
+                    ->default(true)
+                    ->helperText('When on, we read the metadata each camera or phone embeds in a photo — including any GPS coordinates recorded when the picture was taken — and use it to auto-fill the photo\'s location. Turn it off to ignore that metadata and leave the location blank. Imported coordinates stay private to staff and lessees; they are never shown publicly unless you separately enable that.'),
             ])
             ->action(function (array $data, $record): void {
                 $uploaded = 0;
@@ -191,6 +200,7 @@ class PropertyFormV2
                             $record->id,
                             $file,
                             $data['description'] ?? null,
+                            (bool) ($data['import_exif'] ?? true),
                         );
                         $uploaded++;
                     } catch (\Throwable $e) {

@@ -366,6 +366,7 @@ class PropertyService extends BaseService
         UploadedFile $file,
         ?string $caption = null,
         array $tags = [],
+        bool $importExif = true,
     ): PropertyPhoto {
         $property = Property::findOrFail($propertyId);
 
@@ -376,8 +377,11 @@ class PropertyService extends BaseService
         );
 
         // Photo location: where the picture was taken, straight from EXIF GPS
-        // when the camera recorded it; editable manually afterwards.
-        [$latitude, $longitude] = \App\Support\ExifGps::extract($file);
+        // when the camera recorded it; editable manually afterwards. Skipped
+        // entirely when the uploader opts out of EXIF import.
+        [$latitude, $longitude] = $importExif
+            ? \App\Support\ExifGps::extract($file)
+            : [null, null];
 
         $isFirst  = ! PropertyPhoto::where('property_id', $propertyId)->whereNull('deleted_at')->exists();
         $nextSort = (int) PropertyPhoto::where('property_id', $propertyId)

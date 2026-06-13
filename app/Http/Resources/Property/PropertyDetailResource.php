@@ -8,6 +8,8 @@ class PropertyDetailResource extends JsonResource
 {
     public function toArray($request): array
     {
+        $boundaryMap = app(\App\Services\Property\PropertyMapService::class)->getBoundaryImage($this->id);
+
         return [
             'id'             => $this->id,
             'title'          => $this->title,
@@ -21,10 +23,21 @@ class PropertyDetailResource extends JsonResource
             // Boundary ships via GET /api/properties/{id}/boundary (separate GeoJSON endpoint).
             // This flag tells the client whether to request it.
             'has_boundary'   => $this->boundary_geospatial_id !== null,
-            // Photos: document_id per photo — URL resolution wired in Step 3 controller.
+            // Raster boundary map (public route) — parity with the web detail page.
+            'boundary_map_url' => $boundaryMap
+                ? route('property-maps.show', $boundaryMap->document_id)
+                : null,
+            // GPS reference point only when the admin opted in (SEC-024).
+            'boundary_map_coords' => (
+                $boundaryMap
+                && $boundaryMap->show_coords_publicly
+                && $boundaryMap->latitude !== null
+                && $boundaryMap->longitude !== null
+            ) ? ['lat' => $boundaryMap->latitude, 'lng' => $boundaryMap->longitude] : null,
             'photos'         => $this->whenLoaded('photos', fn() =>
                 $this->photos->map(fn($p) => [
                     'document_id' => $p->document_id,
+                    'url'         => route('property-photos.show', $p->document_id),
                     'sort_order'  => $p->sort_order,
                     'caption'     => $p->caption,
                     'is_primary'  => $p->is_primary,

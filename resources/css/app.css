@@ -33,6 +33,13 @@
   --mono:       'JetBrains Mono', Menlo, monospace;
 }
 
+/* Always reserve the vertical scrollbar gutter so page width stays constant
+   whether content scrolls or not — prevents the layout "pop" when switching
+   between a tall tab/page and a short one. */
+html {
+  scrollbar-gutter: stable;
+}
+
 .ah-page {
   font-family: var(--body);
   background: var(--parchment);

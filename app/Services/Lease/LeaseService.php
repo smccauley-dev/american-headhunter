@@ -55,6 +55,62 @@ class LeaseService extends BaseService
     }
 
     /**
+     * Lease summaries for a lessee's portal — active and awaiting-signature
+     * leases, each assembled with its property (DB 2) via the service layer.
+     * Shared by the member dashboard overview and the profile "My Leases" tab.
+     * Not cached: a freshly signed lease must appear immediately.
+     */
+    public function getLeaseSummariesForLessee(string $userId): array
+    {
+        $leases = Lease::whereIn('status', ['active', 'pending_signatures'])
+            ->where('lessee_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->orderByDesc('start_date')
+            ->get();
+
+        return $leases->map(function (Lease $lease) {
+            $property = rescue(fn () => $this->propertyService->find($lease->property_id), null);
+            $endDate  = $lease->end_date;
+
+            return [
+                'id'                => $lease->id,
+                'status'            => $lease->status,
+                'start_date'        => $lease->start_date?->format('M j, Y'),
+                'end_date'          => $endDate?->format('M j, Y'),
+                'total_price'       => number_format((float) $lease->total_price, 2),
+                'days_until_expiry' => $endDate
+                    ? ($endDate->isPast() ? 0 : (int) $endDate->diffInDays(now()))
+                    : null,
+                'property' => $property ? [
+                    'id'     => $property->id,
+                    'title'  => $property->title,
+                    'county' => $property->county,
+                    'state'  => $property->state_code,
+                    'acres'  => $property->huntable_acres ?? $property->total_acres,
+                ] : null,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * Whether the user is party to an active lease on the property (as lessee or
+     * lessor). Gate for member-only property data such as map markers and access
+     * info — markers carry precise on-property GPS (see SEC-024), so this must
+     * never be relaxed to a generic "authenticated hunter" check.
+     */
+    public function userHasActiveLeaseForProperty(string $userId, string $propertyId): bool
+    {
+        return Lease::on('lease')
+            ->where('property_id', $propertyId)
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->where(fn ($q) => $q
+                ->where('lessee_user_id', $userId)
+                ->orWhere('lessor_user_id', $userId))
+            ->exists();
+    }
+
+    /**
      * All leases where the user is lessee or lessor — plain arrays for the
      * admin user detail page. Cached 5 min.
      */

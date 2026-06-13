@@ -103,11 +103,16 @@ Route::get('/property-photos/{documentId}', function (string $documentId) {
 // Public boundary map image — only the live boundary map per property is
 // served publicly; other map images remain behind the admin guard.
 Route::get('/property-maps/{documentId}', function (string $documentId) {
+    // Only the boundary map of a live, active property is public — draft,
+    // suspended, archived and soft-deleted properties stay private (SEC-025).
     $isBoundaryMap = \Illuminate\Support\Facades\DB::connection('property')
-        ->table('property_map_images')
-        ->where('document_id', $documentId)
-        ->where('is_boundary', true)
-        ->whereNull('deleted_at')
+        ->table('property_map_images as pmi')
+        ->join('properties as p', 'p.id', '=', 'pmi.property_id')
+        ->where('pmi.document_id', $documentId)
+        ->where('pmi.is_boundary', true)
+        ->whereNull('pmi.deleted_at')
+        ->where('p.status', 'active')
+        ->whereNull('p.deleted_at')
         ->exists();
     abort_unless($isBoundaryMap, 404);
 
@@ -133,6 +138,7 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::get('/profile/avatar/{userId}', [ProfileController::class, 'serveAvatar'])->name('profile.avatar');
     Route::get('/profile/photos/{documentId}', [ProfileController::class, 'servePhoto'])->name('profile.photos.serve');
     Route::get('/profile', [ProfileController::class, 'show'])->name('profile');
+    Route::get('/myleases', [ProfileController::class, 'show'])->defaults('initialTab', 'leases')->name('myleases');
     Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->name('profile.avatar.upload');
     Route::post('/profile/photos', [ProfileController::class, 'uploadPhoto'])->name('profile.photos.upload');

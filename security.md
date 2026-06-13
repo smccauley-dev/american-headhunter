@@ -457,6 +457,65 @@ Both `down()` methods now only drop the policies without recreating them, with a
 
 ---
 
+## SEC-024 — EXIF GPS Auto-Published to Public Listing by Default (Unsafe Default)
+
+| Field | Detail |
+|---|---|
+| **Severity** | Medium |
+| **Status** | FIXED |
+| **Found** | 2026-06-13 |
+| **Fixed** | 2026-06-13 |
+| **Files** | `app/Services/Property/PropertyMapService.php`, `app/Filament/Admin/Resources/Properties/Pages/EditPropertyV2.php`, `app/Http/Controllers/Public/PropertyController.php`, `database/migrations/property/2026_06_13_000001_default_property_map_coords_private.php` |
+
+**Description:**
+The new property-map feature pulls GPS coordinates out of an uploaded image's EXIF block (`ExifGps::extract`) and stores them on the map image. The first map image uploaded for a property automatically becomes the public boundary map (`addMapImage`: `is_boundary = $isFirst`), and the public listing page renders the boundary map's coordinates whenever `show_coords_publicly` is true (`Public/PropertyController::show` → `boundary_map_coords`).
+
+The `show_coords_publicly` flag defaulted to **true** at every layer: the DB column (`... DEFAULT true`), the service method parameter (`updateMapImageDetails(..., $showCoordsPublicly = true)`), the editor form fill (`?? true`), and the save fallback (`?? true`). Because `addMapImage` never sets the flag, new uploads inherited the column default.
+
+Net effect: an admin who uploads a geotagged photo (e.g. a phone photo taken at a deer stand, cabin, or gate) silently publishes that photo's **exact** GPS coordinates on the public property page — pinpointing a sensitive on-property location — without ever opting in. For hunting properties this is a theft / trespass / poaching exposure, not merely a "property is in X county" disclosure.
+
+**Root Cause:**
+Default-open posture: auto-extraction of precise location data combined with a publish-by-default flag across the whole pipeline.
+
+**Fix Applied:**
+Flipped the feature to opt-in (fail-closed) at every layer:
+- Migration `2026_06_13_000001_default_property_map_coords_private`: `ALTER COLUMN show_coords_publicly SET DEFAULT false` and `UPDATE property_map_images SET show_coords_publicly = false` (existing rows were never an explicit admin choice — the feature was <24h old and dev-only).
+- `PropertyMapService::updateMapImageDetails()` parameter default → `false`.
+- `EditPropertyV2`: form fill and save fallback `?? true` → `?? false`; toggle helper text now warns the coordinates may be auto-filled from EXIF and can pinpoint a stand/cabin/gate, so it should only be enabled when the exact location is safe to publish.
+
+Auto-extraction is retained (useful for the admin-only map) — only public display is now opt-in.
+
+**Verification:**
+- Migration sets `show_coords_publicly` default to `false`; existing rows reset.
+- `Public/PropertyController::show` returns `boundary_map_coords = null` unless an admin has explicitly enabled the toggle on the boundary map.
+
+---
+
+## SEC-025 — Public Map-Image Route Serves Non-Active Properties' Boundary Maps
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low |
+| **Status** | FIXED |
+| **Found** | 2026-06-13 |
+| **Fixed** | 2026-06-13 |
+| **File** | `routes/web.php` (`property-maps.show`) |
+
+**Description:**
+The public `GET /property-maps/{documentId}` route served any image whose `document_id` matched a live, boundary `property_map_images` row — but it did not check the owning property's `status`. The boundary map of a `draft`, `suspended`, `archived`, or soft-deleted property was therefore downloadable by anyone who knew the document UUID, even though the property is not visible in public search or on its detail page. This is the image-serving analogue of SEC-002 (draft-property IDOR), which the project fixed for the slug route. Severity is Low because the document UUID is unguessable and not enumerable.
+
+**Root Cause:**
+The route guarded `is_boundary` and `deleted_at` on the map-image row but never joined to `properties` to confirm the property itself is publicly visible.
+
+**Fix Applied:**
+The route now joins `properties` (same `property` connection — DB 2, not a cross-database join) and additionally requires `p.status = 'active'` and `p.deleted_at IS NULL`. Non-active and deleted properties return 404.
+
+**Verification:**
+- Boundary map of an `active` property still serves.
+- Boundary map of a `draft`/`suspended`/`archived`/soft-deleted property returns 404.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -476,6 +535,7 @@ Both `down()` methods now only drop the policies without recreating them, with a
 - Phase 3 CMS audit (2026-05-25): `HomepageSettings` and `NavigationSettings` Filament pages reviewed. Findings: SEC-011 (URL injection), SEC-012 (no audit trail), SEC-013 (no maxLength). All fixed same session.
 - Phase 3 logo upload audit (2026-05-25): File upload feature reviewed. Findings: SEC-014 (SVG XSS via direct URL), SEC-015 (orphaned public files), SEC-016 (untrusted path in Storage::url). All fixed same session.
 - Phase 3/4 admin UI audit (2026-05-31): Property V2 edit/view pages, amenities resource, login page settings, RLS middleware reviewed. Findings: SEC-017 through SEC-022. All fixed same session. SEC-023 deferred (no RLS on those DBs yet).
+- Last-24h feature audit (2026-06-13): reviewed the DB-managed email template system (`EmailTemplateService`, `MailSettingsService`, `EmailSettings`, version preview), the property-map feature (`PropertyMapService`, `ExifGps`, map editor, public map route), the configurable post-login redirect, and the new encrypted UserProfile contact fields. Findings: SEC-024 (EXIF GPS published by default) and SEC-025 (map route ignored property status) — both fixed same session. **No issue found** in: email template rendering (variables HTML-escaped in HTML bodies via `htmlspecialchars`; admin-only authorship; preview iframe uses `sandbox=""`), SMTP settings (password encrypted at rest via `Crypt`, never echoed to the form, change audit-logged, access gated by `canManageSystem`), or the post-login redirect (value comes from admin-controlled tenant settings, not user input).
 - No SQL injection surfaces found — all queries use parameterized bindings or Eloquent ORM.
 - No hardcoded credentials or keys found in application code — all sourced from env/config.
 - Audit DB (DB 9) write-protection verified: `ImmutableModel` throws on update/delete; PostgreSQL RULE blocks at DB level.
