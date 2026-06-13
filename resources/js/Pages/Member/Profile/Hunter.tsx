@@ -460,6 +460,65 @@ function DashedInset() {
   )
 }
 
+// Small "!" marker beside the Trust Score label — hover or tap for explanation
+function TrustScoreInfo() {
+  const [open, setOpen] = useState(false)
+  return (
+    <span
+      style={{ position: 'relative', display: 'inline-flex', marginLeft: '6px', verticalAlign: 'middle' }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-label="What is the trust score?"
+        style={{
+          width: '13px',
+          height: '13px',
+          padding: 0,
+          border: '1px solid #a89874',
+          borderRadius: '50%',
+          background: 'transparent',
+          color: '#a89874',
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: '9px',
+          fontWeight: 700,
+          lineHeight: 1,
+          cursor: 'help',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        !
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute',
+          bottom: 'calc(100% + 8px)',
+          left: '-8px',
+          width: '230px',
+          background: '#F8F4EB',
+          border: '1px solid #0A1512',
+          boxShadow: '4px 4px 0 #0A1512',
+          padding: '12px 14px',
+          zIndex: 20,
+          textTransform: 'none',
+          letterSpacing: 'normal',
+        }}>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#4a5440', marginBottom: '6px' }}>
+            Trust Score
+          </div>
+          <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', lineHeight: 1.5, color: '#0A1512', fontWeight: 400 }}>
+            A 0–100 measure of your standing on American Headhunter. It rises with verified email, phone, and ID, completed leases, and positive reviews — and falls with disputes or early lease terminations. Landowners see it when reviewing applications.
+          </div>
+        </div>
+      )}
+    </span>
+  )
+}
+
 const input: React.CSSProperties = {
   fontFamily: 'Crimson Pro, Georgia, serif',
   fontSize: '15px',
@@ -845,6 +904,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874', marginBottom: '5px' }}>
                     Trust Score
+                    <TrustScoreInfo />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ flex: 1, height: '4px', background: '#e5ddd0', position: 'relative', overflow: 'hidden' }}>
