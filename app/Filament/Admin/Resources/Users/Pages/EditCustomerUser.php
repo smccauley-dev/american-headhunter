@@ -115,9 +115,17 @@ class EditCustomerUser extends EditRecord
                                             'pending_verification' => 'Pending Verification',
                                         ])
                                         ->required(),
+                                ]),
+                        ]),
+
+                    // ── Roles ─────────────────────────────────────────────────
+                    Tab::make('Roles')
+                        ->schema([
+                            Section::make()
+                                ->schema([
                                     CheckboxList::make('roles')
                                         ->label('Platform Roles')
-                                        ->helperText('Multi-role: controls what the user can do. Portal above controls where they log in.')
+                                        ->helperText('Multi-role: controls what the user can do. The Primary Portal on the Identity tab controls where they log in.')
                                         ->relationship(
                                             'roles',
                                             'display_name',
