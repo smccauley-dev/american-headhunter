@@ -4,50 +4,26 @@ namespace App\Http\Controllers\Member;
 
 use App\Enums\LeaseDocumentTag;
 use App\Http\Controllers\Controller;
+use App\Models\Identity\User;
 use App\Models\Lease\Lease;
 use App\Services\Lease\EsignatureService;
 use App\Services\Lease\LeaseDocumentService;
+use App\Services\Lease\LeaseService;
 use App\Services\Property\PropertyService;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class MemberController extends Controller
 {
-    public function dashboard(PropertyService $propertyService): Response
+    public function dashboard(LeaseService $leaseService): Response
     {
-        $userId = session('auth.user_id');
-
-        $leases = Lease::whereIn('status', ['active', 'pending_signatures'])
-            ->where('lessee_user_id', $userId)
-            ->whereNull('deleted_at')
-            ->orderByDesc('start_date')
-            ->get();
-
-        $leaseData = $leases->map(function (Lease $lease) use ($propertyService) {
-            $property = rescue(fn () => $propertyService->find($lease->property_id), null);
-            $endDate  = $lease->end_date;
-
-            return [
-                'id'                => $lease->id,
-                'status'            => $lease->status,
-                'start_date'        => $lease->start_date?->format('M j, Y'),
-                'end_date'          => $endDate?->format('M j, Y'),
-                'total_price'       => number_format((float) $lease->total_price, 2),
-                'days_until_expiry' => $endDate
-                    ? ($endDate->isPast() ? 0 : (int) $endDate->diffInDays(now()))
-                    : null,
-                'property' => $property ? [
-                    'id'     => $property->id,
-                    'title'  => $property->title,
-                    'county' => $property->county,
-                    'state'  => $property->state_code,
-                    'acres'  => $property->huntable_acres ?? $property->total_acres,
-                ] : null,
-            ];
-        });
+        $userId  = session('auth.user_id');
+        $profile = User::find($userId)?->profile;
+        $name    = $profile?->first_name ?: ($profile?->display_name ?: 'Member');
 
         return Inertia::render('Member/Dashboard', [
-            'leases' => $leaseData,
+            'name'   => $name,
+            'leases' => $leaseService->getLeaseSummariesForLessee($userId),
         ]);
     }
 

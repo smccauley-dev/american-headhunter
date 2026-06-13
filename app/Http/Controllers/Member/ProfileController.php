@@ -11,6 +11,7 @@ use App\Models\Identity\UserProfile;
 use App\Models\Lease\CheckIn;
 use App\Models\Wildlife\HarvestLog;
 use App\Services\Documents\DocumentService;
+use App\Services\Lease\LeaseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -23,7 +24,7 @@ class ProfileController extends Controller
 {
     public function __construct(private readonly DocumentService $documents) {}
 
-    public function show(): Response
+    public function show(LeaseService $leaseService, string $initialTab = 'about'): Response
     {
         $userId  = session('auth.user_id');
         $user    = User::findOrFail($userId);
@@ -96,9 +97,11 @@ class ProfileController extends Controller
                     'photos'  => $profile?->profile_visibility['photos']  ?? 'public',
                 ],
             ],
-            'photos'   => $photos,
-            'activity' => $this->buildActivityProps($userId),
-            'security' => $this->buildSecurityProps($userId),
+            'photos'      => $photos,
+            'activity'    => $this->buildActivityProps($userId),
+            'security'    => $this->buildSecurityProps($userId),
+            'leases'      => $leaseService->getLeaseSummariesForLessee($userId),
+            'initial_tab' => $initialTab,
         ]);
     }
 
