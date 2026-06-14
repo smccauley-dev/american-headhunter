@@ -251,9 +251,9 @@ class PropertyFormV2
         ])->render());
     }
 
-    private static function grantManagerAction(string $name = 'grant_manager'): Action
+    private static function grantManagerAction(): Action
     {
-        return Action::make($name)
+        return Action::make('grant_manager')
             ->label('Grant Manager Access')
             ->icon('heroicon-o-user-plus')
             ->color('primary')
@@ -308,6 +308,92 @@ class PropertyFormV2
 
                 Notification::make()
                     ->title('Manager access granted.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * Eligible managers for the "Add Manager Contact" picker: this property's active
+     * managers (co_owner/manager/operator) who are not already field contacts.
+     * Keyed by property_managers.id, labelled with the user's name and role.
+     */
+    private static function eligibleManagerContactOptions($record): array
+    {
+        if (! $record?->id) {
+            return [];
+        }
+
+        $managers = PropertyManager::where('property_id', $record->id)
+            ->whereNull('revoked_at')
+            ->whereIn('role', ['co_owner', 'manager', 'operator'])
+            ->where('is_field_contact', false)
+            ->orderBy('granted_at')
+            ->get();
+
+        if ($managers->isEmpty()) {
+            return [];
+        }
+
+        $users = \App\Models\Identity\User::on('identity')
+            ->with('profile')
+            ->whereIn('id', $managers->pluck('user_id')->all())
+            ->get()
+            ->keyBy('id');
+
+        $roleLabels = ['co_owner' => 'Co-Owner', 'manager' => 'Property Manager', 'operator' => 'Operator'];
+
+        return $managers->mapWithKeys(function (PropertyManager $m) use ($users, $roleLabels) {
+            $user = $users->get($m->user_id);
+            $name = $user?->profile?->full_name ?: $user?->email ?: $m->user_id;
+            $role = $roleLabels[$m->role] ?? ucfirst($m->role);
+
+            return [$m->id => "{$name} ({$role})"];
+        })->all();
+    }
+
+    private static function addManagerContactAction(): Action
+    {
+        return Action::make('add_manager_contact')
+            ->label('Add Manager Contact')
+            ->icon('heroicon-o-user-plus')
+            ->color('primary')
+            ->visible(fn ($record) => \App\Support\AdminAuth::canManageProperties() && $record !== null)
+            ->form([
+                Select::make('manager_id')
+                    ->label('Manager')
+                    ->required()
+                    ->options(fn ($record) => self::eligibleManagerContactOptions($record))
+                    ->helperText('Only people who already hold a manager role on this property can be added. Grant the role on the Managers tab first.'),
+            ])
+            ->action(function (array $data, $record): void {
+                $manager = PropertyManager::where('property_id', $record->id)
+                    ->where('id', $data['manager_id'])
+                    ->whereNull('revoked_at')
+                    ->whereIn('role', ['co_owner', 'manager', 'operator'])
+                    ->first();
+
+                if (! $manager) {
+                    Notification::make()
+                        ->title('That manager is no longer available.')
+                        ->danger()
+                        ->send();
+                    return;
+                }
+
+                if ($manager->is_field_contact) {
+                    Notification::make()
+                        ->title('This manager is already a contact.')
+                        ->warning()
+                        ->send();
+                    return;
+                }
+
+                $manager->is_field_contact = true;
+                $manager->save();
+
+                Notification::make()
+                    ->title('Manager added as a contact.')
                     ->success()
                     ->send();
             });
@@ -869,8 +955,8 @@ class PropertyFormV2
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Landowner & Managers')
-                                    ->description('Pulled automatically from the owner account and the Managers tab. To change these, update the user account or the Managers tab.')
-                                    ->headerActions([self::grantManagerAction('grant_manager_contacts')])
+                                    ->description('Landowner is pulled automatically from the owner account. Managers are opt-in — use Add Manager Contact to expose a manager to hunters as a field contact.')
+                                    ->headerActions([self::addManagerContactAction()])
                                     ->schema([
                                         Placeholder::make('property_contact_parties_display')
                                             ->hiddenLabel()

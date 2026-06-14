@@ -20,14 +20,16 @@ class PropertyManager extends BaseModel
         'granted_by_user_id',
         'granted_at',
         'revoked_at',
+        'is_field_contact',
     ];
 
     protected function casts(): array
     {
         return [
-            'granted_at' => 'datetime',
-            'revoked_at' => 'datetime',
-            'created_at' => 'datetime',
+            'granted_at'       => 'datetime',
+            'revoked_at'       => 'datetime',
+            'created_at'       => 'datetime',
+            'is_field_contact' => 'boolean',
         ];
     }
 

@@ -379,11 +379,13 @@ class PropertyService extends BaseService
             return ['landowner' => null, 'managers' => [], 'contacts' => []];
         }
 
-        // Active manager grants (owner-role grants are shown as the landowner).
+        // Managers shown to hunters are opt-in only: an admin must explicitly add a
+        // manager as a field contact (is_field_contact) via the Contacts tab.
         $managerRows = PropertyManager::on('property_read')
             ->where('property_id', $propertyId)
             ->whereNull('revoked_at')
             ->whereIn('role', ['co_owner', 'manager', 'operator'])
+            ->where('is_field_contact', true)
             ->orderBy('granted_at')
             ->get();
 
