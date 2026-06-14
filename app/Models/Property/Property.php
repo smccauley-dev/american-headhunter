@@ -72,6 +72,14 @@ class Property extends BaseModelWithSoftDeletes
                     ->orderBy('sort_order');
     }
 
+    public function contacts(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PropertyContact::class, 'property_id')
+                    ->whereNull('deleted_at')
+                    ->orderBy('sort_order')
+                    ->orderBy('created_at');
+    }
+
     // Cross-DB: resolved via UserService — do not use Eloquent belongsTo
     public function getOwner(): ?\App\Models\Identity\User
     {

@@ -5,6 +5,7 @@ namespace App\Services\Property;
 use App\Models\Property\Property;
 use App\Models\Property\PropertyListing;
 use App\Models\Property\PropertyManager;
+use App\Models\Property\PropertyContact;
 use App\Models\Property\PropertyAccessInfo;
 use App\Models\Property\PropertyPhoto;
 use App\Services\BaseService;
@@ -348,6 +349,101 @@ class PropertyService extends BaseService
                  updated_by_user_id = ?',
             [$propertyId, $json, $encryptionKey, $updatedByUserId, $json, $encryptionKey, $updatedByUserId]
         );
+    }
+
+    // ─── Contact directory ──────────────────────────────────────────────────────
+
+    /**
+     * Assemble the property's contact directory for a hunter in the field.
+     *
+     * Landowner and property managers are DERIVED from the owner account and
+     * active property_managers rows (never duplicated). Law enforcement, game
+     * warden, emergency and custom contacts come from property_contacts.
+     *
+     * Shape:
+     * [
+     *   'landowner' => ['name','phone','email']|null,
+     *   'managers'  => [['name','role','role_label','phone','email'], ...],
+     *   'contacts'  => [['type','type_label','name','organization','phone','email','address','notes'], ...],
+     * ]
+     */
+    public function getContactDirectory(string $propertyId): array
+    {
+        $property = Property::on('property_read')->find($propertyId);
+
+        if (! $property) {
+            return ['landowner' => null, 'managers' => [], 'contacts' => []];
+        }
+
+        // Active manager grants (owner-role grants are shown as the landowner).
+        $managerRows = PropertyManager::on('property_read')
+            ->where('property_id', $propertyId)
+            ->whereNull('revoked_at')
+            ->whereIn('role', ['co_owner', 'manager', 'operator'])
+            ->orderBy('granted_at')
+            ->get();
+
+        // Bulk-load every referenced user (owner + managers) with their profile.
+        $userIds = $managerRows->pluck('user_id')
+            ->push($property->owner_user_id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $users = \App\Models\Identity\User::on('identity')
+            ->with('profile')
+            ->whereIn('id', $userIds)
+            ->get()
+            ->keyBy('id');
+
+        $toContact = function (?\App\Models\Identity\User $user): ?array {
+            if (! $user) {
+                return null;
+            }
+            return [
+                'name'  => $user->profile?->full_name ?: $user->email,
+                'phone' => $user->phone,
+                'email' => $user->email,
+            ];
+        };
+
+        $owner     = $users->get($property->owner_user_id);
+        $landowner = $toContact($owner);
+
+        $roleLabels = ['co_owner' => 'Co-Owner', 'manager' => 'Property Manager', 'operator' => 'Operator'];
+
+        $managers = $managerRows->map(function (PropertyManager $m) use ($users, $toContact, $roleLabels) {
+            $contact = $toContact($users->get($m->user_id));
+            if (! $contact) {
+                return null;
+            }
+            return array_merge($contact, [
+                'role'       => $m->role,
+                'role_label' => $roleLabels[$m->role] ?? ucfirst($m->role),
+            ]);
+        })->filter()->values()->all();
+
+        $contacts = PropertyContact::on('property_read')
+            ->where('property_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->orderBy('sort_order')
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn (PropertyContact $c) => [
+                'type'         => $c->contact_type,
+                'type_label'   => $c->displayLabel(),
+                'name'         => $c->name,
+                'organization' => $c->organization,
+                'phone'        => $c->phone,
+                'email'        => $c->email,
+                'address'      => $c->address,
+                'notes'        => $c->notes,
+            ])
+            ->values()
+            ->all();
+
+        return compact('landowner', 'managers', 'contacts');
     }
 
     // ─── Record a view ────────────────────────────────────────────────────────

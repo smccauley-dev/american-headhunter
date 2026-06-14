@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DropboxSignWebhookController;
 use App\Http\Controllers\Api\LeaseSigningController;
 use App\Http\Controllers\Api\MfaController;
+use App\Http\Controllers\Api\PropertyContactController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\PropertyMapController;
 use App\Http\Controllers\Api\RecoveryController;
@@ -26,6 +27,10 @@ Route::prefix('v1/properties')
         Route::get('/{id}/map', [PropertyMapController::class, 'show']);
         Route::get('/{id}/map-images/{documentId}', [PropertyMapController::class, 'image'])
             ->name('api.property-maps.image');
+
+        // Member contact directory — landowner, managers, local/emergency
+        // contacts. Gated to active lessees inside the controller (SEC-024).
+        Route::get('/{id}/contacts', [PropertyContactController::class, 'index']);
     });
 
 // Legacy property routes — no auth, backward-compat for web app

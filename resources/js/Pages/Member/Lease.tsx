@@ -47,6 +47,31 @@ interface StandMap {
   markers: StandMarker[]
 }
 
+interface ContactParty {
+  name: string | null
+  phone: string | null
+  email: string | null
+  role?: string
+  role_label?: string
+}
+
+interface LocalContact {
+  type: string
+  type_label: string
+  name: string | null
+  organization: string | null
+  phone: string | null
+  email: string | null
+  address: string | null
+  notes: string | null
+}
+
+interface ContactDirectory {
+  landowner: ContactParty | null
+  managers: ContactParty[]
+  contacts: LocalContact[]
+}
+
 interface Props {
   lease: {
     id: string
@@ -65,6 +90,7 @@ interface Props {
     rules: string[]
   } | null
   access_info: AccessInfo | null
+  contacts: ContactDirectory | null
   signers: Signer[]
   sign_url: string | null
   signed_lease_url: string | null
@@ -627,7 +653,96 @@ function FieldAccess({
   )
 }
 
-export default function Lease({ lease, property, access_info, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url }: Props) {
+function ContactLine({ label, party }: { label: string; party: ContactParty }) {
+  return (
+    <div style={{ padding: '12px 0', borderBottom: `1px dotted ${FIELD_BORDER}` }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, marginBottom: '4px' }}>
+        {label}
+      </div>
+      <div style={{ fontFamily: 'var(--body)', fontSize: '16px', fontWeight: 600, color: INK }}>
+        {party.name || '—'}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: '4px' }}>
+        {party.phone && (
+          <a href={`tel:${party.phone}`} style={{ fontFamily: 'var(--mono)', fontSize: '13px', color: OLIVE, textDecoration: 'none' }}>
+            ☎ {party.phone}
+          </a>
+        )}
+        {party.email && (
+          <a href={`mailto:${party.email}`} style={{ fontFamily: 'var(--mono)', fontSize: '13px', color: OLIVE, textDecoration: 'none' }}>
+            ✉ {party.email}
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function LocalContactRow({ contact, isLast }: { contact: LocalContact; isLast: boolean }) {
+  const heading = contact.organization || contact.name || contact.type_label
+  return (
+    <div style={{ padding: '12px 0', borderBottom: isLast ? 'none' : `1px dotted ${FIELD_BORDER}` }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: ACCENT, marginBottom: '4px' }}>
+        {contact.type_label}
+      </div>
+      <div style={{ fontFamily: 'var(--body)', fontSize: '16px', fontWeight: 600, color: INK }}>
+        {heading}
+      </div>
+      {contact.organization && contact.name && (
+        <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: OLIVE, marginTop: '2px' }}>{contact.name}</div>
+      )}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: '4px' }}>
+        {contact.phone && (
+          <a href={`tel:${contact.phone}`} style={{ fontFamily: 'var(--mono)', fontSize: '13px', color: OLIVE, textDecoration: 'none' }}>
+            ☎ {contact.phone}
+          </a>
+        )}
+        {contact.email && (
+          <a href={`mailto:${contact.email}`} style={{ fontFamily: 'var(--mono)', fontSize: '13px', color: OLIVE, textDecoration: 'none' }}>
+            ✉ {contact.email}
+          </a>
+        )}
+      </div>
+      {contact.address && (
+        <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: INK, marginTop: '6px', lineHeight: 1.5 }}>{contact.address}</div>
+      )}
+      {contact.notes && (
+        <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: OLIVE, marginTop: '4px', lineHeight: 1.5, fontStyle: 'italic' }}>{contact.notes}</div>
+      )}
+    </div>
+  )
+}
+
+function ContactsSection({ contacts }: { contacts: ContactDirectory }) {
+  const hasParties = contacts.landowner !== null || contacts.managers.length > 0
+  const hasLocal   = contacts.contacts.length > 0
+
+  if (!hasParties && !hasLocal) return null
+
+  return (
+    <Section title="Contacts">
+      {contacts.landowner && <ContactLine label="Landowner" party={contacts.landowner} />}
+      {contacts.managers.map((m, i) => (
+        <ContactLine key={`mgr-${i}`} label={m.role_label || 'Property Manager'} party={m} />
+      ))}
+
+      {hasLocal && (
+        <div style={{ marginTop: hasParties ? '16px' : '0' }}>
+          {hasParties && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '8px', borderBottom: `1px solid ${DIVIDER}`, paddingBottom: '6px' }}>
+              Emergency &amp; Local Contacts
+            </div>
+          )}
+          {contacts.contacts.map((c, i) => (
+            <LocalContactRow key={`loc-${i}`} contact={c} isLast={i === contacts.contacts.length - 1} />
+          ))}
+        </div>
+      )}
+    </Section>
+  )
+}
+
+export default function Lease({ lease, property, access_info, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -811,6 +926,9 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
               </div>
             </div>
           )}
+
+          {/* Contacts — landowner, managers, local law enforcement, game warden, emergency */}
+          {contacts && <ContactsSection contacts={contacts} />}
 
           {/* Lease Documents */}
           {(documents.length > 0 || is_lessor) && (

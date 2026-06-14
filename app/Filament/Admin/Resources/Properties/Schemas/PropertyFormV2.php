@@ -23,6 +23,7 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\Alignment;
 use Illuminate\Support\Facades\Storage;
@@ -424,6 +425,114 @@ class PropertyFormV2
         return new HtmlString($html);
     }
 
+    private static function renderContactPartiesHtml($record): HtmlString
+    {
+        if (! $record?->id) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;">Save the property first to view contacts.</p>'
+            );
+        }
+
+        try {
+            $directory = app(PropertyService::class)->getContactDirectory($record->id);
+        } catch (\Throwable) {
+            return new HtmlString('<p style="color:#6b7280;font-size:0.875rem;">Unavailable.</p>');
+        }
+
+        $rows = [];
+
+        if ($directory['landowner']) {
+            $rows[] = ['Landowner', $directory['landowner']];
+        }
+        foreach ($directory['managers'] as $m) {
+            $rows[] = [$m['role_label'], $m];
+        }
+
+        if (empty($rows)) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;padding:0.75rem 0;">'
+                . 'No landowner or managers resolved for this property yet.'
+                . '</p>'
+            );
+        }
+
+        $cols = '1.2fr 2fr 1.5fr 2fr';
+        $hs   = 'font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;'
+              . 'color:#6b7280;padding:0.5rem 0.75rem;border-bottom:2px solid #e5e7eb;';
+        $cs   = 'font-size:0.875rem;color:#374151;padding:0.625rem 0.75rem;border-bottom:1px solid #f3f4f6;';
+
+        $html  = "<div style=\"display:grid;grid-template-columns:{$cols};\">";
+        $html .= "<div style=\"{$hs}\">Role</div>"
+               . "<div style=\"{$hs}\">Name</div>"
+               . "<div style=\"{$hs}\">Phone</div>"
+               . "<div style=\"{$hs}\">Email</div>";
+
+        foreach ($rows as [$role, $c]) {
+            $html .= "<div style=\"{$cs}font-weight:500;\">" . htmlspecialchars($role) . '</div>';
+            $html .= "<div style=\"{$cs}\">" . htmlspecialchars($c['name'] ?? '—') . '</div>';
+            $html .= "<div style=\"{$cs}\">" . htmlspecialchars($c['phone'] ?: '—') . '</div>';
+            $html .= "<div style=\"{$cs}\">" . htmlspecialchars($c['email'] ?: '—') . '</div>';
+        }
+
+        $html .= '</div>';
+
+        return new HtmlString($html);
+    }
+
+    private static function contactsRepeater(): Repeater
+    {
+        return Repeater::make('contacts')
+            ->relationship()
+            ->reorderable('sort_order')
+            ->itemLabel(fn (array $state): string => match (true) {
+                ($state['contact_type'] ?? null) === 'other' => $state['label'] ?: 'Other Contact',
+                isset($state['contact_type'])                => \App\Models\Property\PropertyContact::TYPES[$state['contact_type']] ?? 'Contact',
+                default                                      => 'New Contact',
+            })
+            ->addAction(fn (\Filament\Actions\Action $action) => $action
+                ->label('Add Contact')
+                ->icon('heroicon-o-plus-circle')
+            )
+            ->addActionAlignment(Alignment::Start)
+            ->columns(2)
+            ->schema([
+                Select::make('contact_type')
+                    ->label('Contact Type')
+                    ->required()
+                    ->live()
+                    ->options(\App\Models\Property\PropertyContact::TYPES)
+                    ->default('law_enforcement'),
+                TextInput::make('label')
+                    ->label('Custom Label')
+                    ->maxLength(100)
+                    ->placeholder('Neighbor, Nearest Hospital, …')
+                    ->helperText('Shown as the contact heading.')
+                    ->visible(fn (Get $get) => $get('contact_type') === 'other'),
+                TextInput::make('name')
+                    ->label('Contact Name')
+                    ->maxLength(150)
+                    ->placeholder('Sgt. John Smith'),
+                TextInput::make('organization')
+                    ->label('Agency / Organization')
+                    ->maxLength(150)
+                    ->placeholder('County Sheriff\'s Office'),
+                TextInput::make('phone')
+                    ->label('Phone')
+                    ->tel()
+                    ->maxLength(30),
+                TextInput::make('email')
+                    ->label('Email')
+                    ->email()
+                    ->maxLength(255),
+                Textarea::make('notes')
+                    ->label('Notes')
+                    ->rows(2)
+                    ->maxLength(500)
+                    ->columnSpanFull()
+                    ->placeholder('Non-emergency line, hours, where to meet, etc.'),
+            ]);
+    }
+
     private static function amenitiesTabSchema(): array
     {
         $sections = PropertyAmenity::distinct()
@@ -744,6 +853,25 @@ class PropertyFormV2
                                             ->content(function (Placeholder $component) {
                                                 return static::renderManagersHtml($component->getRecord());
                                             }),
+                                    ]),
+                            ]),
+
+                        Tab::make('Contacts')
+                            ->visible(fn ($record) => $record !== null)
+                            ->schema([
+                                Section::make('Landowner & Managers')
+                                    ->description('Pulled automatically from the owner account and the Managers tab. To change these, update the user account or the Managers tab.')
+                                    ->schema([
+                                        Placeholder::make('property_contact_parties_display')
+                                            ->hiddenLabel()
+                                            ->content(function (Placeholder $component) {
+                                                return static::renderContactPartiesHtml($component->getRecord());
+                                            }),
+                                    ]),
+                                Section::make('Emergency & Local Contacts')
+                                    ->description('Local law enforcement, game warden, emergency, and any other contacts (e.g. a neighbor) a hunter may need in the field. These are shown to active lessees on the lease page and the mobile app.')
+                                    ->schema([
+                                        self::contactsRepeater(),
                                     ]),
                             ]),
 

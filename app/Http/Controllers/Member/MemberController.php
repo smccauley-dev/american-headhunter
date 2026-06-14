@@ -53,6 +53,11 @@ class MemberController extends Controller
 
         $property = rescue(fn () => $propertyService->find($leaseRecord->property_id), null);
 
+        // Contact directory — landowner + managers (derived) plus local law
+        // enforcement, game warden, emergency and custom contacts. Available to
+        // either party on any lease status.
+        $contacts = rescue(fn () => $propertyService->getContactDirectory($leaseRecord->property_id), null);
+
         $accessInfo = null;
         if ($leaseRecord->status === 'active') {
             try {
@@ -157,6 +162,7 @@ class MemberController extends Controller
                 'rules'  => collect($property->rules ?? [])->map(fn ($r) => $r->rule_text)->values()->all(),
             ] : null,
             'access_info'    => $accessInfo,
+            'contacts'       => $contacts,
             'signers'         => $signers,
             'sign_url'        => $signUrl,
             'signed_lease_url' => $signedLeaseUrl,
