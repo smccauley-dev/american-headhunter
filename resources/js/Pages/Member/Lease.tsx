@@ -71,22 +71,50 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  active: '#15803d',
-  pending_signatures: '#c2410c',
-  expired: '#6b7280',
-  terminated: '#6b7280',
-  cancelled: '#6b7280',
+  active: '#4a7c59',
+  pending_signatures: '#b8934a',
+  expired: '#a89874',
+  terminated: '#a89874',
+  cancelled: '#a89874',
+}
+
+// ── Theme tokens — parchment field-record system (see docs/design_system.md) ──
+const PAPER  = '#F8F4EB'
+const INK    = '#0A1512'
+const ACCENT = '#C84C21'
+const TAN    = '#a89874'
+const DIVIDER = '#e5ddd0'
+const FIELD_BORDER = '#d4c9b0'
+const OLIVE  = '#4a5440'
+const BRASS  = '#b8934a'
+
+const themeVars = {
+  '--ah-accent': ACCENT,
+  '--ah-paper': PAPER,
+  '--ah-ink': INK,
+} as React.CSSProperties
+
+// Field-record card shell — 1px ink border + 8px solid ink drop shadow.
+const fieldCard: React.CSSProperties = {
+  position: 'relative',
+  background: PAPER,
+  border: `1px solid ${INK}`,
+  boxShadow: `6px 6px 0 ${INK}`,
+  marginBottom: '24px',
+}
+
+function DashedInset() {
+  return <div style={{ position: 'absolute', inset: 6, border: `1px dashed ${TAN}`, pointerEvents: 'none', zIndex: 1 }} />
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', marginBottom: '16px', overflow: 'hidden' }}>
-      <div style={{ padding: '12px 20px', borderBottom: '1px solid #f0ece6', background: '#fafaf9' }}>
-        <span style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.12em', textTransform: 'uppercase', color: '#888', fontWeight: '700' }}>
+    <div style={fieldCard}>
+      <DashedInset />
+      <div style={{ position: 'relative', zIndex: 2, padding: '18px 24px' }}>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '14px', borderBottom: `1px solid ${DIVIDER}`, paddingBottom: '6px' }}>
           {title}
-        </span>
-      </div>
-      <div style={{ padding: '16px 20px' }}>
+        </div>
         {children}
       </div>
     </div>
@@ -96,17 +124,38 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function AccessField({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ marginBottom: '14px' }}>
-      <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#888', marginBottom: '4px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, marginBottom: '5px' }}>
         {label}
       </div>
-      <div style={{ fontFamily: 'monospace', fontSize: '16px', fontWeight: '700', color: '#0A1512', letterSpacing: '.05em', background: '#f5f3ef', padding: '8px 12px', borderRadius: '3px', border: '1px solid #e5e0d8', display: 'inline-block', minWidth: '120px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '16px', fontWeight: 700, color: INK, letterSpacing: '.05em', background: '#fff', padding: '8px 12px', border: `1px solid ${FIELD_BORDER}`, display: 'inline-block', minWidth: '120px' }}>
         {value}
       </div>
     </div>
   )
 }
 
-function DocumentRow({ doc, leaseId, isLessor, isLast }: { doc: LeaseDocument; leaseId: string; isLessor: boolean; isLast: boolean }) {
+const btnAccent: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 18px',
+  background: ACCENT, color: '#fff', border: `1px solid ${ACCENT}`,
+  fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase',
+  cursor: 'pointer', textDecoration: 'none',
+}
+
+const btnDark: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 18px',
+  background: INK, color: '#F4ECDC', border: `1px solid ${INK}`,
+  fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase',
+  cursor: 'pointer', textDecoration: 'none',
+}
+
+const btnGhost: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px',
+  background: 'transparent', color: OLIVE, border: `1px solid ${FIELD_BORDER}`,
+  fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase',
+  cursor: 'pointer', textDecoration: 'none',
+}
+
+function DocumentRow({ doc, isLessor, isLast }: { doc: LeaseDocument; isLessor: boolean; isLast: boolean }) {
   const [confirming, setConfirming] = useState(false)
   const [typed, setTyped] = useState('')
   const [deleting, setDeleting] = useState(false)
@@ -127,20 +176,20 @@ function DocumentRow({ doc, leaseId, isLessor, isLast }: { doc: LeaseDocument; l
   )
 
   return (
-    <div style={{ padding: '10px 0', borderBottom: isLast ? 'none' : '1px solid #f0ece6' }}>
+    <div style={{ padding: '12px 0', borderBottom: isLast ? 'none' : `1px dotted ${FIELD_BORDER}` }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-          <svg style={{ width: '20px', height: '20px', flexShrink: 0, color: '#C84C21' }} fill="currentColor" viewBox="0 0 24 24">
+          <svg style={{ width: '20px', height: '20px', flexShrink: 0, color: ACCENT }} fill="currentColor" viewBox="0 0 24 24">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/>
           </svg>
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '13px', fontWeight: '600', color: '#0A1512' }}>{doc.tag_label}</span>
-              <span style={{ fontSize: '10px', fontWeight: '700', padding: '1px 6px', borderRadius: '3px', ...badgeProps }}>
+              <span style={{ fontFamily: 'var(--body)', fontSize: '15px', fontWeight: 600, color: INK }}>{doc.tag_label}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700, padding: '1px 6px', ...badgeProps }}>
                 {doc.tag.toUpperCase().replace(/_/g, ' ')}
               </span>
             </div>
-            <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: TAN, marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
               {doc.original_filename ?? 'document.pdf'}
               {doc.size_bytes ? ` · ${Math.round(doc.size_bytes / 1024)} KB` : ''}
               {doc.created_at ? ` · ${doc.created_at}` : ''}
@@ -149,10 +198,7 @@ function DocumentRow({ doc, leaseId, isLessor, isLast }: { doc: LeaseDocument; l
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
-          <a
-            href={doc.download_url}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', background: '#f5f3ef', border: '1px solid #e5e0d8', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', color: '#374151', textDecoration: 'none', letterSpacing: '.06em', textTransform: 'uppercase' }}
-          >
+          <a href={doc.download_url} style={{ ...btnGhost, padding: '6px 12px', fontSize: '10px' }}>
             <svg style={{ width: '12px', height: '12px' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
             </svg>
@@ -162,7 +208,7 @@ function DocumentRow({ doc, leaseId, isLessor, isLast }: { doc: LeaseDocument; l
           {isLessor && !confirming && (
             <button
               onClick={() => setConfirming(true)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', background: '#fff', border: '1px solid #fca5a5', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', color: '#b91c1c', cursor: 'pointer', letterSpacing: '.06em', textTransform: 'uppercase' }}
+              style={{ ...btnGhost, padding: '6px 12px', fontSize: '10px', color: '#b91c1c', borderColor: '#d8a39a' }}
             >
               <svg style={{ width: '12px', height: '12px' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -175,11 +221,11 @@ function DocumentRow({ doc, leaseId, isLessor, isLast }: { doc: LeaseDocument; l
 
       {/* Inline delete confirmation */}
       {confirming && (
-        <div style={{ marginTop: '10px', padding: '14px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '4px' }}>
-          <div style={{ fontSize: '13px', fontWeight: '600', color: '#b91c1c', marginBottom: '4px' }}>
+        <div style={{ marginTop: '12px', padding: '14px', background: '#fbf3f1', border: '1px solid #d8a39a' }}>
+          <div style={{ fontFamily: 'var(--body)', fontSize: '14px', fontWeight: 600, color: '#b91c1c', marginBottom: '4px' }}>
             Confirm document removal
           </div>
-          <div style={{ fontSize: '12px', color: '#9a3412', marginBottom: '10px' }}>
+          <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: '#9a3412', marginBottom: '10px' }}>
             This document will be soft-deleted and permanently removed after 30 days. Type <strong>DELETE</strong> to confirm.
           </div>
           <input
@@ -187,20 +233,17 @@ function DocumentRow({ doc, leaseId, isLessor, isLast }: { doc: LeaseDocument; l
             value={typed}
             onChange={e => setTyped(e.target.value)}
             placeholder="Type DELETE"
-            style={{ padding: '6px 10px', border: '1px solid #fca5a5', borderRadius: '3px', fontSize: '13px', fontFamily: 'monospace', marginBottom: '10px', width: '160px' }}
+            style={{ padding: '6px 10px', border: '1px solid #d8a39a', fontFamily: 'var(--mono)', fontSize: '13px', marginBottom: '10px', width: '160px' }}
           />
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
               onClick={handleDelete}
               disabled={typed !== 'DELETE' || deleting}
-              style={{ padding: '6px 16px', background: typed === 'DELETE' ? '#b91c1c' : '#e5e7eb', color: typed === 'DELETE' ? '#fff' : '#9ca3af', border: 'none', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', cursor: typed === 'DELETE' && !deleting ? 'pointer' : 'not-allowed', letterSpacing: '.06em', textTransform: 'uppercase' }}
+              style={{ padding: '8px 16px', background: typed === 'DELETE' ? '#b91c1c' : '#e5ddd0', color: typed === 'DELETE' ? '#fff' : TAN, border: 'none', fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', cursor: typed === 'DELETE' && !deleting ? 'pointer' : 'not-allowed' }}
             >
               {deleting ? 'Removing…' : 'Confirm Delete'}
             </button>
-            <button
-              onClick={() => { setConfirming(false); setTyped('') }}
-              style={{ padding: '6px 16px', background: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', cursor: 'pointer' }}
-            >
+            <button onClick={() => { setConfirming(false); setTyped('') }} style={{ ...btnGhost, padding: '8px 16px' }}>
               Cancel
             </button>
           </div>
@@ -226,82 +269,50 @@ function UploadDocumentForm({ uploadUrl, tags }: { uploadUrl: string; tags: Reco
     })
   }
 
+  const labelStyle: React.CSSProperties = { display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: OLIVE, marginBottom: '5px' }
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: `1px solid ${FIELD_BORDER}`, fontFamily: 'var(--body)', fontSize: '15px', background: '#fff', boxSizing: 'border-box' }
+
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px', background: '#0A1512', color: '#C84C21', border: '1px solid #1a2e28', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', letterSpacing: '.08em', textTransform: 'uppercase', cursor: 'pointer' }}
-      >
+      <button onClick={() => setOpen(true)} style={btnDark}>
         + Upload Document
       </button>
     )
   }
 
   return (
-    <form onSubmit={submit} style={{ background: '#f5f3ef', border: '1px solid #e5e0d8', borderRadius: '4px', padding: '16px', marginTop: '12px' }}>
-      <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.12em', textTransform: 'uppercase', color: '#888', marginBottom: '12px', fontWeight: '700' }}>
+    <form onSubmit={submit} style={{ background: '#fff', border: `1px solid ${FIELD_BORDER}`, padding: '18px', marginTop: '12px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '14px', fontWeight: 600 }}>
         Upload Document
       </div>
 
       <div style={{ marginBottom: '12px' }}>
-        <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#555', marginBottom: '4px' }}>
-          Document Type *
-        </label>
-        <select
-          value={data.tag}
-          onChange={e => setData('tag', e.target.value)}
-          required
-          style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '3px', fontSize: '13px', background: '#fff' }}
-        >
+        <label style={labelStyle}>Document Type *</label>
+        <select value={data.tag} onChange={e => setData('tag', e.target.value)} required style={{ ...inputStyle, cursor: 'pointer' }}>
           <option value="">Select type…</option>
           {Object.entries(tags).map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
-        {errors.tag && <div style={{ color: '#b91c1c', fontSize: '12px', marginTop: '4px' }}>{errors.tag}</div>}
+        {errors.tag && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.tag}</div>}
       </div>
 
       <div style={{ marginBottom: '12px' }}>
-        <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#555', marginBottom: '4px' }}>
-          File (PDF, max 20 MB) *
-        </label>
-        <input
-          type="file"
-          accept="application/pdf"
-          required
-          onChange={e => setData('document', e.target.files?.[0] ?? null)}
-          style={{ fontSize: '13px' }}
-        />
-        {errors.document && <div style={{ color: '#b91c1c', fontSize: '12px', marginTop: '4px' }}>{errors.document}</div>}
+        <label style={labelStyle}>File (PDF, max 20 MB) *</label>
+        <input type="file" accept="application/pdf" required onChange={e => setData('document', e.target.files?.[0] ?? null)} style={{ fontFamily: 'var(--body)', fontSize: '14px' }} />
+        {errors.document && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.document}</div>}
       </div>
 
       <div style={{ marginBottom: '16px' }}>
-        <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#555', marginBottom: '4px' }}>
-          Notes (optional)
-        </label>
-        <textarea
-          value={data.notes}
-          onChange={e => setData('notes', e.target.value)}
-          rows={2}
-          maxLength={500}
-          placeholder="Optional note about this document…"
-          style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '3px', fontSize: '13px', resize: 'vertical', boxSizing: 'border-box' }}
-        />
+        <label style={labelStyle}>Notes (optional)</label>
+        <textarea value={data.notes} onChange={e => setData('notes', e.target.value)} rows={2} maxLength={500} placeholder="Optional note about this document…" style={{ ...inputStyle, resize: 'vertical' }} />
       </div>
 
       <div style={{ display: 'flex', gap: '8px' }}>
-        <button
-          type="submit"
-          disabled={processing}
-          style={{ padding: '8px 18px', background: '#C84C21', color: '#fff', border: 'none', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', letterSpacing: '.08em', textTransform: 'uppercase', cursor: processing ? 'not-allowed' : 'pointer', opacity: processing ? 0.7 : 1 }}
-        >
+        <button type="submit" disabled={processing} style={{ ...btnAccent, opacity: processing ? 0.7 : 1, cursor: processing ? 'not-allowed' : 'pointer' }}>
           {processing ? 'Uploading…' : 'Upload'}
         </button>
-        <button
-          type="button"
-          onClick={() => { reset(); setOpen(false) }}
-          style={{ padding: '8px 18px', background: 'transparent', color: '#555', border: '1px solid #d1d5db', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', cursor: 'pointer' }}
-        >
+        <button type="button" onClick={() => { reset(); setOpen(false) }} style={btnGhost}>
           Cancel
         </button>
       </div>
@@ -356,27 +367,19 @@ function FieldAccess({
     <Section title="Field Access">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#888', marginBottom: '4px' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, marginBottom: '4px' }}>
             Check-In Status
           </div>
-          <div style={{ fontSize: '15px', fontWeight: 700, color: isOpen ? '#15803d' : '#0A1512' }}>
+          <div style={{ fontFamily: 'var(--display)', fontSize: '18px', fontWeight: 500, color: isOpen ? '#4a7c59' : INK }}>
             {isOpen ? 'Checked In' : 'Not Checked In'}
           </div>
         </div>
         {!isOpen ? (
-          <button
-            onClick={checkInNow}
-            disabled={busy || locating}
-            style={{ padding: '10px 18px', background: '#C84C21', color: '#fff', border: 'none', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', cursor: busy || locating ? 'not-allowed' : 'pointer', opacity: busy || locating ? 0.7 : 1 }}
-          >
+          <button onClick={checkInNow} disabled={busy || locating} style={{ ...btnAccent, opacity: busy || locating ? 0.7 : 1, cursor: busy || locating ? 'not-allowed' : 'pointer' }}>
             {locating ? 'Locating…' : busy ? 'Checking In…' : 'Check In'}
           </button>
         ) : (
-          <button
-            onClick={checkOutNow}
-            disabled={busy}
-            style={{ padding: '10px 18px', background: '#0A1512', color: '#C84C21', border: '1px solid #1a2e28', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}
-          >
+          <button onClick={checkOutNow} disabled={busy} style={{ ...btnDark, opacity: busy ? 0.7 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}>
             {busy ? 'Checking Out…' : 'Check Out'}
           </button>
         )}
@@ -384,36 +387,26 @@ function FieldAccess({
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px' }}>
         {standsUrl && (
-          <a
-            href={standsUrl}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: '#f5f3ef', border: '1px solid #e5e0d8', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: '#374151', textDecoration: 'none', letterSpacing: '.06em', textTransform: 'uppercase' }}
-          >
+          <a href={standsUrl} style={btnGhost}>
             View Stand Map
           </a>
         )}
         {qr && (
-          <button
-            onClick={() => setShowQr(v => !v)}
-            style={{ padding: '8px 14px', background: '#f5f3ef', border: '1px solid #e5e0d8', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: '#374151', cursor: 'pointer', letterSpacing: '.06em', textTransform: 'uppercase' }}
-          >
+          <button onClick={() => setShowQr(v => !v)} style={btnGhost}>
             {showQr ? 'Hide Gate QR' : 'Show Gate QR'}
           </button>
         )}
         {emailQrUrl && (
-          <button
-            onClick={emailQr}
-            disabled={busy}
-            style={{ padding: '8px 14px', background: '#fff', border: '1px solid #d4c9b0', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: '#0A1512', cursor: busy ? 'not-allowed' : 'pointer', letterSpacing: '.06em', textTransform: 'uppercase' }}
-          >
+          <button onClick={emailQr} disabled={busy} style={{ ...btnGhost, color: INK, borderColor: BRASS, opacity: busy ? 0.7 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}>
             Email QR to Hunter
           </button>
         )}
       </div>
 
       {qr && showQr && (
-        <div style={{ marginTop: '16px', textAlign: 'center', background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', padding: '20px' }}>
+        <div style={{ marginTop: '16px', textAlign: 'center', background: '#fff', border: `1px solid ${FIELD_BORDER}`, padding: '20px' }}>
           <img src={qr.png_url} alt="Property check-in QR code" width={200} height={200} style={{ display: 'inline-block' }} />
-          <div style={{ fontSize: '12px', color: '#6b5e50', marginTop: '10px', lineHeight: 1.5 }}>
+          <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: OLIVE, marginTop: '10px', lineHeight: 1.5 }}>
             Scan this at the gate to check in. Post it at the entrance or save it to your phone.
           </div>
         </div>
@@ -424,7 +417,7 @@ function FieldAccess({
 
 export default function Lease({ lease, property, access_info, signers, sign_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stands_url, email_qr_url }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
-  const statusColor = STATUS_COLOR[lease.status] ?? '#6b7280'
+  const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
   const allSigned   = signers.every(s => s.status === 'signed')
 
@@ -432,64 +425,66 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
     <>
       <Head title={property?.title ?? 'Lease Detail'} />
 
-      <div style={{ minHeight: '100vh', background: '#fafaf9' }}>
+      <div className="topo-bg" style={{ ...themeVars, minHeight: '100vh', backgroundColor: '#EDE5D0' }}>
 
         {/* Topbar */}
-        <div style={{ background: '#0A1512', borderBottom: '1px solid #1a2e28' }}>
-          <div style={{ maxWidth: '800px', margin: '0 auto', padding: '0 16px', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.15em', textTransform: 'uppercase', color: '#C84C21', fontWeight: '700' }}>
-              American Headhunter
-            </span>
-            <a
-              href="/member"
-              style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', textDecoration: 'none' }}
-            >
+        <div style={{ background: INK, borderBottom: `1px solid ${BRASS}` }}>
+          <div style={{ maxWidth: '820px', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ width: '42px', height: '42px', border: `1px solid ${TAN}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontFamily: 'var(--display)', fontSize: '15px', fontWeight: 500, color: '#F4ECDC', letterSpacing: '.05em' }}>AH</span>
+              </div>
+              <div>
+                <div style={{ fontFamily: 'var(--display)', fontSize: '17px', fontWeight: 400, color: '#F4ECDC', lineHeight: 1.1 }}>
+                  American Headhunter
+                </div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.22em', textTransform: 'uppercase', color: '#6b9e8f', marginTop: '3px' }}>
+                  Member Portal
+                </div>
+              </div>
+            </div>
+            <a href="/member" style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, textDecoration: 'none' }}>
               ← My Leases
             </a>
           </div>
         </div>
 
-        <div style={{ maxWidth: '800px', margin: '0 auto', padding: '40px 16px 64px' }}>
+        <div style={{ maxWidth: '820px', margin: '0 auto', padding: '40px 24px 80px' }}>
 
-          {/* Header */}
-          <div style={{ background: '#0A1512', borderRadius: '4px', padding: '24px', marginBottom: '20px' }}>
-            <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.12em', textTransform: 'uppercase', color: '#C84C21', marginBottom: '6px' }}>
-              Hunting Lease
-            </div>
-            <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '24px', fontWeight: '400', color: '#fff', margin: '0 0 4px' }}>
-              {property?.title ?? 'Hunting Property'}
-            </h1>
-            {property && (
-              <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '12px' }}>
-                {property.county} County, {property.state}
-                {property.acres ? ` · ${Number(property.acres).toLocaleString()} acres` : ''}
+          {/* Header — dark field-record plate */}
+          <div style={{ position: 'relative', background: INK, boxShadow: `6px 6px 0 ${BRASS}`, marginBottom: '24px' }}>
+            <div style={{ position: 'absolute', inset: 6, border: `1px dashed ${TAN}`, pointerEvents: 'none' }} />
+            <div style={{ position: 'relative', padding: '28px 28px' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, marginBottom: '8px' }}>
+                Hunting Lease
               </div>
-            )}
-            <span style={{
-              display: 'inline-block',
-              padding: '4px 10px',
-              borderRadius: '20px',
-              background: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              fontFamily: 'monospace',
-              fontSize: '10px',
-              fontWeight: '700',
-              letterSpacing: '.08em',
-              textTransform: 'uppercase',
-              color: statusColor,
-            }}>
-              {statusLabel}
-            </span>
+              <h1 style={{ fontFamily: 'var(--display)', fontSize: '28px', fontWeight: 400, color: '#F4ECDC', margin: '0 0 6px' }}>
+                {property?.title ?? 'Hunting Property'}
+              </h1>
+              {property && (
+                <div style={{ fontFamily: 'var(--body)', fontSize: '15px', color: '#a89874', marginBottom: '14px' }}>
+                  {property.county} County, {property.state}
+                  {property.acres ? ` · ${Number(property.acres).toLocaleString()} acres` : ''}
+                </div>
+              )}
+              <span style={{
+                display: 'inline-block', padding: '4px 12px', border: `1px solid ${statusColor}`,
+                fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em',
+                textTransform: 'uppercase', color: statusColor,
+              }}>
+                {statusLabel}
+              </span>
+            </div>
           </div>
 
           {/* Flash */}
           {flash?.success && (
-            <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '4px', padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#15803d' }}>
+            <div style={{ background: '#eef5ee', border: '1px solid #a9c8af', padding: '12px 16px', marginBottom: '24px', fontFamily: 'var(--body)', fontSize: '15px', color: '#3a6b48' }}>
               {flash.success}
             </div>
           )}
           {flash?.error && (
-            <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '4px', padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#b91c1c' }}>
+            <div style={{ background: '#fbf3f1', border: '1px solid #d8a39a', padding: '12px 16px', marginBottom: '24px', fontFamily: 'var(--body)', fontSize: '15px', color: '#b91c1c' }}>
               {flash.error}
             </div>
           )}
@@ -507,15 +502,12 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
 
           {/* Sign CTA — only when pending and user hasn't signed */}
           {sign_url && (
-            <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '16px 20px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ position: 'relative', background: '#fbf1e9', border: `1px solid ${ACCENT}`, padding: '18px 24px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#c2410c', marginBottom: '2px' }}>Your signature is required</div>
-                <div style={{ fontSize: '13px', color: '#9a3412' }}>Sign the lease agreement to activate your access.</div>
+                <div style={{ fontFamily: 'var(--display)', fontSize: '17px', fontWeight: 500, color: '#9a3412', marginBottom: '2px' }}>Your signature is required</div>
+                <div style={{ fontFamily: 'var(--body)', fontSize: '15px', color: '#9a3412' }}>Sign the lease agreement to activate your access.</div>
               </div>
-              <a
-                href={sign_url}
-                style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', letterSpacing: '.08em', textTransform: 'uppercase', background: '#C84C21', color: '#fff', padding: '10px 18px', borderRadius: '3px', textDecoration: 'none', whiteSpace: 'nowrap', marginLeft: '16px' }}
-              >
+              <a href={sign_url} style={{ ...btnAccent, whiteSpace: 'nowrap' }}>
                 Sign Now
               </a>
             </div>
@@ -524,22 +516,17 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
           {/* Lease Terms */}
           <Section title="Lease Terms">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-              <div>
-                <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#aaa', marginBottom: '4px' }}>Start Date</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#0A1512' }}>{lease.start_date}</div>
-              </div>
-              <div>
-                <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#aaa', marginBottom: '4px' }}>End Date</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#0A1512' }}>{lease.end_date}</div>
-              </div>
-              <div>
-                <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#aaa', marginBottom: '4px' }}>Total Price</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#0A1512' }}>${lease.total_price}</div>
-              </div>
-              <div>
-                <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#aaa', marginBottom: '4px' }}>Auto-Renew</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#0A1512' }}>{lease.auto_renew ? 'Enabled' : 'Disabled'}</div>
-              </div>
+              {([
+                ['Start Date', lease.start_date],
+                ['End Date', lease.end_date],
+                ['Total Price', `$${lease.total_price}`],
+                ['Auto-Renew', lease.auto_renew ? 'Enabled' : 'Disabled'],
+              ] as [string, string][]).map(([label, value]) => (
+                <div key={label}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.1em', color: TAN, marginBottom: '5px' }}>{label}</div>
+                  <div style={{ fontFamily: 'var(--body)', fontSize: '16px', fontWeight: 600, color: INK }}>{value}</div>
+                </div>
+              ))}
             </div>
           </Section>
 
@@ -549,17 +536,17 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
               {signers.map((signer, i) => {
                 const isSigned = signer.status === 'signed'
                 return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: i < signers.length - 1 ? '1px solid #f0ece6' : 'none' }}>
-                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isSigned ? '#f0fdf4' : '#fff7ed', border: `2px solid ${isSigned ? '#15803d' : '#d97706'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <span style={{ fontSize: '14px', color: isSigned ? '#15803d' : '#d97706', fontWeight: '700' }}>
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: i < signers.length - 1 ? `1px dotted ${FIELD_BORDER}` : 'none' }}>
+                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isSigned ? '#eef5ee' : '#fbf1e9', border: `2px solid ${isSigned ? '#4a7c59' : BRASS}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <span style={{ fontSize: '14px', color: isSigned ? '#4a7c59' : BRASS, fontWeight: 700 }}>
                         {isSigned ? '✓' : '○'}
                       </span>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#1a1a1a' }}>{signer.name}</div>
-                      <div style={{ fontSize: '11px', color: '#888', fontFamily: 'monospace' }}>{signer.role}</div>
+                      <div style={{ fontFamily: 'var(--body)', fontSize: '15px', fontWeight: 600, color: INK }}>{signer.name}</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: TAN, letterSpacing: '.06em' }}>{signer.role}</div>
                     </div>
-                    <div style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '.06em', color: isSigned ? '#15803d' : '#d97706' }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: isSigned ? '#4a7c59' : BRASS }}>
                       {isSigned ? 'Signed' : 'Pending'}
                     </div>
                   </div>
@@ -570,26 +557,29 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
 
           {/* Access Info — active leases only */}
           {access_info && Object.keys(access_info).length > 0 && (
-            <div style={{ background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', marginBottom: '16px', overflow: 'hidden' }}>
-              <div style={{ padding: '12px 20px', borderBottom: '1px solid #f0ece6', background: '#0A1512', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.12em', textTransform: 'uppercase', color: '#C84C21', fontWeight: '700' }}>
-                  Property Access
-                </span>
-                <span style={{ fontFamily: 'monospace', fontSize: '10px', color: '#6b9e8f' }}>· Keep confidential</span>
-              </div>
-              <div style={{ padding: '20px' }}>
-                {access_info.gate_code && <AccessField label="Gate Code" value={access_info.gate_code} />}
-                {access_info.cabin_code && <AccessField label="Cabin Code" value={access_info.cabin_code} />}
-                {access_info.wifi_ssid && <AccessField label="WiFi Network" value={access_info.wifi_ssid} />}
-                {access_info.wifi_password && <AccessField label="WiFi Password" value={access_info.wifi_password} />}
-                {access_info.directions && (
-                  <div>
-                    <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#888', marginBottom: '6px' }}>Directions</div>
-                    <div style={{ fontSize: '13px', color: '#333', lineHeight: '1.6', background: '#f5f3ef', padding: '12px', borderRadius: '3px', border: '1px solid #e5e0d8' }}>
-                      {access_info.directions}
+            <div style={fieldCard}>
+              <DashedInset />
+              <div style={{ position: 'relative', zIndex: 2 }}>
+                <div style={{ padding: '14px 24px', borderBottom: `1px solid ${DIVIDER}`, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, fontWeight: 700 }}>
+                    Property Access
+                  </span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: '#6b9e8f', letterSpacing: '.06em' }}>· Keep confidential</span>
+                </div>
+                <div style={{ padding: '20px 24px' }}>
+                  {access_info.gate_code && <AccessField label="Gate Code" value={access_info.gate_code} />}
+                  {access_info.cabin_code && <AccessField label="Cabin Code" value={access_info.cabin_code} />}
+                  {access_info.wifi_ssid && <AccessField label="WiFi Network" value={access_info.wifi_ssid} />}
+                  {access_info.wifi_password && <AccessField label="WiFi Password" value={access_info.wifi_password} />}
+                  {access_info.directions && (
+                    <div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, marginBottom: '6px' }}>Directions</div>
+                      <div style={{ fontFamily: 'var(--body)', fontSize: '15px', color: INK, lineHeight: 1.6, background: '#fff', padding: '12px', border: `1px solid ${FIELD_BORDER}` }}>
+                        {access_info.directions}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -598,7 +588,7 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
           {(documents.length > 0 || is_lessor) && (
             <Section title="Lease Documents">
               {documents.length === 0 && (
-                <p style={{ fontSize: '13px', color: '#888', fontStyle: 'italic', margin: '0 0 12px' }}>
+                <p style={{ fontFamily: 'var(--body)', fontSize: '15px', color: TAN, fontStyle: 'italic', margin: '0 0 12px' }}>
                   No documents attached yet.
                 </p>
               )}
@@ -607,7 +597,6 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
                 <DocumentRow
                   key={doc.id}
                   doc={doc}
-                  leaseId={lease.id}
                   isLessor={is_lessor}
                   isLast={i === documents.length - 1}
                 />
@@ -626,8 +615,8 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
             <Section title="Property Rules">
               <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
                 {property!.rules.map((rule, i) => (
-                  <li key={i} style={{ display: 'flex', gap: '10px', padding: '8px 0', borderBottom: i < property!.rules.length - 1 ? '1px solid #f5f3ef' : 'none', fontSize: '13px', color: '#333', lineHeight: '1.5' }}>
-                    <span style={{ color: '#C84C21', fontWeight: '700', flexShrink: 0 }}>·</span>
+                  <li key={i} style={{ display: 'flex', gap: '10px', padding: '9px 0', borderBottom: i < property!.rules.length - 1 ? `1px dotted ${FIELD_BORDER}` : 'none', fontFamily: 'var(--body)', fontSize: '15px', color: INK, lineHeight: 1.5 }}>
+                    <span style={{ color: ACCENT, fontWeight: 700, flexShrink: 0 }}>·</span>
                     {rule}
                   </li>
                 ))}
