@@ -493,7 +493,7 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
                     key={`lg-${m.id}`}
                     type="button"
                     onClick={() => setActive(isActive ? null : m.id)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '7px', fontFamily: 'var(--body)', fontSize: '14px', color: INK, cursor: 'pointer', background: isActive ? '#efe7d6' : 'transparent', border: `1px solid ${isActive ? ACCENT : 'transparent'}`, padding: '4px 8px', borderRadius: '3px' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '7px', fontFamily: 'var(--body)', fontSize: '14px', color: INK, cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
                   >
                     <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: m.color, border: `1px solid ${INK}`, flexShrink: 0 }} />
                     <span style={{ fontWeight: 600 }}>{m.label || m.type_label}</span>
