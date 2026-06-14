@@ -387,7 +387,7 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
             </h1>
           </div>
 
-          <div style={{ position: 'relative', border: `1px solid ${INK}`, boxShadow: `6px 6px 0 ${INK}`, lineHeight: 0 }}>
+          <div style={{ position: 'relative', border: `1px solid ${INK}`, lineHeight: 0 }}>
             <img src={map.image_url} alt={`Boundary map — ${propertyTitle}`} style={{ display: 'block', width: '100%', height: 'auto' }} />
 
             {map.markers.map(m => {
