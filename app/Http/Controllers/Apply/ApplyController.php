@@ -7,10 +7,12 @@ use App\Http\Requests\Apply\SubmitApplicationRequest;
 use App\Models\Identity\HunterCredentials;
 use App\Models\Identity\User;
 use App\Models\Identity\UserProfile;
+use App\Models\Lease\Lease;
 use App\Models\Lease\LeaseApplication;
 use App\Services\Identity\GuestHunterService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\ApplicationService;
+use App\Services\Lease\EsignatureService;
 use App\Services\Platform\LegalService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\RedirectResponse;
@@ -25,6 +27,7 @@ class ApplyController extends Controller
         private readonly ApplicationMessageService $messageService,
         private readonly GuestHunterService        $guestHunterService,
         private readonly LegalService              $legalService,
+        private readonly EsignatureService         $esignatureService,
     ) {}
 
     public function show(string $listingId, Request $request): Response|RedirectResponse
@@ -154,7 +157,29 @@ class ApplyController extends Controller
                 'created_at'  => $m->created_at?->toIso8601String(),
             ]);
 
+        // When approved, surface a direct "Sign Lease" CTA if the applicant has a
+        // lease still awaiting their signature — clearer than the link in the
+        // approval message.
+        $signUrl = null;
+        $lease = Lease::on('lease')
+            ->where('application_id', $applicationId)
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')
+            ->first();
+
+        if ($lease && $lease->status === 'pending_signatures') {
+            $esigRequest = $this->esignatureService->getRequestForLease($lease->id);
+            $mySigner    = $esigRequest
+                ? $this->esignatureService->signerForUser($esigRequest->id, $userId)
+                : null;
+
+            if ($mySigner?->status !== 'signed') {
+                $signUrl = route('member.leases.sign', $lease->id);
+            }
+        }
+
         return inertia('Apply/Status', [
+            'sign_url'    => $signUrl,
             'application' => [
                 'id'               => $application->id,
                 'status'           => $application->status,

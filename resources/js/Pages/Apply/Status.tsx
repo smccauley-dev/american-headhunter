@@ -44,6 +44,7 @@ interface StatusProps {
     messages: Message[];
     listing: Listing | null;
     property: Property | null;
+    sign_url: string | null;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; description: string }> = {
@@ -128,7 +129,7 @@ function MessageBubble({ msg }: { msg: Message }) {
     );
 }
 
-export default function Status({ application, messages, listing, property }: StatusProps) {
+export default function Status({ application, messages, listing, property, sign_url }: StatusProps) {
     const status = STATUS_CONFIG[application.status] ?? { label: application.status, color: 'var(--parch-dim)', description: '' };
     const page   = usePage<{ flash: { success?: string } }>();
     const flash  = page.props.flash;
@@ -257,6 +258,26 @@ export default function Status({ application, messages, listing, property }: Sta
                             <p style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--ink-lift)', fontStyle: 'italic', marginTop: 12, paddingTop: 12, borderTop: '1px dotted var(--parch-deep)', marginBottom: 0 }}>
                                 "{application.rejection_reason}"
                             </p>
+                        )}
+
+                        {/* Sign-lease CTA — shown once a lease awaits the applicant's signature */}
+                        {sign_url && (
+                            <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px dotted var(--parch-deep)' }}>
+                                <p style={{ fontFamily: 'var(--body)', fontSize: 15, color: 'var(--ink)', margin: '0 0 14px' }}>
+                                    Your lease agreement is ready. Review and sign it to activate your access.
+                                </p>
+                                <a
+                                    href={sign_url}
+                                    className="btn-solid"
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M12 20h9" />
+                                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                                    </svg>
+                                    Sign Lease →
+                                </a>
+                            </div>
                         )}
                     </div>
 
