@@ -503,9 +503,9 @@ class PropertyFormV2
                    . "<button type=\"button\""
                    . " wire:click=\"revokePropertyManager('{$mid}')\""
                    . " wire:confirm=\"Revoke this manager&apos;s access?\""
-                   . " style=\"display:inline-flex;align-items:center;gap:0.2rem;font-size:0.75rem;"
+                   . " style=\"display:inline-flex;align-items:center;gap:0.25rem;font-size:0.875rem;"
                    . "color:#dc2626;font-weight:500;cursor:pointer;"
-                   . "background:none;border:none;padding:0;text-decoration:underline;\">"
+                   . "background:none;border:none;padding:0;\">"
                    . "{$revokeIcon}Revoke"
                    . "</button></div>";
         }
@@ -573,9 +573,8 @@ class PropertyFormV2
                        . "<button type=\"button\""
                        . " wire:click=\"removeManagerContact('{$mid}')\""
                        . " wire:confirm=\"Remove this manager from the contact list?\""
-                       . " style=\"display:inline-flex;align-items:center;gap:0.2rem;font-size:0.75rem;"
-                       . "color:#dc2626;font-weight:500;cursor:pointer;background:none;border:none;padding:0;"
-                       . "text-decoration:underline;\">"
+                       . " style=\"display:inline-flex;align-items:center;gap:0.25rem;font-size:0.875rem;"
+                       . "color:#dc2626;font-weight:500;cursor:pointer;background:none;border:none;padding:0;\">"
                        . "{$removeIcon}Remove"
                        . "</button></div>";
             } else {
