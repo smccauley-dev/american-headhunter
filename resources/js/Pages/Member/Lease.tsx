@@ -407,7 +407,7 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
                       style={{
                         position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
                         marginBottom: '10px', width: 'max-content', maxWidth: '230px',
-                        background: PAPER, border: `1px solid ${INK}`, boxShadow: '2px 3px 8px rgba(10,21,18,0.28)',
+                        background: PAPER, border: `1px solid ${INK}`, boxShadow: '4px 6px 14px rgba(10,21,18,0.45)',
                         padding: '12px 14px', textAlign: 'left', lineHeight: 'normal', zIndex: 40,
                       }}
                     >
@@ -443,18 +443,14 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
                     title={m.label ? `${m.label} · ${m.type_label}` : m.type_label}
                     style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
-                      background: isActive ? 'rgba(200,76,33,0.12)' : 'transparent',
-                      border: `1.5px solid ${isActive ? ACCENT : 'transparent'}`,
-                      borderRadius: '4px', padding: '3px 4px', cursor: 'pointer',
+                      background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
                     }}
                   >
                     <span
                       style={{
                         display: 'block', width: '14px', height: '14px', borderRadius: '50%',
                         background: m.color, border: '2px solid #fff',
-                        boxShadow: isActive
-                          ? `0 0 0 3px ${ACCENT}, 0 1px 4px rgba(0,0,0,0.45)`
-                          : '0 1px 4px rgba(0,0,0,0.45)',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.45)',
                       }}
                     />
                     {m.label && (
