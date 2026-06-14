@@ -67,6 +67,7 @@ interface Props {
   access_info: AccessInfo | null
   signers: Signer[]
   sign_url: string | null
+  signed_lease_url: string | null
   is_lessor: boolean
   documents: LeaseDocument[]
   document_tags: Record<string, string>
@@ -626,7 +627,7 @@ function FieldAccess({
   )
 }
 
-export default function Lease({ lease, property, access_info, signers, sign_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url }: Props) {
+export default function Lease({ lease, property, access_info, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -744,6 +745,17 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
                 </div>
               ))}
             </div>
+
+            {signed_lease_url && (
+              <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: `1px solid ${DIVIDER}` }}>
+                <a href={signed_lease_url} style={btnDark}>
+                  <svg style={{ width: '14px', height: '14px' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download Signed Lease
+                </a>
+              </div>
+            )}
           </Section>
 
           {/* Signing Status — shown when pending or not all signed */}

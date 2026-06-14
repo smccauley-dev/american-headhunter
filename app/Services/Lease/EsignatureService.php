@@ -48,6 +48,60 @@ class EsignatureService extends BaseService
                 ->exists();
     }
 
+    /**
+     * Document id of the fully-executed lease PDF, if one exists. Stored by the
+     * Dropbox Sign webhook on completion; in-platform signing produces no PDF.
+     */
+    public function signedLeaseDocumentId(string $leaseId): ?string
+    {
+        return EsignatureRequest::where('lease_id', $leaseId)
+            ->whereNotNull('signed_document_id')
+            ->latest('completed_at')
+            ->value('signed_document_id');
+    }
+
+    /**
+     * Stream the fully-executed lease PDF to a party of the lease. Works on
+     * leases of any status (active, expired, terminated) so a lessee can always
+     * retrieve their signed agreement.
+     */
+    public function downloadSignedLease(string $leaseId, string $requestingUserId): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $lease = Lease::where('id', $leaseId)
+            ->whereNull('deleted_at')
+            ->where(function ($q) use ($requestingUserId) {
+                $q->where('lessee_user_id', $requestingUserId)
+                  ->orWhere('lessor_user_id', $requestingUserId);
+            })
+            ->first();
+
+        abort_if($lease === null, 403, 'You are not authorized to download this document.');
+
+        $documentId = $this->signedLeaseDocumentId($leaseId);
+        abort_if($documentId === null, 404, 'No signed lease is available for this lease.');
+
+        $doc = Document::on('documents')->whereNull('deleted_at')->find($documentId);
+        abort_if($doc === null, 404, 'Document not found.');
+
+        try {
+            $this->auditService->log(
+                eventType:      'document.downloaded',
+                sourceDatabase: 'ah_documents',
+                tableName:      'documents',
+                recordId:       $documentId,
+                actionSummary:  "Signed lease downloaded by user={$requestingUserId}",
+                userId:         $requestingUserId,
+            );
+        } catch (\Throwable) {}
+
+        $disk = config('filesystems.defaults.documents', 'local');
+
+        return \Illuminate\Support\Facades\Storage::disk($disk)->download(
+            $doc->storage_key,
+            $doc->original_filename ?? 'signed_lease.pdf',
+        );
+    }
+
     // ── Writes ────────────────────────────────────────────────────────────────
 
     /**

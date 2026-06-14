@@ -98,6 +98,12 @@ class LeaseSignController extends Controller
             ->with('success', 'Signed successfully. Your lease will become active once the landowner countersigns.');
     }
 
+    /** Download the fully-executed lease PDF (any lease status, both parties). */
+    public function downloadSigned(string $lease, EsignatureService $esigService): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        return $esigService->downloadSignedLease($lease, session('auth.user_id'));
+    }
+
     private function buildLeaseProps(Lease $leaseRecord, PropertyService $propertyService): array
     {
         $property = rescue(fn () => $propertyService->find($leaseRecord->property_id), null);

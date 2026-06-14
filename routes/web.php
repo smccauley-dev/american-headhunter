@@ -136,6 +136,7 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::get('/leases/{lease}', [MemberController::class, 'show'])->name('leases.show');
     Route::get('/leases/{lease}/sign', [LeaseSignController::class, 'show'])->name('leases.sign');
     Route::post('/leases/{lease}/sign', [LeaseSignController::class, 'sign'])->name('leases.sign.submit');
+    Route::get('/leases/{lease}/signed', [LeaseSignController::class, 'downloadSigned'])->name('leases.signed.download');
     Route::post('/leases/{lease}/documents', [LeaseDocumentController::class, 'upload'])->name('leases.documents.upload')->middleware('throttle:20,1');
     Route::get('/leases/{lease}/documents/{leaseDocument}/download', [LeaseDocumentController::class, 'download'])->name('leases.documents.download');
     Route::delete('/leases/{lease}/documents/{leaseDocument}', [LeaseDocumentController::class, 'destroy'])->name('leases.documents.destroy');

@@ -86,6 +86,12 @@ class MemberController extends Controller
             ? route('member.leases.sign', $lease)
             : null;
 
+        // Fully-executed lease PDF — available to either party on any status
+        // once signing completed (Dropbox Sign stores the executed copy).
+        $signedLeaseUrl = $esigService->signedLeaseDocumentId($lease) !== null
+            ? route('member.leases.signed.download', $lease)
+            : null;
+
         $leaseDocuments = $leaseDocumentService->getForLease($lease)->map(fn ($doc) => [
             'id'               => $doc->id,
             'tag'              => $doc->tag->value,
@@ -151,8 +157,9 @@ class MemberController extends Controller
                 'rules'  => collect($property->rules ?? [])->map(fn ($r) => $r->rule_text)->values()->all(),
             ] : null,
             'access_info'    => $accessInfo,
-            'signers'        => $signers,
-            'sign_url'       => $signUrl,
+            'signers'         => $signers,
+            'sign_url'        => $signUrl,
+            'signed_lease_url' => $signedLeaseUrl,
             'is_lessor'      => $isLessor,
             'documents'      => $leaseDocuments,
             'document_tags'  => LeaseDocumentTag::options(),
