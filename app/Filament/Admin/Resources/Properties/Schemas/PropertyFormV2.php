@@ -551,7 +551,7 @@ class PropertyFormV2
         $cs   = 'font-size:0.875rem;color:#374151;padding:0.625rem 0.75rem;'
               . 'border-bottom:1px solid #f3f4f6;display:flex;align-items:center;';
 
-        $removeIcon = svg('heroicon-m-x-mark', '', ['style' => 'width:0.9rem;height:0.9rem;flex-shrink:0;'])->toHtml();
+        $removeIcon = svg('heroicon-m-trash', '', ['style' => 'width:0.9rem;height:0.9rem;flex-shrink:0;'])->toHtml();
 
         $html  = "<div style=\"display:grid;grid-template-columns:{$cols};\">";
         $html .= "<div style=\"{$hs}\">Role</div>"
@@ -575,7 +575,7 @@ class PropertyFormV2
                        . " wire:confirm=\"Remove this manager from the contact list?\""
                        . " style=\"display:inline-flex;align-items:center;gap:0.25rem;font-size:0.875rem;"
                        . "color:#dc2626;font-weight:500;cursor:pointer;background:none;border:none;padding:0;\">"
-                       . "{$removeIcon}Remove"
+                       . "{$removeIcon}Delete"
                        . "</button></div>";
             } else {
                 $html .= "<div style=\"{$cs}color:#d1d5db;\">—</div>";
