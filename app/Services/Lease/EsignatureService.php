@@ -361,6 +361,17 @@ class EsignatureService extends BaseService
             ->where('role', 'primary')
             ->update(['is_approved' => true, 'approved_at' => now()]);
 
+        // Generate and store the executed-lease PDF so both parties can download
+        // their signed agreement. Never let a PDF failure block lease activation.
+        try {
+            app(LeaseAgreementPdfService::class)->generateAndStore($request);
+        } catch (\Throwable $e) {
+            Log::error('Failed to generate signed-lease PDF', [
+                'request_id' => $request->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+
         try {
             $this->auditService->log(
                 eventType:      'lease.activated',
