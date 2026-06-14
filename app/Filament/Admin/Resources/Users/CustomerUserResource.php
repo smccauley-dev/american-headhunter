@@ -49,6 +49,24 @@ class CustomerUserResource extends Resource
         return false;
     }
 
+    // SEC-006: explicit mutation gates. Customer accounts are edited (status,
+    // profile) by user managers; deletion is not exposed here — account lifecycle
+    // is handled via status, not hard deletes.
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManageUsers();
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
     private static array $customerAccountTypes = [
         'hunter', 'landowner', 'club', 'outfitter', 'consultant', 'seller',
     ];

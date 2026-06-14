@@ -16,9 +16,9 @@ $propertyRoutes = function () {
     Route::get('/{id}', [PropertyController::class, 'show']);
 };
 
-// v1 property routes — auth + hunter:read ability required
+// v1 property routes — auth + hunter:read ability required (throttled, SEC-008)
 Route::prefix('v1/properties')
-    ->middleware(['auth:sanctum', 'abilities:hunter:read'])
+    ->middleware(['auth:sanctum', 'abilities:hunter:read', 'throttle:api'])
     ->group(function () use ($propertyRoutes) {
         $propertyRoutes();
 
@@ -33,8 +33,8 @@ Route::prefix('v1/properties')
         Route::get('/{id}/contacts', [PropertyContactController::class, 'index']);
     });
 
-// Legacy property routes — no auth, backward-compat for web app
-Route::prefix('properties')->group($propertyRoutes);
+// Legacy property routes — no auth, backward-compat for web app (per-IP throttle, SEC-008)
+Route::prefix('properties')->middleware('throttle:public-api')->group($propertyRoutes);
 
 // Auth — login, MFA challenge verification, recovery, logout
 Route::prefix('v1/auth')->group(function () {

@@ -49,6 +49,17 @@ class MfaFactorSettingResource extends Resource
         return false;
     }
 
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
+    // SEC-006: explicit edit gate — MFA factor toggles are system configuration.
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManageSystem();
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([

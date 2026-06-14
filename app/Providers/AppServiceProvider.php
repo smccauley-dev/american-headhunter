@@ -57,5 +57,17 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('mfa-recover', function (Request $request) {
             return Limit::perMinute(3)->by($request->input('challenge_token', $request->ip()));
         });
+
+        // SEC-008: read-API throttles. Unauthenticated (public/legacy) traffic is
+        // capped per-IP; authenticated traffic is capped per token/user (falling
+        // back to IP) at a higher ceiling. Counters live in the ratelimit Valkey
+        // cluster via the framework's cache-backed limiter.
+        RateLimiter::for('public-api', function (Request $request) {
+            return Limit::perMinute(60)->by($request->ip());
+        });
+
+        RateLimiter::for('api', function (Request $request) {
+            return Limit::perMinute(120)->by($request->user()?->id ?: $request->ip());
+        });
     }
 }

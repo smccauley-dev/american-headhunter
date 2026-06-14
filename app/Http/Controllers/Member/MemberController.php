@@ -63,8 +63,8 @@ class MemberController extends Controller
             try {
                 $result = $propertyService->getAccessInfo(
                     $leaseRecord->property_id,
+                    $userId,
                     config('encryption_keys.property', ''),
-                    callerHasVerifiedLease: true,
                 );
                 $accessInfo = $result ?: null;
             } catch (\Throwable) {

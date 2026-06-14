@@ -543,16 +543,148 @@ The new property contact directory (`PropertyService::getContactDirectory()`) in
 
 ---
 
+## SEC-003-P4 — Access-Info Gate Trusted a Caller Bool Instead of Verifying the Lease
+
+| Field | Detail |
+|---|---|
+| **Severity** | High |
+| **Status** | FIXED |
+| **Found** | 2026-05-25 (deferred from SEC-003) |
+| **Fixed** | 2026-06-14 |
+| **File** | `app/Services/Property/PropertyService.php`, `app/Http/Controllers/Member/MemberController.php` |
+
+**Description:**
+`getAccessInfo()` (decrypts gate codes, wifi passwords, cabin codes) gated access on a `bool $callerHasVerifiedLease` flag the caller had to pass `true`. A future caller could pass `true` without actually confirming an active lease and the service would decrypt and return the credentials. This was the Phase-4 follow-up to SEC-003.
+
+**Root Cause:**
+The verification was advisory (a flag + doc comment), not structural. The service had no way to confirm the requesting user actually held an active lease.
+
+**Fix Applied:**
+- Signature changed to `getAccessInfo(string $propertyId, string $requestingUserId, string $encryptionKey)` — the bool flag is gone.
+- The service now calls `LeaseService::userHasActiveLeaseForProperty($requestingUserId, $propertyId)` (service-layer assembly, not a cross-DB join) and throws `RuntimeException` if the user is not a party to an active lease.
+- `MemberController::show()` passes the authenticated `$userId`.
+
+**Verification:**
+- Tinker: `getAccessInfo($propertyId, <random-uuid>, $key)` → throws `RuntimeException` ("requesting user has no active lease"). ✓
+- Member lease page still renders access info for an active lessee. ✓
+
+---
+
+## SEC-006 — Per-Resource Mutation Abilities Fell Through to Filament Defaults
+
+| Field | Detail |
+|---|---|
+| **Severity** | Medium |
+| **Status** | FIXED |
+| **Found** | 2026-05-31 |
+| **Fixed** | 2026-06-14 |
+| **File** | All `app/Filament/Admin/Resources/**/*Resource.php` |
+
+**Description:**
+Resources overrode `canAccess()` and (some) `canCreate()`, but `canEdit()`, `canDelete()`, `canDeleteAny()`, `canForceDelete()`/`canForceDeleteAny()`, `canRestore()`/`canRestoreAny()` were not defined. With no model policies registered, Filament defaults those abilities to **true** for anyone who passes `canAccess()`. Two concrete consequences: (a) `PropertiesTable` exposed `ForceDeleteBulkAction` to any `property_admin`, bypassing the super_admin-only gate SEC-019 placed on the single-record force-delete; (b) `AdminUserResource` (access = `canManageSecurity`) let a `security_admin` create/edit admin users with **no `canCreate` override and no super_admin protection** — a privilege-escalation path (grant oneself `super_admin`, or edit/disable a `super_admin`).
+
+**Root Cause:**
+Authorization relied on implicit Filament defaults for every ability except access/create. No policies exist, so the defaults are permissive.
+
+**Fix Applied:**
+- Explicit mutation gates added to every resource, each consistent with its management role: PropertyResource, PropertyAmenityResource, CustomerUserResource, LegalDocumentResource, FeatureFlagResource, EmailTemplateResource, MfaFactorSettingResource, ProfileTemplateResource, LeaseApplicationResource (read-only — all mutations `false`), AdminUserResource.
+- **PropertyResource:** edit/delete/restore = `canManageProperties`; `canForceDelete`/`canForceDeleteAny` = `isSuperAdmin` (closes the bulk force-delete gap relative to SEC-019).
+- **AdminUserResource (SEC-006/D01):** `canCreate`/`canEdit` = `canManageSecurity`, but a non-super_admin may **not** edit a record holding `super_admin`, may **not** delete (delete/bulk = `isSuperAdmin`), and the role pickers exclude `super_admin` unless the actor is a super_admin (`assignableRoles()`).
+
+**Verification:**
+- `php -l` clean on all 10 resources.
+- Logic review: bulk force-delete now gated to super_admin; security_admin cannot mint or edit super_admins.
+
+---
+
+## SEC-007 — `setAccessInfo()` Had No Throttle or Audit Trail
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low |
+| **Status** | FIXED |
+| **Found** | 2026-05-25 |
+| **Fixed** | 2026-06-14 |
+| **File** | `app/Services/Property/PropertyService.php` |
+
+**Description:**
+Encrypted gate-code writes could be made in rapid succession with no rate limit and no audit record of who changed access credentials when.
+
+**Fix Applied:**
+- `RateLimiter::attempt("set-access-info:{propertyId}:{userId}", 10, …, 60)` — 10 writes/min per property per user; throws `RuntimeException` on exceed.
+- `AuditService::log('property_access_info_updated', …)` records the change with the changed **key names only** — never the gate codes / wifi passwords themselves (CLAUDE.md encryption rules).
+
+**Verification:** `php -l` clean; AuditService never throws by design.
+
+---
+
+## SEC-008 — Read API Routes Had No Rate Limiting
+
+| Field | Detail |
+|---|---|
+| **Severity** | Medium |
+| **Status** | FIXED |
+| **Found** | 2026-05-25 |
+| **Fixed** | 2026-06-14 |
+| **File** | `app/Providers/AppServiceProvider.php`, `routes/api.php` |
+
+**Description:**
+`GET /api/properties`, `/api/properties/{id}`, and the legacy unauthenticated `properties` group had no throttle, allowing unbounded scraping / abuse.
+
+**Fix Applied:**
+- Two named limiters registered: `public-api` (60/min per IP) and `api` (120/min per user/token, IP fallback).
+- Legacy unauthenticated `properties` group → `throttle:public-api`; authenticated `v1/properties` group → `throttle:api`.
+
+**Verification:** `php -l` clean; limiters registered in `AppServiceProvider::boot()`.
+
+---
+
+## SEC-010 — Readonly Grants on `_read` Connections
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low |
+| **Status** | VERIFIED |
+| **Found** | 2026-05-25 |
+| **Fixed** | 2026-06-14 |
+| **File** | `database/migrations/{property,geospatial}/*grant_readonly_permissions.php` |
+
+**Description:**
+Confirm `ah_readonly` has SELECT (and only SELECT) on every active `_read` connection.
+
+**Resolution:**
+- `property_read` and `geospatial_read` each have a `grant_readonly_permissions` migration (`GRANT USAGE` + `GRANT SELECT ON ALL TABLES` + `ALTER DEFAULT PRIVILEGES … GRANT SELECT`). Verified live: `geospatial_read` SELECT succeeds.
+- `wildlife_read` is configured in `config/database.php` but **DB 5 has no tables yet** (verified: `information_schema.tables` count = 0). Its grant migration must accompany the DB 5 build — captured as a build-time requirement. No exposure today (nothing to read).
+
+**Verification:** Tinker — `geospatial_read` SELECT OK; `wildlife` public-table count = 0.
+
+---
+
+## SEC-023 — RLS Context Not Injected for Non-HTTP Connections (Documented)
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low |
+| **Status** | FIXED (documented) |
+| **Found** | 2026-05-31 |
+| **Fixed** | 2026-06-14 |
+| **File** | `app/Http/Middleware/InjectDatabaseContext.php` |
+
+**Description:**
+`InjectDatabaseContext` does not set `app.current_user_id`/`app.user_role` for the `audit`, `analytics`/`analytics_etl`, and `research` connections. These carry no user-scoped RLS today and (for ETL) are never reached via HTTP, so this is correct — but the omission was implicit and could silently break a future RLS policy added to one of them.
+
+**Fix Applied:**
+The exclusion is now an explicit, documented contract in the middleware: a comment block lists each excluded connection with the reason, and states that any future user-scoped RLS policy on those DBs MUST be added to the injection list (or given an explicit ETL-side context step).
+
+**Verification:** Code review — the included-connection list is unchanged in behavior; the exclusion rationale is now in-code.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
 |---|---|---|---|---|
-| SEC-003-P4 | Replace `$callerHasVerifiedLease` bool flag in `getAccessInfo` with a real `LeaseService::hasActiveLease()` call so the check cannot be bypassed | High | DEFERRED | Phase 4 |
-| SEC-006 | Full per-resource `canAccess()` / `canEdit()` / `canDelete()` / `canForceDelete()` policy audit across all Filament resources. Panel-level auth (`staff`/`super_admin` only) is the current baseline; resource-level row guards are Phase 4 work. SEC-019 addressed `ForceDeleteAction` on property pages. | Medium | OPEN | Phase 4 |
-| SEC-007 | `setAccessInfo()` has no rate limiting — a staff user could overwrite gate codes in rapid succession without an audit trail throttle | Low | OPEN | Phase 4 |
-| SEC-008 | API rate limiting — `/api/properties` and `/api/properties/{id}` have no per-IP throttle applied. Laravel's `throttle:api` middleware is not yet attached to these routes | Medium | OPEN | Phase 3 close-out |
-| SEC-010 | Audit all other `_read` DB connections (wildlife_read, geospatial_read) to ensure `ah_readonly` grants exist before building those features | Low | OPEN | Per-phase as each DB is activated |
-| SEC-023 | RLS middleware (`InjectDatabaseContext`) does not inject context for `audit`, `analytics_etl`, and `research` connections. These DBs have no user-scoped RLS policies today, but if added in future phases, the middleware must be updated to include them. | Low | OPEN | Per-phase as RLS is added to those DBs |
+| _None_ | All previously tracked open/deferred items in this file were remediated on 2026-06-14. | — | — | — |
 
 ---
 
@@ -564,6 +696,7 @@ The new property contact directory (`PropertyService::getContactDirectory()`) in
 - Phase 3/4 admin UI audit (2026-05-31): Property V2 edit/view pages, amenities resource, login page settings, RLS middleware reviewed. Findings: SEC-017 through SEC-022. All fixed same session. SEC-023 deferred (no RLS on those DBs yet).
 - Last-24h feature audit (2026-06-13): reviewed the DB-managed email template system (`EmailTemplateService`, `MailSettingsService`, `EmailSettings`, version preview), the property-map feature (`PropertyMapService`, `ExifGps`, map editor, public map route), the configurable post-login redirect, and the new encrypted UserProfile contact fields. Findings: SEC-024 (EXIF GPS published by default) and SEC-025 (map route ignored property status) — both fixed same session. **No issue found** in: email template rendering (variables HTML-escaped in HTML bodies via `htmlspecialchars`; admin-only authorship; preview iframe uses `sandbox=""`), SMTP settings (password encrypted at rest via `Crypt`, never echoed to the form, change audit-logged, access gated by `canManageSystem`), or the post-login redirect (value comes from admin-controlled tenant settings, not user input).
 - Last-24h feature audit (2026-06-14): reviewed the member field-check-in + QR system (`CheckInController`, `CheckInService`), the stand-map / boundary overlay (`PropertyMapService::getBoundaryOverlay`, `MemberController`), the property contact directory (`PropertyService::getContactDirectory`, admin Contacts tab, `Api/PropertyContactController`), the opt-in manager-contact flow (`is_field_contact` migration + `PropertyManager` model + `EditPropertyV2::removeManagerContact`), and the executed-lease PDF download (`LeaseSignController`, `EsignatureService::downloadSignedLease`). Finding: SEC-042 (`manager_id` UUID disclosed to lessees) — fixed same session. **No issue found** in: check-in (`checkIn`/`checkOut` enforce `abort_unless(mayCheckIn, 403)` — lessee or approved LeaseHunter only; check-out scoped to the user's own open record), stand-map markers + access info (served only for the lessee's own `active` lease, GPS member-only per SEC-024), contact directory (gated by `userHasActiveLeaseForProperty`, returns 404 not 403 to non-lessees per SEC-024; intended landowner/manager contact details are by design), the opt-in manager flow (admin-only writes via `AdminAuth::canManageProperties`; managers no longer auto-listed to hunters), lease PDF download (`abort_if(403)` unless lessee or lessor; download audit-logged via AuditService), and the PDF/QR/check-in-log blades (all output escaped — no `{!! !!}`). **Out-of-window note:** the admin `auth:web` document download/view routes (`/admin/documents/{documentId}/download`, `/view`) do a bare `findOrFail` + `Storage::download` with no per-document ownership check. These predate this window (commit `05df4a5`) and are reachable only through the `web` (admin) guard — members authenticate via the separate `auth.session`/`RequireSessionAuth` system — so they are effectively admin-restricted, but lack defense-in-depth ownership scoping. Logged here; not assigned a SEC ID this pass.
+- Open-items remediation pass (2026-06-14): cleared the entire Open/Deferred backlog highest-to-lowest — SEC-003-P4 (High, structural access-info lease gate), SEC-006/D01 (Medium, explicit Filament mutation gates + AdminUser privilege-escalation fix), SEC-008 (Medium, read-API throttles), SEC-007/SEC-010/SEC-023/D02/SEC-037/SEC-038 (Low). All `php -l` clean; full suite 72 passed (the lone failure was Postgres connection-slot exhaustion under parallel 14-DB load, not a code defect — passes in isolation).
 - No SQL injection surfaces found — all queries use parameterized bindings or Eloquent ORM.
 - No hardcoded credentials or keys found in application code — all sourced from env/config.
 - Audit DB (DB 9) write-protection verified: `ImmutableModel` throws on update/delete; PostgreSQL RULE blocks at DB level.

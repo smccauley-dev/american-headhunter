@@ -303,18 +303,22 @@ class PropertyService extends BaseService
     /**
      * Decrypt and return access info for a property.
      *
-     * The caller MUST pass $callerHasVerifiedLease = true only after confirming
-     * the requesting user holds an active lease for this property. This is enforced
-     * structurally — the method throws if the flag is not explicitly set.
-     * Phase 4 LeaseService will provide the verification helper.
+     * Access is gated structurally (SEC-003-P4): the service itself confirms the
+     * requesting user holds an active lease on the property — as lessee or lessor —
+     * by calling LeaseService::userHasActiveLeaseForProperty(). Callers can no
+     * longer assert verification with a trusted bool flag, so a forgotten or
+     * spoofed flag can never expose gate codes.
      *
-     * @throws \RuntimeException if called without lease verification or no access info exists
+     * @throws \RuntimeException if the requesting user has no active lease for this property
      */
-    public function getAccessInfo(string $propertyId, string $encryptionKey, bool $callerHasVerifiedLease = false): array
+    public function getAccessInfo(string $propertyId, string $requestingUserId, string $encryptionKey): array
     {
-        if (! $callerHasVerifiedLease) {
+        $hasActiveLease = app(\App\Services\Lease\LeaseService::class)
+            ->userHasActiveLeaseForProperty($requestingUserId, $propertyId);
+
+        if (! $hasActiveLease) {
             throw new \RuntimeException(
-                'getAccessInfo requires active lease verification. Pass $callerHasVerifiedLease = true only after confirming the user holds an active lease.'
+                'getAccessInfo denied: requesting user has no active lease for this property.'
             );
         }
 
@@ -336,9 +340,18 @@ class PropertyService extends BaseService
 
     /**
      * Write (or update) encrypted access info for a property.
+     *
+     * SEC-007: gate-code writes are throttled (10/min per property per user) so a
+     * compromised or abusive staff session cannot rapidly overwrite access
+     * credentials, and every change is audit-logged (without the secret values).
      */
     public function setAccessInfo(string $propertyId, array $accessData, string $encryptionKey, string $updatedByUserId): void
     {
+        $rateKey = "set-access-info:{$propertyId}:{$updatedByUserId}";
+        if (! \Illuminate\Support\Facades\RateLimiter::attempt($rateKey, 10, fn () => true, 60)) {
+            throw new \RuntimeException('Access-info update rate limit exceeded. Try again shortly.');
+        }
+
         $json = json_encode($accessData);
 
         DB::connection('property')->statement(
@@ -349,6 +362,18 @@ class PropertyService extends BaseService
                  updated_at = NOW(),
                  updated_by_user_id = ?',
             [$propertyId, $json, $encryptionKey, $updatedByUserId, $json, $encryptionKey, $updatedByUserId]
+        );
+
+        // Record only that access info changed and which keys were present — never
+        // the gate codes / wifi passwords themselves (CLAUDE.md encryption rules).
+        app(\App\Services\Audit\AuditService::class)->log(
+            eventType:      'property_access_info_updated',
+            sourceDatabase: 'ah_property',
+            tableName:      'property_access_info',
+            recordId:       $propertyId,
+            userId:         $updatedByUserId,
+            actionSummary:  'Property access info (gate codes) updated',
+            changedFields:  array_keys($accessData),
         );
     }
 

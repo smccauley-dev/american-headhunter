@@ -23,6 +23,18 @@ class InjectDatabaseContext
         $userId   = $user?->id ?? '';
         $userRole = $user?->roles->first()?->name ?? '';
 
+        // RLS context is injected only for connections that carry (or may carry)
+        // user-scoped row-level-security policies reachable from an HTTP request.
+        //
+        // SEC-023/D02 — the following connections are INTENTIONALLY excluded:
+        //   - audit (DB 9):        append-only, immutable; no user-scoped RLS.
+        //   - analytics (DB 8):    read-only reporting via readonly_user; no RLS.
+        //   - analytics_etl (DB 8) and research (DB 14): touched only by ETL job
+        //     classes, never through the HTTP layer, so no request-time context
+        //     applies.
+        // If a user-scoped RLS policy is ever added to one of these databases, it
+        // MUST be added to the list below (and ETL writers given an explicit
+        // context-setting step), or its policies will silently see a NULL user.
         $connections = [
             'identity', 'property', 'property_read',
             'lease', 'billing', 'wildlife', 'wildlife_read',

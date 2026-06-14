@@ -49,14 +49,62 @@ class AdminUserResource extends Resource
         return AdminAuth::canManageSecurity();
     }
 
+    public static function canCreate(): bool
+    {
+        return AdminAuth::canManageSecurity();
+    }
+
+    // SEC-006/D01: a security_admin may manage admin users but must not be able to
+    // edit or remove super_admin accounts — that is a privilege-escalation path
+    // (e.g. resetting a super_admin's password or stripping the role). Only a
+    // super_admin may mutate a record that holds the super_admin role. Granting
+    // the super_admin role itself is blocked in the form (role options below).
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        if (! AdminAuth::canManageSecurity()) {
+            return false;
+        }
+
+        return AdminAuth::isSuperAdmin() || ! static::recordHasSuperAdmin($record);
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::isSuperAdmin();
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return AdminAuth::isSuperAdmin();
+    }
+
+    private static function recordHasSuperAdmin(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return method_exists($record, 'hasAnyRole')
+            ? $record->hasAnyRole('super_admin')
+            : $record->roles()->where('name', 'super_admin')->exists();
+    }
+
     private static array $adminRoles = [
         'super_admin', 'global_admin', 'property_admin',
         'security_admin', 'article_admin', 'staff',
     ];
 
+    /** Roles a non-super_admin may assign — super_admin is excluded to prevent escalation (SEC-006/D01). */
+    private static function assignableRoles(): array
+    {
+        $roles = static::$adminRoles;
+
+        if (! AdminAuth::isSuperAdmin()) {
+            $roles = array_values(array_diff($roles, ['super_admin']));
+        }
+
+        return $roles;
+    }
+
     public static function form(Schema $schema): Schema
     {
-        $adminRoleOptions = Role::whereIn('name', static::$adminRoles)
+        $adminRoleOptions = Role::whereIn('name', static::assignableRoles())
             ->orderBy('display_name')
             ->pluck('display_name', 'id')
             ->toArray();
@@ -102,7 +150,7 @@ class AdminUserResource extends Resource
                         ->relationship(
                             'roles',
                             'display_name',
-                            fn ($query) => $query->whereIn('name', static::$adminRoles)->orderBy('display_name')
+                            fn ($query) => $query->whereIn('name', static::assignableRoles())->orderBy('display_name')
                         )
                         ->columns(2)
                         ->columnSpanFull()

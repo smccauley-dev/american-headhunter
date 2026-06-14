@@ -61,6 +61,44 @@ class PropertyResource extends Resource
         return AdminAuth::canManageProperties();
     }
 
+    // SEC-006: explicit mutation gates — edit/delete/restore require property
+    // management; force-delete (permanent) is super_admin only, matching the
+    // single-record ForceDeleteAction gate (SEC-019) so the bulk path can't bypass it.
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManageProperties();
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManageProperties();
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return AdminAuth::canManageProperties();
+    }
+
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManageProperties();
+    }
+
+    public static function canRestoreAny(): bool
+    {
+        return AdminAuth::canManageProperties();
+    }
+
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::isSuperAdmin();
+    }
+
+    public static function canForceDeleteAny(): bool
+    {
+        return AdminAuth::isSuperAdmin();
+    }
+
     public static function getGloballySearchableAttributes(): array
     {
         return ['title', 'slug', 'state_code', 'county'];

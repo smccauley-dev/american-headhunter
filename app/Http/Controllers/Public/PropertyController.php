@@ -14,6 +14,26 @@ class PropertyController extends Controller
 
     public function index(Request $request): Response
     {
+        // SEC-038: type-validate filter inputs. SQL injection is already prevented
+        // by parameterized queries — this rejects malformed/unexpected values
+        // (non-numeric prices, bad state codes, unknown listing types) up front.
+        // Empty-string filters (cleared UI inputs) are treated as absent.
+        $request->merge(array_map(
+            fn ($v) => $v === '' ? null : $v,
+            $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price'])
+        ));
+
+        $request->validate([
+            'state_code'   => ['nullable', 'string', 'size:2'],
+            'county'       => ['nullable', 'string', 'max:100'],
+            'listing_type' => ['nullable', 'in:annual_lease,seasonal_lease,day_hunt,auction'],
+            'min_price'    => ['nullable', 'numeric', 'min:0'],
+            'max_price'    => ['nullable', 'numeric', 'min:0'],
+            'species'      => ['nullable', 'array'],
+            'species.*'    => ['string', 'max:40'],
+            'page'         => ['nullable', 'integer', 'min:1'],
+        ]);
+
         $filters = $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price']);
 
         if ($request->has('species')) {

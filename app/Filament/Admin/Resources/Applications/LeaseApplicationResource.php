@@ -46,6 +46,22 @@ class LeaseApplicationResource extends Resource
         return false; // Applications come through the customer portal only
     }
 
+    // SEC-006: read-only oversight resource — view pages only, no admin mutation.
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
     public static function table(Table $table): Table
     {
         return $table

@@ -8,17 +8,17 @@ Last updated: 2026-06-10 (audit of Phase 3 MFA/auth API — all new code from hu
 
 ## Open Issues
 
-### SEC-037 — `RequireSessionAuth` Does Not Verify Account Is Still Active (LOW)
-**Area:** `app/Http/Middleware/RequireSessionAuth.php`
-**Risk:** The middleware only checks `session('auth.user_id')` is non-null. A user whose account has been suspended or deleted retains full access until their session token expires (default Laravel session TTL). If an admin bans a user, they remain on the platform until natural session expiry.
-**Fix needed:** After confirming the session value exists, do a lightweight DB check: `User::on('identity')->where('id', $userId)->where('status', 'active')->exists()`. Cache the result in the session for ~60 seconds to avoid per-request DB hits.
-**Status:** Open — no blocking urgency; acceptable for current scale. Add during auth hardening pass.
+_No open issues — SEC-037 and SEC-038 were fixed 2026-06-14 (see below)._
 
-### SEC-038 — `PropertyController::index()` Filter Inputs Not Type-Validated (LOW)
+### SEC-037 — `RequireSessionAuth` Does Not Verify Account Is Still Active (LOW) — Fixed 2026-06-14
+**Area:** `app/Http/Middleware/RequireSessionAuth.php`
+**Risk:** The middleware only checked `session('auth.user_id')` is non-null. A suspended or deleted user retained access until natural session expiry.
+**Fix:** After confirming the session value, the middleware now re-checks `User::on('identity')->whereKey($userId)->where('status','active')->exists()` at most once per 60s (cached in-session via `auth.active_checked_at`). On a non-active account it forgets the auth session keys and redirects to login.
+
+### SEC-038 — `PropertyController::index()` Filter Inputs Not Type-Validated (LOW) — Fixed 2026-06-14
 **Area:** `app/Http/Controllers/Public/PropertyController.php` — `index()`
-**Risk:** `min_price`, `max_price` accept any string and are passed directly to parameterized DB queries. Non-numeric values produce no error and return 0/unexpected results. `state_code` has no length or format check; `listing_type` is not whitelisted. SQL injection is fully prevented by parameterized queries — this is a type-safety / unexpected-behavior gap only.
-**Fix needed:** Add a `Request::validate()` call: `state_code` max 2 chars, `listing_type` in known set, `min_price`/`max_price` nullable numeric.
-**Status:** Open — low impact, no injection risk. Fix during next controller cleanup pass.
+**Risk:** `min_price`/`max_price` accepted any string; `state_code` had no format check; `listing_type` was not whitelisted. No injection (parameterized queries) — type-safety gap only.
+**Fix:** Added `$request->validate()` — `state_code` size 2, `county` max 100, `listing_type` in `annual_lease,seasonal_lease,day_hunt,auction`, `min_price`/`max_price` nullable numeric ≥ 0, `species` nullable array, `page` integer ≥ 1. Empty-string filters are normalized to null first so cleared UI inputs don't fail validation.
 
 ---
 
@@ -225,15 +225,15 @@ See SEC-001 above.
 
 ## Deferred Issues
 
-### SEC-D01 — Per-Resource `canEdit()`/`canDelete()` Policy Audit (MEDIUM)
+### SEC-D01 — Per-Resource `canEdit()`/`canDelete()` Policy Audit (MEDIUM) — Fixed 2026-06-14
 **Area:** All Filament Resources  
-**Risk:** `canAccess()` gates page-level access, but individual record actions (`EditAction`, `DeleteAction`) are not consistently gated with per-record authorization checks beyond what `canAccess()` provides. A security_admin could theoretically edit any admin user record, not just those below their privilege level.  
-**Status:** Deferred to Phase 4 (full policy layer).
+**Risk:** Per-record mutation abilities fell through to Filament's permissive defaults; a security_admin could edit any admin user, including granting/holding `super_admin`.  
+**Fix:** Tracked and resolved as **SEC-006** in the canonical `security.md`. Explicit `canEdit`/`canDelete`/`canDeleteAny`/`canForceDelete*`/`canRestore*` gates added to every resource; `AdminUserResource` now blocks non-super_admins from editing/deleting super_admin records and from assigning the super_admin role.
 
-### SEC-D02 — RLS Context Not Injected for ETL/Research Connections (LOW)
+### SEC-D02 — RLS Context Not Injected for ETL/Research Connections (LOW) — Fixed 2026-06-14 (documented)
 **Area:** `InjectDatabaseContext` middleware  
-**Risk:** The RLS middleware only injects `app.user_id` and `app.user_role` for the primary application connections. The `audit`, `analytics_etl`, and `research` connections are not injected. Since ETL jobs connect directly (not through HTTP middleware), this is expected but undocumented.  
-**Status:** Deferred — acceptable since ETL connections are not exposed through the HTTP layer.
+**Risk:** `audit`, `analytics_etl`, and `research` connections receive no RLS context; correct today but the omission was undocumented.  
+**Fix:** Tracked and resolved as **SEC-023** in the canonical `security.md`. The exclusions are now an explicit, documented contract in the middleware with the requirement that any future user-scoped RLS policy on those DBs be added to the injection list.
 
 ---
 

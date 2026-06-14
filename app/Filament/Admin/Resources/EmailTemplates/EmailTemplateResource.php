@@ -49,6 +49,22 @@ class EmailTemplateResource extends Resource
         return AdminAuth::canManagePlatformContent();
     }
 
+    // SEC-006: explicit mutation gates.
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManagePlatformContent();
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManagePlatformContent();
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return AdminAuth::canManagePlatformContent();
+    }
+
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->whereNull('deleted_at');

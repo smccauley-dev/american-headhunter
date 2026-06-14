@@ -49,6 +49,22 @@ class ProfileTemplateResource extends Resource
         return false;
     }
 
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
+    // SEC-006: explicit edit gate — profile-template theming is platform content.
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManagePlatformContent();
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([

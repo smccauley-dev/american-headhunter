@@ -41,6 +41,27 @@ class PropertyAmenityResource extends Resource
         return AdminAuth::canManageProperties();
     }
 
+    // SEC-006: explicit mutation gates — all amenity writes require property management.
+    public static function canCreate(): bool
+    {
+        return AdminAuth::canManageProperties();
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManageProperties();
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManageProperties();
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return AdminAuth::canManageProperties();
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([

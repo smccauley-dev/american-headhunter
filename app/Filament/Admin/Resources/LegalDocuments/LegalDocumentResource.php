@@ -56,6 +56,17 @@ class LegalDocumentResource extends Resource
         return AdminAuth::canManageSystem();
     }
 
+    // SEC-006: explicit mutation gates.
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return AdminAuth::canManageSystem();
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return AdminAuth::canManageSystem();
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
