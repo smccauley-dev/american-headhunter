@@ -664,7 +664,7 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
           </div>
         </div>
 
-        <div style={{ maxWidth: '1160px', margin: '0 auto', padding: '40px 24px 80px' }}>
+        <div style={{ maxWidth: '1160px', margin: '0 auto', padding: '32px 24px 80px' }}>
 
           {/* Header — dark field-record plate */}
           <div style={{ position: 'relative', background: INK, boxShadow: `6px 6px 0 ${BRASS}`, marginBottom: '24px' }}>
