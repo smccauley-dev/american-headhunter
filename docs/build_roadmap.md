@@ -421,7 +421,7 @@ The goal: the full lease pipeline — application, negotiation, approval, e-sign
 - [x] `LeaseDetailDTO` — cross-DB assembly DTO
 - [x] All lease models: `Lease`, `LeaseApplication`, `LeaseApplicationHunter`, `LeaseApplicationMessage`, `LeaseApplicationReviewHistory`, `LeaseHunter`, `LeaseRenewal`, `LeaseNote`, `Club`, `ClubMember`, `ClubLease`, `CheckIn`, `SignatureEvent`, `EsignatureRequest`
 - [x] `App\Services\Lease\EsignatureService` — **in-platform signing** (not Dropbox Sign); creates `EsignatureRequest` + `EsignatureSigner` records in DB 11; records permanent `SignatureEvent` events in DB 3; activates lease on final signature via `activateIfComplete()`; Dropbox Sign path added in Phase 4.5.5 for custom contracts
-- [ ] `App\Services\Lease\CheckInService` — GPS + QR check-in/out validation, overdue detection — **deferred, build in 4.6**
+- [x] `App\Services\Lease\CheckInService` — QR check-in/out + advisory GPS validation (built in 4.6); overdue detection deferred to the hunt-party safety phase
 - [ ] `App\Services\Documents\QrCodeService` — standalone QR service; QR code logic currently in DocumentService — **evaluate whether dedicated service is needed**
 
 ### 4.4 Lease Application Flow (Customer Portal `/apply`) ✅ (2026-06-07)
@@ -528,12 +528,12 @@ The goal: landowners on **Ranch or Estate** tier can attach a custom PDF contrac
 
 ### 4.6 Member Portal — Lease Dashboard (`/member`)
 
-- [ ] `GET /member` — member portal home; active leases, expiry countdown, payment status, recent activity
-- [ ] `GET /member/leases/{id}` — individual lease view; documents, rules, access info (gate code decrypt on authorized lessee only)
-- [ ] `POST /api/checkin` — QR + GPS check-in; validates active lessee status via `LeaseService`
-- [ ] `GET /member/leases/{id}/stands` — Mapbox stand map for the property (stands from DB 2, boundaries from DB 13)
-- [ ] QR check-in page — `/checkin/{property_qr_code}` — works without login; prompts login if not authenticated
-- [ ] Commit: "Member portal lease dashboard"
+- [x] `GET /member` — member portal home; active leases, expiry countdown, checked-in banner
+- [x] `GET /member/leases/{id}` — individual lease view; documents, rules, access info (gate code decrypt on authorized lessee only), Field Access card (check-in, gate QR, stand-map link, owner email-QR)
+- [x] Check-in — `POST /member/checkin` + `/member/checkout`; advisory GPS, validates lessee/approved-hunter on active lease via `CheckInService`
+- [x] `GET /member/leases/{id}/stands` — Mapbox stand map (boundary + stands from DB 13, member-only GPS per SEC-024)
+- [x] QR check-in page — `/checkin/{token}` — works without login; prompts login if not authenticated; per-property gate QR (get-or-create at lease activation), served as PNG and emailable (member owner + admin Filament)
+- [x] Commit: "Member portal check-in system + stand map (Phase 4.6)"
 
 ### 4.7 Lease PDF and QR Code Generation Jobs
 
@@ -548,9 +548,9 @@ The goal: landowners on **Ranch or Estate** tier can attach a custom PDF contrac
 - [x] Admin can review the application, approve it, and trigger in-platform e-signature
 - [x] On final in-platform signature, lease activates automatically
 - [ ] Ranch+ landowner can use a custom PDF contract signed via Dropbox Sign (Phase 4.5.5)
-- [ ] Member portal shows the active lease with lease details and gate code
-- [ ] Gate code is visible in member portal only to the active lessee (encrypted, decrypted by service)
-- [ ] QR check-in works and logs entry to DB 3 `check_ins`
+- [x] Member portal shows the active lease with lease details and gate code
+- [x] Gate code is visible in member portal only to the active lessee (encrypted, decrypted by service)
+- [x] QR check-in works and logs entry to DB 3 `check_ins`
 - [ ] All events in DB 9 audit log
 - [ ] **MILESTONE: Full lease lifecycle functional end-to-end**
 
