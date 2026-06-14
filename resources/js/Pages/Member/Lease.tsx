@@ -353,7 +353,7 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
     >
       {/* Top banner — identical to the member-portal topbar on the lease page */}
       <div style={{ flexShrink: 0, background: INK, borderBottom: `1px solid ${BRASS}` }}>
-        <div style={{ maxWidth: '1100px', width: '100%', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ maxWidth: '1160px', width: '100%', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <div style={{ width: '42px', height: '42px', border: `1px solid ${TAN}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <span style={{ fontFamily: 'var(--display)', fontSize: '15px', fontWeight: 500, color: '#F4ECDC', letterSpacing: '.05em' }}>AH</span>
@@ -379,7 +379,7 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
 
       {/* Scrollable page content */}
       <div style={{ flex: 1, overflow: 'auto' }}>
-        <div style={{ maxWidth: '1100px', width: '100%', margin: '0 auto', padding: '32px 24px 56px' }}>
+        <div style={{ maxWidth: '1160px', width: '100%', margin: '0 auto', padding: '32px 24px 56px' }}>
           <div style={{ marginBottom: '18px' }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, marginBottom: '4px' }}>
               Stand Map
@@ -636,7 +636,7 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
 
         {/* Topbar */}
         <div style={{ background: INK, borderBottom: `1px solid ${BRASS}` }}>
-          <div style={{ maxWidth: '820px', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ maxWidth: '1160px', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
               <div style={{ width: '42px', height: '42px', border: `1px solid ${TAN}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span style={{ fontFamily: 'var(--display)', fontSize: '15px', fontWeight: 500, color: '#F4ECDC', letterSpacing: '.05em' }}>AH</span>
@@ -656,7 +656,7 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
           </div>
         </div>
 
-        <div style={{ maxWidth: '820px', margin: '0 auto', padding: '40px 24px 80px' }}>
+        <div style={{ maxWidth: '1160px', margin: '0 auto', padding: '40px 24px 80px' }}>
 
           {/* Header — dark field-record plate */}
           <div style={{ position: 'relative', background: INK, boxShadow: `6px 6px 0 ${BRASS}`, marginBottom: '24px' }}>
