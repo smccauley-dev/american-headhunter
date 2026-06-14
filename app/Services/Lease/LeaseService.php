@@ -179,6 +179,11 @@ class LeaseService extends BaseService
         $lease = Lease::findOrFail($leaseId);
         $lease->update(['status' => 'active']);
         $this->invalidate("lease_detail:{$leaseId}");
+
+        // Lease is now executed — ensure the property has a check-in QR (used at
+        // the gate). Never let QR setup break activation.
+        rescue(fn () => app(\App\Services\Documents\DocumentService::class)
+            ->getOrCreateCheckInQrForProperty($lease->property_id));
     }
 
     /**

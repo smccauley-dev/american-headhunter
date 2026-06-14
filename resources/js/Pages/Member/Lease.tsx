@@ -1,4 +1,4 @@
-import { Head, useForm, router } from '@inertiajs/react'
+import { Head, useForm, router, usePage } from '@inertiajs/react'
 import { useState } from 'react'
 
 interface Signer {
@@ -52,6 +52,14 @@ interface Props {
   documents: LeaseDocument[]
   document_tags: Record<string, string>
   upload_url: string
+  check_in: {
+    open: { checked_in_at: string } | null
+    check_in_url: string
+    check_out_url: string
+  } | null
+  qr: { png_url: string } | null
+  stands_url: string | null
+  email_qr_url: string | null
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -301,7 +309,121 @@ function UploadDocumentForm({ uploadUrl, tags }: { uploadUrl: string; tags: Reco
   )
 }
 
-export default function Lease({ lease, property, access_info, signers, sign_url, is_lessor, documents, document_tags, upload_url }: Props) {
+function FieldAccess({
+  leaseId, checkIn, qr, standsUrl, emailQrUrl,
+}: {
+  leaseId: string
+  checkIn: NonNullable<Props['check_in']>
+  qr: Props['qr']
+  standsUrl: string | null
+  emailQrUrl: string | null
+}) {
+  const [busy, setBusy] = useState(false)
+  const [locating, setLocating] = useState(false)
+  const [showQr, setShowQr] = useState(false)
+  const isOpen = checkIn.open !== null
+
+  function withPosition(cb: (coords: { lat: number; lng: number } | null) => void) {
+    if (!navigator.geolocation) { cb(null); return }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      pos => { setLocating(false); cb({ lat: pos.coords.latitude, lng: pos.coords.longitude }) },
+      () => { setLocating(false); cb(null) },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
+    )
+  }
+
+  function checkInNow() {
+    setBusy(true)
+    withPosition(coords => {
+      router.post(checkIn.check_in_url, { lease_id: leaseId, lat: coords?.lat ?? null, lng: coords?.lng ?? null },
+        { onFinish: () => setBusy(false) })
+    })
+  }
+
+  function checkOutNow() {
+    setBusy(true)
+    router.post(checkIn.check_out_url, { lease_id: leaseId }, { onFinish: () => setBusy(false) })
+  }
+
+  function emailQr() {
+    if (!emailQrUrl) return
+    setBusy(true)
+    router.post(emailQrUrl, {}, { onFinish: () => setBusy(false) })
+  }
+
+  return (
+    <Section title="Field Access">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+        <div>
+          <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#888', marginBottom: '4px' }}>
+            Check-In Status
+          </div>
+          <div style={{ fontSize: '15px', fontWeight: 700, color: isOpen ? '#15803d' : '#0A1512' }}>
+            {isOpen ? 'Checked In' : 'Not Checked In'}
+          </div>
+        </div>
+        {!isOpen ? (
+          <button
+            onClick={checkInNow}
+            disabled={busy || locating}
+            style={{ padding: '10px 18px', background: '#C84C21', color: '#fff', border: 'none', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', cursor: busy || locating ? 'not-allowed' : 'pointer', opacity: busy || locating ? 0.7 : 1 }}
+          >
+            {locating ? 'Locating…' : busy ? 'Checking In…' : 'Check In'}
+          </button>
+        ) : (
+          <button
+            onClick={checkOutNow}
+            disabled={busy}
+            style={{ padding: '10px 18px', background: '#0A1512', color: '#C84C21', border: '1px solid #1a2e28', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}
+          >
+            {busy ? 'Checking Out…' : 'Check Out'}
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px' }}>
+        {standsUrl && (
+          <a
+            href={standsUrl}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: '#f5f3ef', border: '1px solid #e5e0d8', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: '#374151', textDecoration: 'none', letterSpacing: '.06em', textTransform: 'uppercase' }}
+          >
+            View Stand Map
+          </a>
+        )}
+        {qr && (
+          <button
+            onClick={() => setShowQr(v => !v)}
+            style={{ padding: '8px 14px', background: '#f5f3ef', border: '1px solid #e5e0d8', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: '#374151', cursor: 'pointer', letterSpacing: '.06em', textTransform: 'uppercase' }}
+          >
+            {showQr ? 'Hide Gate QR' : 'Show Gate QR'}
+          </button>
+        )}
+        {emailQrUrl && (
+          <button
+            onClick={emailQr}
+            disabled={busy}
+            style={{ padding: '8px 14px', background: '#fff', border: '1px solid #d4c9b0', borderRadius: '3px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: '#0A1512', cursor: busy ? 'not-allowed' : 'pointer', letterSpacing: '.06em', textTransform: 'uppercase' }}
+          >
+            Email QR to Hunter
+          </button>
+        )}
+      </div>
+
+      {qr && showQr && (
+        <div style={{ marginTop: '16px', textAlign: 'center', background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', padding: '20px' }}>
+          <img src={qr.png_url} alt="Property check-in QR code" width={200} height={200} style={{ display: 'inline-block' }} />
+          <div style={{ fontSize: '12px', color: '#6b5e50', marginTop: '10px', lineHeight: 1.5 }}>
+            Scan this at the gate to check in. Post it at the entrance or save it to your phone.
+          </div>
+        </div>
+      )}
+    </Section>
+  )
+}
+
+export default function Lease({ lease, property, access_info, signers, sign_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stands_url, email_qr_url }: Props) {
+  const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? '#6b7280'
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
   const allSigned   = signers.every(s => s.status === 'signed')
@@ -359,6 +481,29 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
               {statusLabel}
             </span>
           </div>
+
+          {/* Flash */}
+          {flash?.success && (
+            <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '4px', padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#15803d' }}>
+              {flash.success}
+            </div>
+          )}
+          {flash?.error && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '4px', padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#b91c1c' }}>
+              {flash.error}
+            </div>
+          )}
+
+          {/* Field Access — check-in, stand map, gate QR (active leases only) */}
+          {check_in && (
+            <FieldAccess
+              leaseId={lease.id}
+              checkIn={check_in}
+              qr={qr}
+              standsUrl={stands_url}
+              emailQrUrl={email_qr_url}
+            />
+          )}
 
           {/* Sign CTA — only when pending and user hasn't signed */}
           {sign_url && (

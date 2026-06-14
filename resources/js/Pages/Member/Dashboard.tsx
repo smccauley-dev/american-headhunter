@@ -21,6 +21,7 @@ interface LeaseItem {
 interface Props {
   name: string
   leases: LeaseItem[]
+  open_check_in: { lease_id: string; checked_in_at: string } | null
 }
 
 const QUICK_LINKS = [
@@ -69,13 +70,22 @@ const QUICK_LINKS = [
   },
 ]
 
-export default function Dashboard({ name, leases }: Props) {
+export default function Dashboard({ name, leases, open_check_in }: Props) {
   function handleSignOut() {
     router.post('/logout')
   }
 
   const pendingLeases = leases.filter(l => l.status === 'pending_signatures')
   const activeCount   = leases.filter(l => l.status === 'active').length
+
+  let checkedInSince = ''
+  if (open_check_in) {
+    try {
+      checkedInSince = new Date(open_check_in.checked_in_at).toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      })
+    } catch { checkedInSince = '' }
+  }
 
   return (
     <>
@@ -115,6 +125,26 @@ export default function Dashboard({ name, leases }: Props) {
               {name}
             </h1>
           </div>
+
+          {/* Currently checked in — field safety reminder */}
+          {open_check_in && (
+            <a
+              href={`/member/leases/${open_check_in.lease_id}`}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', textDecoration: 'none', marginBottom: '28px', border: '1px solid rgba(21,128,61,0.35)', background: 'rgba(21,128,61,0.07)', padding: '16px 20px' }}
+            >
+              <div>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#15803d', marginBottom: '4px' }}>
+                  Checked In
+                </div>
+                <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '16px', color: '#0A1512' }}>
+                  You're in the field{checkedInSince ? ` since ${checkedInSince}` : ''}. Remember to check out when you leave.
+                </div>
+              </div>
+              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#15803d', whiteSpace: 'nowrap', marginLeft: '16px' }}>
+                Check Out →
+              </span>
+            </a>
+          )}
 
           {/* Action required — pending signatures */}
           {pendingLeases.length > 0 && (

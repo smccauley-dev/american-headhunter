@@ -282,4 +282,28 @@ class DocumentService extends BaseService
 
         return $qrCode;
     }
+
+    /**
+     * The single check-in QR for a property — one physical gate code reused by
+     * every lease on that property. Created lazily when a lease is activated.
+     */
+    public function getOrCreateCheckInQrForProperty(string $propertyId): QrCode
+    {
+        $existing = QrCode::where('code_type', 'check_in')
+            ->where('target_type', 'property')
+            ->where('target_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->first();
+
+        return $existing ?? $this->createQrCode('check_in', $propertyId, 'property');
+    }
+
+    public function getCheckInQrForProperty(string $propertyId): ?QrCode
+    {
+        return QrCode::where('code_type', 'check_in')
+            ->where('target_type', 'property')
+            ->where('target_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->first();
+    }
 }

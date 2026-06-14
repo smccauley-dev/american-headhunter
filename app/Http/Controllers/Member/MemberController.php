@@ -6,6 +6,8 @@ use App\Enums\LeaseDocumentTag;
 use App\Http\Controllers\Controller;
 use App\Models\Identity\User;
 use App\Models\Lease\Lease;
+use App\Services\Documents\DocumentService;
+use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Lease\LeaseDocumentService;
 use App\Services\Lease\LeaseService;
@@ -15,19 +17,25 @@ use Inertia\Response;
 
 class MemberController extends Controller
 {
-    public function dashboard(LeaseService $leaseService): Response
+    public function dashboard(LeaseService $leaseService, CheckInService $checkInService): Response
     {
         $userId  = session('auth.user_id');
         $profile = User::find($userId)?->profile;
         $name    = $profile?->first_name ?: ($profile?->display_name ?: 'Member');
 
+        $open = $checkInService->getOpenForUser($userId);
+
         return Inertia::render('Member/Dashboard', [
             'name'   => $name,
             'leases' => $leaseService->getLeaseSummariesForLessee($userId),
+            'open_check_in' => $open ? [
+                'lease_id'      => $open->lease_id,
+                'checked_in_at' => $open->checked_in_at?->toIso8601String(),
+            ] : null,
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService): Response
     {
         $userId = session('auth.user_id');
 
@@ -89,6 +97,25 @@ class MemberController extends Controller
             'delete_url'       => route('member.leases.documents.destroy', [$lease, $doc->id]),
         ])->values()->all();
 
+        // Check-in + gate QR + stand map — active leases only. The QR is per
+        // property (one gate code reused across leases); it's created at lease
+        // activation, but get-or-create here covers leases activated earlier.
+        $checkIn = null;
+        $qr      = null;
+        if ($leaseRecord->status === 'active') {
+            $open = $checkInService->getOpenForUserLease($lease, $userId);
+            $checkIn = [
+                'open'          => $open ? ['checked_in_at' => $open->checked_in_at?->toIso8601String()] : null,
+                'check_in_url'  => route('member.checkin.store'),
+                'check_out_url' => route('member.checkin.destroy'),
+            ];
+
+            $qrCode = rescue(fn () => $documentService->getOrCreateCheckInQrForProperty($leaseRecord->property_id), null);
+            if ($qrCode) {
+                $qr = ['png_url' => route('checkin.qr.png', $qrCode->token)];
+            }
+        }
+
         return Inertia::render('Member/Lease', [
             'lease' => [
                 'id'          => $leaseRecord->id,
@@ -98,6 +125,10 @@ class MemberController extends Controller
                 'total_price' => number_format((float) $leaseRecord->total_price, 2),
                 'auto_renew'  => $leaseRecord->auto_renew,
             ],
+            'check_in'     => $checkIn,
+            'qr'           => $qr,
+            'stands_url'   => $leaseRecord->status === 'active' ? route('member.leases.stands', $lease) : null,
+            'email_qr_url' => ($isLessor && $leaseRecord->status === 'active') ? route('member.leases.email-qr', $lease) : null,
             'property'    => $property ? [
                 'id'     => $property->id,
                 'title'  => $property->title,

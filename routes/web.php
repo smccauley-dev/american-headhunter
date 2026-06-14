@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\PrintApplicationController;
 use App\Http\Controllers\Apply\ApplyController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\Member\CheckInController;
 use App\Http\Controllers\Member\LeaseDocumentController;
 use App\Http\Controllers\Member\LeaseSignController;
 use App\Http\Controllers\Member\MemberController;
@@ -19,6 +20,10 @@ Route::get('/properties', [PropertyController::class, 'index'])->name('property.
 Route::get('/properties/{slug}', [PropertyController::class, 'show'])->name('property.show');
 
 Route::get('/hunters/{username}', [HunterPublicProfileController::class, 'show'])->name('hunter.public');
+
+// Gate check-in QR — public landing (prompts login) and the rendered QR image.
+Route::get('/checkin/{token}', [CheckInController::class, 'scan'])->name('checkin.scan');
+Route::get('/qr/checkin/{token}.png', [CheckInController::class, 'png'])->name('checkin.qr.png');
 
 // Public API — rate-limited, no auth required
 Route::prefix('api')->name('api.')->group(function () {
@@ -134,6 +139,11 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/leases/{lease}/documents', [LeaseDocumentController::class, 'upload'])->name('leases.documents.upload')->middleware('throttle:20,1');
     Route::get('/leases/{lease}/documents/{leaseDocument}/download', [LeaseDocumentController::class, 'download'])->name('leases.documents.download');
     Route::delete('/leases/{lease}/documents/{leaseDocument}', [LeaseDocumentController::class, 'destroy'])->name('leases.documents.destroy');
+
+    Route::post('/checkin',  [CheckInController::class, 'store'])->name('checkin.store')->middleware('throttle:20,1');
+    Route::post('/checkout', [CheckInController::class, 'destroy'])->name('checkin.destroy')->middleware('throttle:20,1');
+    Route::get('/leases/{lease}/stands', [CheckInController::class, 'stands'])->name('leases.stands');
+    Route::post('/leases/{lease}/email-qr', [CheckInController::class, 'emailQr'])->name('leases.email-qr')->middleware('throttle:5,1');
 
     Route::get('/profile/avatar/{userId}', [ProfileController::class, 'serveAvatar'])->name('profile.avatar');
     Route::get('/profile/photos/{documentId}', [ProfileController::class, 'servePhoto'])->name('profile.photos.serve');
