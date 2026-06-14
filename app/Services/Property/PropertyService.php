@@ -426,6 +426,7 @@ class PropertyService extends BaseService
                 return null;
             }
             return array_merge($contact, [
+                'manager_id' => $m->id,
                 'role'       => $m->role,
                 'role_label' => $roleLabels[$m->role] ?? ucfirst($m->role),
             ]);

@@ -498,13 +498,15 @@ class PropertyFormV2
             $html .= "<div style=\"{$cs}\">{$roleBadge}</div>";
             $html .= "<div style=\"{$cs}\">{$granted}</div>";
             $html .= "<div style=\"{$cs}\">{$grantedByName}</div>";
+            $revokeIcon = svg('heroicon-m-user-minus', 'w-4 h-4')->toHtml();
             $html .= "<div style=\"{$cs}\">"
                    . "<button type=\"button\""
                    . " wire:click=\"revokePropertyManager('{$mid}')\""
                    . " wire:confirm=\"Revoke this manager&apos;s access?\""
-                   . " style=\"font-size:0.75rem;color:#dc2626;font-weight:500;cursor:pointer;"
+                   . " style=\"display:inline-flex;align-items:center;gap:0.2rem;font-size:0.75rem;"
+                   . "color:#dc2626;font-weight:500;cursor:pointer;"
                    . "background:none;border:none;padding:0;text-decoration:underline;\">"
-                   . "Revoke"
+                   . "{$revokeIcon}Revoke"
                    . "</button></div>";
         }
 
@@ -543,22 +545,42 @@ class PropertyFormV2
             );
         }
 
-        $cols = '1.2fr 2fr 1.5fr 2fr';
+        $cols = '1.2fr 2fr 1.5fr 2fr 0.8fr';
         $hs   = 'font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;'
               . 'color:#6b7280;padding:0.5rem 0.75rem;border-bottom:2px solid #e5e7eb;';
-        $cs   = 'font-size:0.875rem;color:#374151;padding:0.625rem 0.75rem;border-bottom:1px solid #f3f4f6;';
+        $cs   = 'font-size:0.875rem;color:#374151;padding:0.625rem 0.75rem;'
+              . 'border-bottom:1px solid #f3f4f6;display:flex;align-items:center;';
+
+        $removeIcon = svg('heroicon-m-x-mark', 'w-4 h-4')->toHtml();
 
         $html  = "<div style=\"display:grid;grid-template-columns:{$cols};\">";
         $html .= "<div style=\"{$hs}\">Role</div>"
                . "<div style=\"{$hs}\">Name</div>"
                . "<div style=\"{$hs}\">Phone</div>"
-               . "<div style=\"{$hs}\">Email</div>";
+               . "<div style=\"{$hs}\">Email</div>"
+               . "<div style=\"{$hs}\">Action</div>";
 
         foreach ($rows as [$role, $c]) {
             $html .= "<div style=\"{$cs}font-weight:500;\">" . htmlspecialchars($role) . '</div>';
             $html .= "<div style=\"{$cs}\">" . htmlspecialchars($c['name'] ?? '—') . '</div>';
             $html .= "<div style=\"{$cs}\">" . htmlspecialchars($c['phone'] ? PhoneNumber::format($c['phone']) : '—') . '</div>';
             $html .= "<div style=\"{$cs}\">" . htmlspecialchars($c['email'] ?: '—') . '</div>';
+
+            // Only opted-in managers (which carry a manager_id) can be removed as a contact.
+            if (! empty($c['manager_id'])) {
+                $mid   = htmlspecialchars($c['manager_id']);
+                $html .= "<div style=\"{$cs}\">"
+                       . "<button type=\"button\""
+                       . " wire:click=\"removeManagerContact('{$mid}')\""
+                       . " wire:confirm=\"Remove this manager from the contact list?\""
+                       . " style=\"display:inline-flex;align-items:center;gap:0.2rem;font-size:0.75rem;"
+                       . "color:#dc2626;font-weight:500;cursor:pointer;background:none;border:none;padding:0;"
+                       . "text-decoration:underline;\">"
+                       . "{$removeIcon}Remove"
+                       . "</button></div>";
+            } else {
+                $html .= "<div style=\"{$cs}color:#d1d5db;\">—</div>";
+            }
         }
 
         $html .= '</div>';

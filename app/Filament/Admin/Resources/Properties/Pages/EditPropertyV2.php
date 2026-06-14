@@ -463,4 +463,29 @@ class EditPropertyV2 extends EditRecord
             ->success()
             ->send();
     }
+
+    public function removeManagerContact(string $managerId): void
+    {
+        abort_unless(AdminAuth::canManageProperties(), 403);
+
+        $manager = PropertyManager::where('property_id', $this->getRecord()->id)
+            ->whereNull('revoked_at')
+            ->where('is_field_contact', true)
+            ->find($managerId);
+
+        if (! $manager) {
+            Notification::make()
+                ->title('Manager contact not found.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        $manager->update(['is_field_contact' => false]);
+
+        Notification::make()
+            ->title('Manager removed from contacts.')
+            ->success()
+            ->send();
+    }
 }
