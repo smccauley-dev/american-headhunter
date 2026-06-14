@@ -340,7 +340,6 @@ function UploadDocumentForm({ uploadUrl, tags }: { uploadUrl: string; tags: Reco
 function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propertyTitle: string; onClose: () => void }) {
   const [active, setActive] = useState<string | null>(null)
   const count = map.markers.length
-  const activeMarker = map.markers.find(m => m.id === active) ?? null
 
   // Full-screen overlay portaled to <body>: an opaque page that fully covers
   // the lease page (including its topbar) so there's a single banner, and it
@@ -394,57 +393,86 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
             {map.markers.map(m => {
               const isActive = active === m.id
               return (
-                <button
+                <div
                   key={m.id}
-                  type="button"
-                  onClick={() => setActive(isActive ? null : m.id)}
-                  title={m.label ? `${m.label} · ${m.type_label}` : m.type_label}
                   style={{
                     position: 'absolute', left: `${m.x_percent}%`, top: `${m.y_percent}%`,
-                    transform: `translate(-50%, -50%) scale(${isActive ? 1.35 : 1})`,
-                    width: '20px', height: '20px', borderRadius: '50%', padding: 0,
-                    background: m.color, border: `3px solid ${isActive ? ACCENT : '#fff'}`,
-                    boxShadow: isActive ? `0 0 0 3px rgba(200,76,33,0.45), 0 1px 6px rgba(0,0,0,0.6)` : '0 1px 5px rgba(0,0,0,0.55)',
-                    cursor: 'pointer', transition: 'transform .12s ease',
-                    zIndex: isActive ? 20 : 10,
+                    transform: 'translate(-50%, -50%)',
+                    zIndex: isActive ? 30 : 10,
                   }}
-                />
+                >
+                  {/* Floating info popup — appears above the selected marker */}
+                  {isActive && (
+                    <div
+                      style={{
+                        position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+                        marginBottom: '10px', width: 'max-content', maxWidth: '230px',
+                        background: INK, border: `1px solid ${ACCENT}`, boxShadow: `3px 3px 0 ${BRASS}`,
+                        padding: '12px 14px', textAlign: 'left', lineHeight: 'normal', zIndex: 40,
+                      }}
+                    >
+                      <button
+                        onClick={() => setActive(null)}
+                        aria-label="Close marker details"
+                        style={{ position: 'absolute', top: '6px', right: '8px', background: 'transparent', border: 'none', color: TAN, fontSize: '14px', lineHeight: 1, cursor: 'pointer', padding: 0 }}
+                      >
+                        ✕
+                      </button>
+                      <div style={{ fontFamily: 'var(--display)', fontSize: '16px', fontWeight: 500, color: '#F4ECDC', lineHeight: 1.2, paddingRight: '14px' }}>
+                        {m.label || m.type_label}
+                      </div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.12em', textTransform: 'uppercase', color: ACCENT, marginTop: '4px' }}>
+                        {m.type_label}
+                      </div>
+                      {m.notes && (
+                        <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: '#d8cdb8', lineHeight: 1.5, marginTop: '8px' }}>
+                          {m.notes}
+                        </div>
+                      )}
+                      {/* pointer triangle */}
+                      <span style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: `6px solid ${ACCENT}` }} />
+                    </div>
+                  )}
+
+                  {/* Marker — dot + label, matching the admin boundary map. The
+                      selection bounding box + red ring mark the active one. */}
+                  <button
+                    type="button"
+                    onClick={() => setActive(isActive ? null : m.id)}
+                    title={m.label ? `${m.label} · ${m.type_label}` : m.type_label}
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+                      background: isActive ? 'rgba(200,76,33,0.12)' : 'transparent',
+                      border: `1.5px solid ${isActive ? ACCENT : 'transparent'}`,
+                      borderRadius: '4px', padding: '3px 4px', cursor: 'pointer',
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: 'block', width: '14px', height: '14px', borderRadius: '50%',
+                        background: m.color, border: '2px solid #fff',
+                        boxShadow: isActive
+                          ? `0 0 0 3px ${ACCENT}, 0 1px 4px rgba(0,0,0,0.45)`
+                          : '0 1px 4px rgba(0,0,0,0.45)',
+                      }}
+                    />
+                    {m.label && (
+                      <span
+                        style={{
+                          background: 'rgba(10,21,18,0.8)', color: '#fff',
+                          fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.05em',
+                          padding: '2px 6px', borderRadius: '3px', whiteSpace: 'nowrap',
+                          maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {m.label}
+                      </span>
+                    )}
+                  </button>
+                </div>
               )
             })}
           </div>
-
-          {/* Selected marker detail */}
-          {activeMarker ? (
-            <div style={{ marginTop: '16px', position: 'relative', background: INK, border: `1px solid ${ACCENT}`, boxShadow: `5px 5px 0 ${BRASS}`, padding: '16px 18px' }}>
-              <button
-                onClick={() => setActive(null)}
-                aria-label="Close marker details"
-                style={{ position: 'absolute', top: '10px', right: '12px', background: 'transparent', border: 'none', color: TAN, fontSize: '16px', lineHeight: 1, cursor: 'pointer' }}
-              >
-                ✕
-              </button>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: activeMarker.notes ? '10px' : 0 }}>
-                <span style={{ width: '16px', height: '16px', borderRadius: '50%', background: activeMarker.color, border: '2px solid #fff', flexShrink: 0 }} />
-                <div>
-                  <div style={{ fontFamily: 'var(--display)', fontSize: '18px', fontWeight: 500, color: '#F4ECDC', lineHeight: 1.2 }}>
-                    {activeMarker.label || activeMarker.type_label}
-                  </div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.12em', textTransform: 'uppercase', color: ACCENT, marginTop: '3px' }}>
-                    {activeMarker.type_label}
-                  </div>
-                </div>
-              </div>
-              {activeMarker.notes && (
-                <div style={{ fontFamily: 'var(--body)', fontSize: '15px', color: '#d8cdb8', lineHeight: 1.5, paddingLeft: '26px' }}>
-                  {activeMarker.notes}
-                </div>
-              )}
-            </div>
-          ) : (
-            <p style={{ marginTop: '16px', fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN }}>
-              Tap a marker on the map to see its details
-            </p>
-          )}
 
           {/* Legend — also selects */}
           {count > 0 && (
