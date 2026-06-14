@@ -62,6 +62,12 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 
 ---
 
+## Security Tracker — One Canonical File
+
+`security.md` at the repository root is the **single source of truth** for security findings (severity, root cause, fix, verification). Record every new finding there. The former `docs/security.md` was merged into it on 2026-06-14 and is now only a pointer — do not write findings to `docs/security.md`.
+
+---
+
 ## What This Project Is
 
 A full-stack SaaS platform for hunting lease and land management. Think Airbnb + DocuSign + HuntStand + Zillow, purpose-built for the hunting industry. It connects landowners (who lease their property for hunting) with hunters (who pay for access), and wraps every part of that relationship — discovery, bidding, contracts, e-signatures, payments, field operations, safety, and compliance — in one vertical platform.
