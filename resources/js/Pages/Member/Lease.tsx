@@ -382,14 +382,24 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
         <div style={{ maxWidth: '1100px', width: '100%', margin: '0 auto', padding: '32px 24px 56px' }}>
           <div style={{ marginBottom: '18px' }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, marginBottom: '4px' }}>
-              Stand Map · {count} marker{count !== 1 ? 's' : ''}
+              Stand Map
             </div>
             <h1 style={{ fontFamily: 'var(--display)', fontSize: '28px', fontWeight: 400, color: INK, margin: 0 }}>
               {propertyTitle}
             </h1>
           </div>
 
-          <div style={{ position: 'relative', border: `1px solid ${INK}`, lineHeight: 0 }}>
+          <div style={fieldCard}>
+            <DashedInset />
+            <div style={{ position: 'relative', zIndex: 2, padding: '18px 24px' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '8px', borderBottom: `1px solid ${DIVIDER}`, paddingBottom: '6px' }}>
+                Boundary Map · {count} marker{count !== 1 ? 's' : ''}
+              </div>
+              <p style={{ fontFamily: 'var(--body)', fontSize: '14px', color: OLIVE, margin: '0 0 14px', lineHeight: 1.5 }}>
+                Marked stands, amenities, and points of interest. Tap a marker for its details.
+              </p>
+
+              <div style={{ position: 'relative', border: `1px solid ${INK}`, lineHeight: 0 }}>
             <img src={map.image_url} alt={`Boundary map — ${propertyTitle}`} style={{ display: 'block', width: '100%', height: 'auto' }} />
 
             {map.markers.map(m => {
@@ -502,6 +512,8 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
               })}
             </div>
           )}
+            </div>
+          </div>
         </div>
       </div>
     </div>,
