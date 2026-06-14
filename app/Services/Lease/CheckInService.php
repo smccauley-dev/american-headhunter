@@ -168,6 +168,53 @@ class CheckInService extends BaseService
         return $open;
     }
 
+    /**
+     * Check-in / check-out audit history for a property, newest first. Spans every
+     * lease the property has ever had. Hunter names are resolved from the identity
+     * database (cross-DB assembly happens here, not in the view).
+     *
+     * @return list<array{name:string,email:string,lease_ref:string,checked_in_at:?\Illuminate\Support\Carbon,checked_out_at:?\Illuminate\Support\Carbon,open:bool}>
+     */
+    public function getHistoryForProperty(string $propertyId, int $limit = 200): array
+    {
+        $leaseIds = Lease::on('lease')
+            ->where('property_id', $propertyId)
+            ->pluck('id');
+
+        if ($leaseIds->isEmpty()) {
+            return [];
+        }
+
+        $checkIns = CheckIn::on('lease')
+            ->whereIn('lease_id', $leaseIds)
+            ->orderByDesc('checked_in_at')
+            ->limit($limit)
+            ->get();
+
+        if ($checkIns->isEmpty()) {
+            return [];
+        }
+
+        $users = \App\Models\Identity\User::on('identity')
+            ->with('profile')
+            ->whereIn('id', $checkIns->pluck('user_id')->unique()->values())
+            ->get()
+            ->keyBy('id');
+
+        return $checkIns->map(function (CheckIn $c) use ($users) {
+            $user = $users->get($c->user_id);
+
+            return [
+                'name'           => $user?->profile?->full_name ?: ($user?->email ?? 'Unknown user'),
+                'email'          => $user?->email ?? '',
+                'lease_ref'      => strtoupper(substr($c->lease_id, 0, 8)),
+                'checked_in_at'  => $c->checked_in_at,
+                'checked_out_at' => $c->checked_out_at,
+                'open'           => $c->checked_out_at === null,
+            ];
+        })->all();
+    }
+
     /** Advisory boundary test — null when no coordinates or the check fails. */
     private function within(string $propertyId, ?float $lat, ?float $lng): ?bool
     {

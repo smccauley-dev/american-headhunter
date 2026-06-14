@@ -311,6 +311,25 @@ class PropertyFormV2
             });
     }
 
+    private static function renderCheckInsHtml($record): HtmlString
+    {
+        if (! $record?->id) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;">Save the property first to view check-in history.</p>'
+            );
+        }
+
+        try {
+            $rows = app(\App\Services\Lease\CheckInService::class)->getHistoryForProperty($record->id);
+        } catch (\Throwable) {
+            return new HtmlString('<p style="color:#6b7280;font-size:0.875rem;">Unavailable.</p>');
+        }
+
+        return new HtmlString(
+            view('filament.admin.properties.check-in-log', ['rows' => $rows])->render()
+        );
+    }
+
     private static function renderManagersHtml($record): HtmlString
     {
         if (! $record?->id) {
@@ -696,6 +715,20 @@ class PropertyFormV2
                                                     ->minValue(0)
                                                     ->maxValue(100),
                                             ]),
+                                    ]),
+                            ]),
+
+                        Tab::make('Check In/Out')
+                            ->visible(fn ($record) => $record !== null)
+                            ->schema([
+                                Section::make('Field Check-In Log')
+                                    ->description('A running record of every hunter check-in and check-out on this property, across all leases. Newest first.')
+                                    ->schema([
+                                        Placeholder::make('property_checkins_display')
+                                            ->hiddenLabel()
+                                            ->content(function (Placeholder $component) {
+                                                return static::renderCheckInsHtml($component->getRecord());
+                                            }),
                                     ]),
                             ]),
 
