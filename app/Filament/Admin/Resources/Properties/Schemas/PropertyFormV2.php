@@ -484,7 +484,8 @@ class PropertyFormV2
     {
         return Repeater::make('contacts')
             ->relationship()
-            ->reorderable('sort_order')
+            ->reorderable()
+            ->orderColumn('sort_order')
             ->itemLabel(fn (array $state): string => match (true) {
                 ($state['contact_type'] ?? null) === 'other' => $state['label'] ?: 'Other Contact',
                 isset($state['contact_type'])                => \App\Models\Property\PropertyContact::TYPES[$state['contact_type']] ?? 'Contact',
@@ -520,8 +521,13 @@ class PropertyFormV2
                 TextInput::make('phone')
                     ->label('Phone')
                     ->tel()
+                    // Accept the formatted display value (+1 (123) 456-7890); the
+                    // default tel regex rejects a paren group after the country code.
+                    ->telRegex('/^[\d\s()+\-.\/]*$/')
                     ->placeholder('+1 (123) 456-7890')
                     ->formatStateUsing(fn (?string $state) => PhoneNumber::format($state))
+                    // Store clean digits; everything formats for display via PhoneNumber.
+                    ->dehydrateStateUsing(fn (?string $state) => filled($state) ? (preg_replace('/\D+/', '', $state) ?: null) : null)
                     ->maxLength(30),
                 TextInput::make('email')
                     ->label('Email')
