@@ -348,20 +348,26 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
   return createPortal(
     <div
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(10,21,18,0.86)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+      style={{ ...themeVars, position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(10,21,18,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
     >
       <div
+        className="topo-bg"
         onClick={e => e.stopPropagation()}
-        style={{ background: PAPER, border: `1px solid ${INK}`, boxShadow: `10px 10px 0 ${BRASS}`, width: '100%', maxWidth: '1080px', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}
+        style={{ backgroundColor: '#EDE5D0', border: `1px solid ${INK}`, boxShadow: `10px 10px 0 ${BRASS}`, width: '100%', maxWidth: '1080px', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}
       >
-        {/* Modal header */}
-        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 22px', borderBottom: `1px solid ${DIVIDER}`, background: INK }}>
-          <div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, marginBottom: '3px' }}>
-              Stand Map · {count} marker{count !== 1 ? 's' : ''}
+        {/* Modal header — mirrors the site's member-portal topbar */}
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px', padding: '14px 22px', borderBottom: `1px solid ${BRASS}`, background: INK }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+            <div style={{ width: '40px', height: '40px', border: `1px solid ${TAN}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <span style={{ fontFamily: 'var(--display)', fontSize: '14px', fontWeight: 500, color: '#F4ECDC', letterSpacing: '.05em' }}>AH</span>
             </div>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '18px', fontWeight: 400, color: '#F4ECDC' }}>
-              {propertyTitle}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, marginBottom: '3px' }}>
+                Stand Map · {count} marker{count !== 1 ? 's' : ''}
+              </div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '18px', fontWeight: 400, color: '#F4ECDC', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {propertyTitle}
+              </div>
             </div>
           </div>
           <button
@@ -373,8 +379,10 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
           </button>
         </div>
 
-        {/* Modal body */}
-        <div style={{ overflow: 'auto', padding: '20px 22px' }}>
+        {/* Modal body — field-record plate */}
+        <div style={{ position: 'relative', overflow: 'auto', padding: '22px 24px', margin: '14px', border: `1px solid ${INK}`, backgroundColor: PAPER }}>
+          <div style={{ position: 'absolute', inset: 6, border: `1px dashed ${TAN}`, pointerEvents: 'none', zIndex: 1 }} />
+          <div style={{ position: 'relative', zIndex: 2 }}>
           <div style={{ position: 'relative', border: `1px solid ${INK}`, lineHeight: 0 }}>
             <img src={map.image_url} alt={`Boundary map — ${propertyTitle}`} style={{ display: 'block', width: '100%', height: 'auto' }} />
 
@@ -453,6 +461,7 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
               })}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>,
