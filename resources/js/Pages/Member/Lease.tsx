@@ -38,6 +38,8 @@ interface StandMarker {
   type_label: string
   color: string
   notes: string | null
+  latitude: number | null
+  longitude: number | null
 }
 
 interface StandMap {
@@ -428,6 +430,16 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
                         <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: OLIVE, lineHeight: 1.5, marginTop: '8px' }}>
                           {m.notes}
                         </div>
+                      )}
+                      {m.latitude !== null && m.longitude !== null && (
+                        <a
+                          href={`https://maps.google.com/?q=${m.latitude},${m.longitude}`}
+                          target="_blank"
+                          rel="noopener"
+                          style={{ display: 'inline-block', fontFamily: 'var(--mono)', fontSize: '11px', color: OLIVE, textDecoration: 'none', marginTop: '8px' }}
+                        >
+                          📍 {m.latitude.toFixed(6)}, {m.longitude.toFixed(6)}
+                        </a>
                       )}
                       {/* pointer triangle — paper fill with a thin ink edge */}
                       <span style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '7px solid transparent', borderRight: '7px solid transparent', borderTop: `7px solid ${INK}` }} />

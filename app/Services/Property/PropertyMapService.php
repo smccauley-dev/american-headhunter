@@ -67,6 +67,8 @@ class PropertyMapService extends BaseService
                 'type_label' => PropertyMapMarker::TYPES[$m->marker_type] ?? 'Marker',
                 'color'      => $m->displayColor(),
                 'notes'      => $m->notes,
+                'latitude'   => $m->latitude !== null ? (float) $m->latitude : null,
+                'longitude'  => $m->longitude !== null ? (float) $m->longitude : null,
             ])->values()->all(),
         ];
     }
