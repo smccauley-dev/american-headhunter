@@ -523,7 +523,7 @@ class PropertyFormV2
         }
 
         try {
-            $directory = app(PropertyService::class)->getContactDirectory($record->id);
+            $directory = app(PropertyService::class)->getContactDirectory($record->id, includeManagerIds: true);
         } catch (\Throwable) {
             return new HtmlString('<p style="color:#6b7280;font-size:0.875rem;">Unavailable.</p>');
         }

@@ -370,8 +370,13 @@ class PropertyService extends BaseService
      *   'managers'  => [['name','role','role_label','phone','phone_formatted','email'], ...],
      *   'contacts'  => [['type','type_label','name','organization','phone','phone_formatted','email','address','notes'], ...],
      * ]
+     *
+     * The internal `manager_id` (DB 2 property_managers.id) is only included when
+     * $includeManagerIds is true — the admin Contacts tab needs it to wire up the
+     * Delete action. Lessee-facing callers (member lease page, mobile API) leave it
+     * false so the internal grant UUID is never disclosed to hunters. See SEC-042.
      */
-    public function getContactDirectory(string $propertyId): array
+    public function getContactDirectory(string $propertyId, bool $includeManagerIds = false): array
     {
         $property = Property::on('property_read')->find($propertyId);
 
@@ -420,16 +425,15 @@ class PropertyService extends BaseService
 
         $roleLabels = ['co_owner' => 'Co-Owner', 'manager' => 'Property Manager', 'operator' => 'Operator'];
 
-        $managers = $managerRows->map(function (PropertyManager $m) use ($users, $toContact, $roleLabels) {
+        $managers = $managerRows->map(function (PropertyManager $m) use ($users, $toContact, $roleLabels, $includeManagerIds) {
             $contact = $toContact($users->get($m->user_id));
             if (! $contact) {
                 return null;
             }
             return array_merge($contact, [
-                'manager_id' => $m->id,
                 'role'       => $m->role,
                 'role_label' => $roleLabels[$m->role] ?? ucfirst($m->role),
-            ]);
+            ], $includeManagerIds ? ['manager_id' => $m->id] : []);
         })->filter()->values()->all();
 
         $contacts = PropertyContact::on('property_read')

@@ -516,6 +516,33 @@ The route now joins `properties` (same `property` connection — DB 2, not a cro
 
 ---
 
+## SEC-042 — Internal `manager_id` UUID Disclosed to Lessees via Contact Directory
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low |
+| **Status** | FIXED |
+| **Found** | 2026-06-14 |
+| **Fixed** | 2026-06-14 |
+| **File** | `app/Services/Property/PropertyService.php`, `app/Filament/Admin/Resources/Properties/Schemas/PropertyFormV2.php` |
+
+**Description:**
+The new property contact directory (`PropertyService::getContactDirectory()`) included the raw `property_managers.id` (DB 2 grant UUID) on every manager entry it returned. That payload is consumed by three callers: the admin Contacts tab (needs the ID to wire up its Delete action), the member lease page (`MemberController::show` → Inertia props), and the mobile API (`GET /api/v1/properties/{id}/contacts`). The latter two are lessee-facing, so an active lessee received the internal grant UUID even though they have no legitimate use for it. No endpoint accepting `manager_id` is reachable without `AdminAuth::canManageProperties()` (the `removeManagerContact` and revoke handlers both abort 403 for non-admins), so this was not directly exploitable — it is unnecessary internal-identifier disclosure / least-privilege leakage, the same class as SEC-024's "don't ship data the consumer doesn't need."
+
+**Root Cause:**
+`getContactDirectory()` had a single shape for all consumers and unconditionally merged `'manager_id' => $m->id` into each manager row. The admin renderer's need for the ID leaked into the lessee-facing payloads.
+
+**Fix Applied:**
+- Added a `bool $includeManagerIds = false` parameter to `getContactDirectory()`. `manager_id` is now merged into manager rows only when the flag is true.
+- The admin Contacts-tab renderer (`PropertyFormV2::renderContactPartiesHtml`) calls `getContactDirectory($record->id, includeManagerIds: true)`.
+- The member lease page (`MemberController`) and mobile API (`PropertyContactController`) use the default `false`, so the grant UUID is no longer present in any lessee-facing response.
+
+**Verification:**
+- Admin Contacts tab still renders the Delete action (manager_id present).
+- `getContactDirectory($id)` (no flag) returns manager rows without a `manager_id` key — confirmed the member/API payloads no longer carry it.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -536,6 +563,7 @@ The route now joins `properties` (same `property` connection — DB 2, not a cro
 - Phase 3 logo upload audit (2026-05-25): File upload feature reviewed. Findings: SEC-014 (SVG XSS via direct URL), SEC-015 (orphaned public files), SEC-016 (untrusted path in Storage::url). All fixed same session.
 - Phase 3/4 admin UI audit (2026-05-31): Property V2 edit/view pages, amenities resource, login page settings, RLS middleware reviewed. Findings: SEC-017 through SEC-022. All fixed same session. SEC-023 deferred (no RLS on those DBs yet).
 - Last-24h feature audit (2026-06-13): reviewed the DB-managed email template system (`EmailTemplateService`, `MailSettingsService`, `EmailSettings`, version preview), the property-map feature (`PropertyMapService`, `ExifGps`, map editor, public map route), the configurable post-login redirect, and the new encrypted UserProfile contact fields. Findings: SEC-024 (EXIF GPS published by default) and SEC-025 (map route ignored property status) — both fixed same session. **No issue found** in: email template rendering (variables HTML-escaped in HTML bodies via `htmlspecialchars`; admin-only authorship; preview iframe uses `sandbox=""`), SMTP settings (password encrypted at rest via `Crypt`, never echoed to the form, change audit-logged, access gated by `canManageSystem`), or the post-login redirect (value comes from admin-controlled tenant settings, not user input).
+- Last-24h feature audit (2026-06-14): reviewed the member field-check-in + QR system (`CheckInController`, `CheckInService`), the stand-map / boundary overlay (`PropertyMapService::getBoundaryOverlay`, `MemberController`), the property contact directory (`PropertyService::getContactDirectory`, admin Contacts tab, `Api/PropertyContactController`), the opt-in manager-contact flow (`is_field_contact` migration + `PropertyManager` model + `EditPropertyV2::removeManagerContact`), and the executed-lease PDF download (`LeaseSignController`, `EsignatureService::downloadSignedLease`). Finding: SEC-042 (`manager_id` UUID disclosed to lessees) — fixed same session. **No issue found** in: check-in (`checkIn`/`checkOut` enforce `abort_unless(mayCheckIn, 403)` — lessee or approved LeaseHunter only; check-out scoped to the user's own open record), stand-map markers + access info (served only for the lessee's own `active` lease, GPS member-only per SEC-024), contact directory (gated by `userHasActiveLeaseForProperty`, returns 404 not 403 to non-lessees per SEC-024; intended landowner/manager contact details are by design), the opt-in manager flow (admin-only writes via `AdminAuth::canManageProperties`; managers no longer auto-listed to hunters), lease PDF download (`abort_if(403)` unless lessee or lessor; download audit-logged via AuditService), and the PDF/QR/check-in-log blades (all output escaped — no `{!! !!}`). **Out-of-window note:** the admin `auth:web` document download/view routes (`/admin/documents/{documentId}/download`, `/view`) do a bare `findOrFail` + `Storage::download` with no per-document ownership check. These predate this window (commit `05df4a5`) and are reachable only through the `web` (admin) guard — members authenticate via the separate `auth.session`/`RequireSessionAuth` system — so they are effectively admin-restricted, but lack defense-in-depth ownership scoping. Logged here; not assigned a SEC ID this pass.
 - No SQL injection surfaces found — all queries use parameterized bindings or Eloquent ORM.
 - No hardcoded credentials or keys found in application code — all sourced from env/config.
 - Audit DB (DB 9) write-protection verified: `ImmutableModel` throws on update/delete; PostgreSQL RULE blocks at DB level.
