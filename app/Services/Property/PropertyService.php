@@ -10,6 +10,7 @@ use App\Models\Property\PropertyAccessInfo;
 use App\Models\Property\PropertyPhoto;
 use App\Services\BaseService;
 use App\Services\Documents\DocumentService;
+use App\Support\PhoneNumber;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -360,11 +361,14 @@ class PropertyService extends BaseService
      * active property_managers rows (never duplicated). Law enforcement, game
      * warden, emergency and custom contacts come from property_contacts.
      *
+     * Every party carries both the raw `phone` and a display-ready
+     * `phone_formatted` (+1 (123) 456-7890, see PhoneNumber).
+     *
      * Shape:
      * [
-     *   'landowner' => ['name','phone','email']|null,
-     *   'managers'  => [['name','role','role_label','phone','email'], ...],
-     *   'contacts'  => [['type','type_label','name','organization','phone','email','address','notes'], ...],
+     *   'landowner' => ['name','phone','phone_formatted','email']|null,
+     *   'managers'  => [['name','role','role_label','phone','phone_formatted','email'], ...],
+     *   'contacts'  => [['type','type_label','name','organization','phone','phone_formatted','email','address','notes'], ...],
      * ]
      */
     public function getContactDirectory(string $propertyId): array
@@ -402,9 +406,10 @@ class PropertyService extends BaseService
                 return null;
             }
             return [
-                'name'  => $user->profile?->full_name ?: $user->email,
-                'phone' => $user->phone,
-                'email' => $user->email,
+                'name'            => $user->profile?->full_name ?: $user->email,
+                'phone'           => $user->phone,
+                'phone_formatted' => PhoneNumber::format($user->phone),
+                'email'           => $user->email,
             ];
         };
 
@@ -433,12 +438,13 @@ class PropertyService extends BaseService
             ->map(fn (PropertyContact $c) => [
                 'type'         => $c->contact_type,
                 'type_label'   => $c->displayLabel(),
-                'name'         => $c->name,
-                'organization' => $c->organization,
-                'phone'        => $c->phone,
-                'email'        => $c->email,
-                'address'      => $c->address,
-                'notes'        => $c->notes,
+                'name'            => $c->name,
+                'organization'    => $c->organization,
+                'phone'           => $c->phone,
+                'phone_formatted' => PhoneNumber::format($c->phone),
+                'email'           => $c->email,
+                'address'         => $c->address,
+                'notes'           => $c->notes,
             ])
             ->values()
             ->all();
