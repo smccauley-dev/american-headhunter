@@ -11,6 +11,7 @@ use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Lease\LeaseDocumentService;
 use App\Services\Lease\LeaseService;
+use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -35,7 +36,7 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService): Response
     {
         $userId = session('auth.user_id');
 
@@ -100,8 +101,9 @@ class MemberController extends Controller
         // Check-in + gate QR + stand map — active leases only. The QR is per
         // property (one gate code reused across leases); it's created at lease
         // activation, but get-or-create here covers leases activated earlier.
-        $checkIn = null;
-        $qr      = null;
+        $checkIn  = null;
+        $qr       = null;
+        $standMap = null;
         if ($leaseRecord->status === 'active') {
             $open = $checkInService->getOpenForUserLease($lease, $userId);
             $checkIn = [
@@ -113,6 +115,17 @@ class MemberController extends Controller
             $qrCode = rescue(fn () => $documentService->getOrCreateCheckInQrForProperty($leaseRecord->property_id), null);
             if ($qrCode) {
                 $qr = ['png_url' => route('checkin.qr.png', $qrCode->token)];
+            }
+
+            // Stand map = the landowner's boundary map image with read-only
+            // markers. Members only — markers are passed here, not exposed
+            // publicly (SEC-024). Shown in a modal on the lease page.
+            $overlay = rescue(fn () => $mapService->getBoundaryOverlay($leaseRecord->property_id), null);
+            if ($overlay) {
+                $standMap = [
+                    'image_url' => route('property-maps.show', $overlay['document_id']),
+                    'markers'   => $overlay['markers'],
+                ];
             }
         }
 
@@ -127,7 +140,7 @@ class MemberController extends Controller
             ],
             'check_in'     => $checkIn,
             'qr'           => $qr,
-            'stands_url'   => $leaseRecord->status === 'active' ? route('member.leases.stands', $lease) : null,
+            'stand_map'    => $standMap,
             'email_qr_url' => ($isLessor && $leaseRecord->status === 'active') ? route('member.leases.email-qr', $lease) : null,
             'property'    => $property ? [
                 'id'     => $property->id,

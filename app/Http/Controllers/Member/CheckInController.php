@@ -9,8 +9,6 @@ use App\Services\Documents\DocumentService;
 use App\Services\Documents\QrImageService;
 use App\Services\Identity\UserService;
 use App\Services\Lease\CheckInService;
-use App\Services\Lease\LeaseService;
-use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -119,63 +117,6 @@ class CheckInController extends Controller
         $checkInService->checkOut($userId, $data['lease_id']);
 
         return back()->with('success', 'Checked out. Welcome back.');
-    }
-
-    /**
-     * Stand map for the lease's property — the landowner's uploaded boundary map
-     * image with its markers overlaid read-only. Member-only on-property data
-     * (SEC-024): only active parties to the lease may see the markers, so they
-     * are passed here rather than through the public boundary-image route.
-     */
-    public function stands(
-        string $lease,
-        Request $request,
-        LeaseService $leaseService,
-        PropertyMapService $mapService,
-        PropertyService $propertyService,
-    ): InertiaResponse {
-        $userId = $request->session()->get('auth.user_id');
-
-        $leaseRecord = Lease::where('id', $lease)
-            ->where(fn ($q) => $q
-                ->where('lessee_user_id', $userId)
-                ->orWhere('lessor_user_id', $userId))
-            ->whereNull('deleted_at')
-            ->firstOrFail();
-
-        abort_unless(
-            $leaseService->userHasActiveLeaseForProperty($userId, $leaseRecord->property_id),
-            403,
-        );
-
-        $property = rescue(fn () => $propertyService->find($leaseRecord->property_id), null);
-        $boundaryImage = rescue(fn () => $mapService->getBoundaryImage($leaseRecord->property_id), null);
-
-        $markers = $boundaryImage
-            ? $boundaryImage->markers->map(fn ($m) => [
-                'id'         => $m->id,
-                'x_percent'  => (float) $m->x_percent,
-                'y_percent'  => (float) $m->y_percent,
-                'label'      => $m->label,
-                'type'       => $m->marker_type,
-                'type_label' => \App\Models\Property\PropertyMapMarker::TYPES[$m->marker_type] ?? 'Marker',
-                'color'      => $m->displayColor(),
-                'notes'      => $m->notes,
-            ])->values()->all()
-            : [];
-
-        return Inertia::render('Member/Stands', [
-            'lease_id' => $leaseRecord->id,
-            'property' => $property ? [
-                'title'  => $property->title,
-                'county' => $property->county,
-                'state'  => $property->state_code,
-            ] : null,
-            'boundary_image_url' => $boundaryImage
-                ? route('property-maps.show', $boundaryImage->document_id)
-                : null,
-            'markers' => $markers,
-        ]);
     }
 
     /**

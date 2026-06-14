@@ -40,6 +40,37 @@ class PropertyMapService extends BaseService
             ->first();
     }
 
+    /**
+     * Display-ready boundary overlay for member field views: the boundary
+     * image's document id plus its markers as plain arrays (read-only). Null
+     * when the property has no boundary map. The caller maps the document id to
+     * an image URL — services don't generate routes.
+     *
+     * @return array{document_id:string, markers:list<array<string,mixed>>}|null
+     */
+    public function getBoundaryOverlay(string $propertyId): ?array
+    {
+        $image = $this->getBoundaryImage($propertyId);
+
+        if (! $image) {
+            return null;
+        }
+
+        return [
+            'document_id' => $image->document_id,
+            'markers'     => $image->markers->map(fn (PropertyMapMarker $m) => [
+                'id'         => $m->id,
+                'x_percent'  => (float) $m->x_percent,
+                'y_percent'  => (float) $m->y_percent,
+                'label'      => $m->label,
+                'type'       => $m->marker_type,
+                'type_label' => PropertyMapMarker::TYPES[$m->marker_type] ?? 'Marker',
+                'color'      => $m->displayColor(),
+                'notes'      => $m->notes,
+            ])->values()->all(),
+        ];
+    }
+
     /** Soft-deleted map images (for the admin recovery section). */
     public function getDeletedMapImages(string $propertyId): Collection
     {

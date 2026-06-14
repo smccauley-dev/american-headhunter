@@ -142,7 +142,6 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
 
     Route::post('/checkin',  [CheckInController::class, 'store'])->name('checkin.store')->middleware('throttle:20,1');
     Route::post('/checkout', [CheckInController::class, 'destroy'])->name('checkin.destroy')->middleware('throttle:20,1');
-    Route::get('/leases/{lease}/stands', [CheckInController::class, 'stands'])->name('leases.stands');
     Route::post('/leases/{lease}/email-qr', [CheckInController::class, 'emailQr'])->name('leases.email-qr')->middleware('throttle:5,1');
 
     Route::get('/profile/avatar/{userId}', [ProfileController::class, 'serveAvatar'])->name('profile.avatar');

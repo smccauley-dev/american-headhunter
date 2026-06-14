@@ -28,6 +28,22 @@ interface LeaseDocument {
   delete_url: string
 }
 
+interface StandMarker {
+  id: string
+  x_percent: number
+  y_percent: number
+  label: string | null
+  type: string
+  type_label: string
+  color: string
+  notes: string | null
+}
+
+interface StandMap {
+  image_url: string
+  markers: StandMarker[]
+}
+
 interface Props {
   lease: {
     id: string
@@ -58,7 +74,7 @@ interface Props {
     check_out_url: string
   } | null
   qr: { png_url: string } | null
-  stands_url: string | null
+  stand_map: StandMap | null
   email_qr_url: string | null
 }
 
@@ -320,18 +336,111 @@ function UploadDocumentForm({ uploadUrl, tags }: { uploadUrl: string; tags: Reco
   )
 }
 
+function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propertyTitle: string; onClose: () => void }) {
+  const [active, setActive] = useState<string | null>(null)
+  const count = map.markers.length
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(10,21,18,0.86)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: PAPER, border: `1px solid ${INK}`, boxShadow: `10px 10px 0 ${BRASS}`, width: '100%', maxWidth: '1080px', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}
+      >
+        {/* Modal header */}
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 22px', borderBottom: `1px solid ${DIVIDER}`, background: INK }}>
+          <div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, marginBottom: '3px' }}>
+              Stand Map · {count} marker{count !== 1 ? 's' : ''}
+            </div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '18px', fontWeight: 400, color: '#F4ECDC' }}>
+              {propertyTitle}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close stand map"
+            style={{ background: 'transparent', border: `1px solid ${TAN}`, color: '#F4ECDC', width: '34px', height: '34px', fontSize: '18px', lineHeight: 1, cursor: 'pointer', flexShrink: 0 }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Modal body */}
+        <div style={{ overflow: 'auto', padding: '20px 22px' }}>
+          <div style={{ position: 'relative', border: `1px solid ${INK}`, lineHeight: 0 }}>
+            <img src={map.image_url} alt={`Boundary map — ${propertyTitle}`} style={{ display: 'block', width: '100%', height: 'auto' }} />
+
+            {map.markers.map(m => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setActive(active === m.id ? null : m.id)}
+                title={m.label ? `${m.label} · ${m.type_label}` : m.type_label}
+                style={{
+                  position: 'absolute', left: `${m.x_percent}%`, top: `${m.y_percent}%`,
+                  transform: 'translate(-50%, -50%)', background: 'none', border: 'none', padding: 0,
+                  cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                  zIndex: active === m.id ? 20 : 10,
+                }}
+              >
+                <span style={{ width: '17px', height: '17px', borderRadius: '50%', background: m.color, border: '3px solid #fff', boxShadow: '0 1px 5px rgba(0,0,0,0.55)' }} />
+                {m.label && (
+                  <span style={{ fontFamily: 'var(--body)', fontSize: '13px', fontWeight: 700, color: '#fff', background: INK, padding: '2px 8px', border: '1px solid rgba(255,255,255,0.55)', borderRadius: '3px', whiteSpace: 'nowrap', boxShadow: '0 1px 4px rgba(0,0,0,0.5)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {m.label}
+                  </span>
+                )}
+
+                {active === m.id && (
+                  <span style={{ position: 'absolute', top: '100%', marginTop: '6px', left: '50%', transform: 'translateX(-50%)', background: INK, color: '#F8F4EB', border: `1px solid ${ACCENT}`, padding: '8px 10px', borderRadius: '3px', fontFamily: 'var(--body)', fontSize: '13px', lineHeight: 1.45, width: 'max-content', maxWidth: '220px', textAlign: 'left', zIndex: 30 }}>
+                    <span style={{ display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, marginBottom: m.notes ? '3px' : 0 }}>
+                      {m.type_label}
+                    </span>
+                    {m.notes}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Legend */}
+          {count > 0 && (
+            <div style={{ marginTop: '16px', display: 'flex', flexWrap: 'wrap', gap: '8px 20px' }}>
+              {map.markers.map(m => (
+                <div key={`lg-${m.id}`} style={{ display: 'flex', alignItems: 'center', gap: '7px', fontFamily: 'var(--body)', fontSize: '14px', color: INK }}>
+                  <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: m.color, border: `1px solid ${INK}`, flexShrink: 0 }} />
+                  <span style={{ fontWeight: 600 }}>{m.label || m.type_label}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.06em', textTransform: 'uppercase', color: TAN }}>{m.type_label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p style={{ marginTop: '14px', fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN }}>
+            Read-only · Tap a marker for details
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FieldAccess({
-  leaseId, checkIn, qr, standsUrl, emailQrUrl,
+  leaseId, checkIn, qr, standMap, propertyTitle, emailQrUrl,
 }: {
   leaseId: string
   checkIn: NonNullable<Props['check_in']>
   qr: Props['qr']
-  standsUrl: string | null
+  standMap: StandMap | null
+  propertyTitle: string
   emailQrUrl: string | null
 }) {
   const [busy, setBusy] = useState(false)
   const [locating, setLocating] = useState(false)
   const [showQr, setShowQr] = useState(false)
+  const [showStands, setShowStands] = useState(false)
   const isOpen = checkIn.open !== null
 
   function withPosition(cb: (coords: { lat: number; lng: number } | null) => void) {
@@ -386,10 +495,10 @@ function FieldAccess({
       </div>
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px' }}>
-        {standsUrl && (
-          <a href={standsUrl} style={btnGhost}>
+        {standMap && (
+          <button onClick={() => setShowStands(true)} style={btnGhost}>
             View Stand Map
-          </a>
+          </button>
         )}
         {qr && (
           <button onClick={() => setShowQr(v => !v)} style={btnGhost}>
@@ -411,11 +520,15 @@ function FieldAccess({
           </div>
         </div>
       )}
+
+      {standMap && showStands && (
+        <StandMapModal map={standMap} propertyTitle={propertyTitle} onClose={() => setShowStands(false)} />
+      )}
     </Section>
   )
 }
 
-export default function Lease({ lease, property, access_info, signers, sign_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stands_url, email_qr_url }: Props) {
+export default function Lease({ lease, property, access_info, signers, sign_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -495,7 +608,8 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
               leaseId={lease.id}
               checkIn={check_in}
               qr={qr}
-              standsUrl={stands_url}
+              standMap={stand_map}
+              propertyTitle={property?.title ?? 'Property'}
               emailQrUrl={email_qr_url}
             />
           )}
