@@ -251,9 +251,9 @@ class PropertyFormV2
         ])->render());
     }
 
-    private static function grantManagerAction(): Action
+    private static function grantManagerAction(string $name = 'grant_manager'): Action
     {
-        return Action::make('grant_manager')
+        return Action::make($name)
             ->label('Grant Manager Access')
             ->icon('heroicon-o-user-plus')
             ->color('primary')
@@ -870,6 +870,7 @@ class PropertyFormV2
                             ->schema([
                                 Section::make('Landowner & Managers')
                                     ->description('Pulled automatically from the owner account and the Managers tab. To change these, update the user account or the Managers tab.')
+                                    ->headerActions([self::grantManagerAction('grant_manager_contacts')])
                                     ->schema([
                                         Placeholder::make('property_contact_parties_display')
                                             ->hiddenLabel()
