@@ -342,58 +342,53 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
   const count = map.markers.length
   const activeMarker = map.markers.find(m => m.id === active) ?? null
 
-  // Portal to <body> so the overlay escapes the lease page's nested stacking
-  // contexts (cards use position:relative + z-index) — otherwise later sections
-  // paint over the modal.
+  // Full-screen overlay portaled to <body>: an opaque page that fully covers
+  // the lease page (including its topbar) so there's a single banner, and it
+  // escapes the lease page's nested stacking contexts.
   return createPortal(
     <div
-      onClick={onClose}
-      style={{ ...themeVars, position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(10,21,18,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+      className="topo-bg"
+      style={{ ...themeVars, position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: '#EDE5D0', display: 'flex', flexDirection: 'column' }}
     >
-      <div
-        className="topo-bg"
-        onClick={e => e.stopPropagation()}
-        style={{ backgroundColor: '#EDE5D0', border: `1px solid ${INK}`, boxShadow: `10px 10px 0 ${BRASS}`, width: '100%', maxWidth: '1080px', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}
-      >
-        {/* Top banner — identical to the member-portal topbar on the lease page */}
-        <div style={{ flexShrink: 0, background: INK, borderBottom: `1px solid ${BRASS}` }}>
-          <div style={{ padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <div style={{ width: '42px', height: '42px', border: `1px solid ${TAN}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <span style={{ fontFamily: 'var(--display)', fontSize: '15px', fontWeight: 500, color: '#F4ECDC', letterSpacing: '.05em' }}>AH</span>
+      {/* Top banner — identical to the member-portal topbar on the lease page */}
+      <div style={{ flexShrink: 0, background: INK, borderBottom: `1px solid ${BRASS}` }}>
+        <div style={{ maxWidth: '1100px', width: '100%', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ width: '42px', height: '42px', border: `1px solid ${TAN}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <span style={{ fontFamily: 'var(--display)', fontSize: '15px', fontWeight: 500, color: '#F4ECDC', letterSpacing: '.05em' }}>AH</span>
+            </div>
+            <div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '17px', fontWeight: 400, color: '#F4ECDC', lineHeight: 1.1 }}>
+                American Headhunter
               </div>
-              <div>
-                <div style={{ fontFamily: 'var(--display)', fontSize: '17px', fontWeight: 400, color: '#F4ECDC', lineHeight: 1.1 }}>
-                  American Headhunter
-                </div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.22em', textTransform: 'uppercase', color: '#6b9e8f', marginTop: '3px' }}>
-                  Member Portal
-                </div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.22em', textTransform: 'uppercase', color: '#6b9e8f', marginTop: '3px' }}>
+                Member Portal
               </div>
             </div>
-            <button
-              onClick={onClose}
-              aria-label="Close stand map"
-              style={{ background: 'transparent', border: 'none', fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, cursor: 'pointer', padding: 0 }}
-            >
-              Close ✕
-            </button>
           </div>
+          <button
+            onClick={onClose}
+            aria-label="Close stand map"
+            style={{ background: 'transparent', border: 'none', fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, cursor: 'pointer', padding: 0 }}
+          >
+            ← Back to Lease
+          </button>
         </div>
+      </div>
 
-        {/* Modal body — field-record plate */}
-        <div style={{ position: 'relative', overflow: 'auto', padding: '22px 24px', margin: '14px', border: `1px solid ${INK}`, backgroundColor: PAPER }}>
-          <div style={{ position: 'absolute', inset: 6, border: `1px dashed ${TAN}`, pointerEvents: 'none', zIndex: 1 }} />
-          <div style={{ position: 'relative', zIndex: 2 }}>
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, marginBottom: '4px' }}>
-                Stand Map · {count} marker{count !== 1 ? 's' : ''}
-              </div>
-              <h2 style={{ fontFamily: 'var(--display)', fontSize: '22px', fontWeight: 400, color: INK, margin: 0 }}>
-                {propertyTitle}
-              </h2>
+      {/* Scrollable page content */}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <div style={{ maxWidth: '1100px', width: '100%', margin: '0 auto', padding: '32px 24px 56px' }}>
+          <div style={{ marginBottom: '18px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, marginBottom: '4px' }}>
+              Stand Map · {count} marker{count !== 1 ? 's' : ''}
             </div>
-          <div style={{ position: 'relative', border: `1px solid ${INK}`, lineHeight: 0 }}>
+            <h1 style={{ fontFamily: 'var(--display)', fontSize: '28px', fontWeight: 400, color: INK, margin: 0 }}>
+              {propertyTitle}
+            </h1>
+          </div>
+
+          <div style={{ position: 'relative', border: `1px solid ${INK}`, boxShadow: `6px 6px 0 ${INK}`, lineHeight: 0 }}>
             <img src={map.image_url} alt={`Boundary map — ${propertyTitle}`} style={{ display: 'block', width: '100%', height: 'auto' }} />
 
             {map.markers.map(m => {
@@ -471,7 +466,6 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
               })}
             </div>
           )}
-          </div>
         </div>
       </div>
     </div>,
