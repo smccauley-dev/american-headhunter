@@ -1,5 +1,6 @@
 import { Head, useForm, router, usePage } from '@inertiajs/react'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 
 interface Signer {
   name: string
@@ -340,7 +341,10 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
   const [active, setActive] = useState<string | null>(null)
   const count = map.markers.length
 
-  return (
+  // Portal to <body> so the overlay escapes the lease page's nested stacking
+  // contexts (cards use position:relative + z-index) — otherwise later sections
+  // paint over the modal.
+  return createPortal(
     <div
       onClick={onClose}
       style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(10,21,18,0.86)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
@@ -423,7 +427,8 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
           </p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
