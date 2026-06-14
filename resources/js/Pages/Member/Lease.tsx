@@ -363,7 +363,7 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
               </div>
             </div>
             <div>
-              <div style={{ fontFamily: 'var(--display)', fontSize: '17px', fontWeight: 400, color: '#F4ECDC', lineHeight: 1.1 }}>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '17px', fontWeight: 400, color: '#F4ECDC', letterSpacing: '.01em', lineHeight: 1.1 }}>
                 American Headhunter
               </div>
               <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.22em', textTransform: 'uppercase', color: '#6b9e8f', marginTop: '3px' }}>
@@ -650,7 +650,7 @@ export default function Lease({ lease, property, access_info, signers, sign_url,
                 </div>
               </div>
               <div>
-                <div style={{ fontFamily: 'var(--display)', fontSize: '17px', fontWeight: 400, color: '#F4ECDC', lineHeight: 1.1 }}>
+                <div style={{ fontFamily: 'var(--display)', fontSize: '17px', fontWeight: 400, color: '#F4ECDC', letterSpacing: '.01em', lineHeight: 1.1 }}>
                   American Headhunter
                 </div>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.22em', textTransform: 'uppercase', color: '#6b9e8f', marginTop: '3px' }}>
