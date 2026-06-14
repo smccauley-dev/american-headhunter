@@ -407,7 +407,7 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
                       style={{
                         position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
                         marginBottom: '10px', width: 'max-content', maxWidth: '230px',
-                        background: INK, border: `1px solid ${ACCENT}`, boxShadow: `3px 3px 0 ${BRASS}`,
+                        background: PAPER, border: `1px solid ${INK}`, boxShadow: '2px 3px 8px rgba(10,21,18,0.28)',
                         padding: '12px 14px', textAlign: 'left', lineHeight: 'normal', zIndex: 40,
                       }}
                     >
@@ -418,19 +418,20 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
                       >
                         ✕
                       </button>
-                      <div style={{ fontFamily: 'var(--display)', fontSize: '16px', fontWeight: 500, color: '#F4ECDC', lineHeight: 1.2, paddingRight: '14px' }}>
+                      <div style={{ fontFamily: 'var(--display)', fontSize: '16px', fontWeight: 500, color: INK, lineHeight: 1.2, paddingRight: '14px' }}>
                         {m.label || m.type_label}
                       </div>
                       <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.12em', textTransform: 'uppercase', color: ACCENT, marginTop: '4px' }}>
                         {m.type_label}
                       </div>
                       {m.notes && (
-                        <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: '#d8cdb8', lineHeight: 1.5, marginTop: '8px' }}>
+                        <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: OLIVE, lineHeight: 1.5, marginTop: '8px' }}>
                           {m.notes}
                         </div>
                       )}
-                      {/* pointer triangle */}
-                      <span style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: `6px solid ${ACCENT}` }} />
+                      {/* pointer triangle — paper fill with a thin ink edge */}
+                      <span style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '7px solid transparent', borderRight: '7px solid transparent', borderTop: `7px solid ${INK}` }} />
+                      <span style={{ position: 'absolute', top: 'calc(100% - 1.5px)', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: `6px solid ${PAPER}` }} />
                     </div>
                   )}
 
@@ -460,7 +461,7 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
                       <span
                         style={{
                           background: 'rgba(10,21,18,0.8)', color: '#fff',
-                          fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.05em',
+                          fontFamily: 'var(--mono)', fontSize: '9px', lineHeight: 1.5, letterSpacing: '.05em',
                           padding: '2px 6px', borderRadius: '3px', whiteSpace: 'nowrap',
                           maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}
