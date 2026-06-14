@@ -497,7 +497,6 @@ function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propert
                   >
                     <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: m.color, border: `1px solid ${INK}`, flexShrink: 0 }} />
                     <span style={{ fontWeight: 600 }}>{m.label || m.type_label}</span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.06em', textTransform: 'uppercase', color: TAN }}>{m.type_label}</span>
                   </button>
                 )
               })}
