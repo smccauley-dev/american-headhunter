@@ -498,7 +498,7 @@ class PropertyFormV2
             $html .= "<div style=\"{$cs}\">{$roleBadge}</div>";
             $html .= "<div style=\"{$cs}\">{$granted}</div>";
             $html .= "<div style=\"{$cs}\">{$grantedByName}</div>";
-            $revokeIcon = svg('heroicon-m-user-minus', 'w-4 h-4')->toHtml();
+            $revokeIcon = svg('heroicon-m-user-minus', '', ['style' => 'width:0.9rem;height:0.9rem;flex-shrink:0;'])->toHtml();
             $html .= "<div style=\"{$cs}\">"
                    . "<button type=\"button\""
                    . " wire:click=\"revokePropertyManager('{$mid}')\""
@@ -551,7 +551,7 @@ class PropertyFormV2
         $cs   = 'font-size:0.875rem;color:#374151;padding:0.625rem 0.75rem;'
               . 'border-bottom:1px solid #f3f4f6;display:flex;align-items:center;';
 
-        $removeIcon = svg('heroicon-m-x-mark', 'w-4 h-4')->toHtml();
+        $removeIcon = svg('heroicon-m-x-mark', '', ['style' => 'width:0.9rem;height:0.9rem;flex-shrink:0;'])->toHtml();
 
         $html  = "<div style=\"display:grid;grid-template-columns:{$cols};\">";
         $html .= "<div style=\"{$hs}\">Role</div>"
