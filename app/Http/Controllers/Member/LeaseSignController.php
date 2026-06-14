@@ -6,13 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Lease\Lease;
 use App\Services\Lease\EsignatureService;
 use App\Services\Property\PropertyService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class LeaseSignController extends Controller
 {
-    public function show(string $lease, EsignatureService $esigService, PropertyService $propertyService): Response
+    public function show(string $lease, EsignatureService $esigService, PropertyService $propertyService): Response|RedirectResponse
     {
         $userId = session('auth.user_id');
 
@@ -21,7 +22,16 @@ class LeaseSignController extends Controller
             ->whereNull('deleted_at')
             ->firstOrFail();
 
-        abort_unless($leaseRecord->status === 'pending_signatures', 410, 'This lease is no longer awaiting signatures.');
+        // Once the lease has moved past signing (already signed/active/cancelled),
+        // there's nothing to sign — send the member to their lease page rather
+        // than throwing a 410 error.
+        if ($leaseRecord->status !== 'pending_signatures') {
+            $message = $leaseRecord->status === 'active'
+                ? 'This lease is fully signed and active.'
+                : 'This lease is no longer awaiting signatures.';
+
+            return redirect()->route('member.leases.show', $lease)->with('success', $message);
+        }
 
         $esigRequest = $esigService->getRequestForLease($lease);
         abort_unless($esigRequest !== null, 404, 'No signing request found for this lease.');
