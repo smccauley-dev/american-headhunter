@@ -1,6 +1,7 @@
 import { Head, useForm, router, usePage } from '@inertiajs/react'
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
+import { formatPhone, telHref } from '@/lib/phone'
 
 interface Signer {
   name: string
@@ -664,8 +665,8 @@ function ContactLine({ label, party }: { label: string; party: ContactParty }) {
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: '4px' }}>
         {party.phone && (
-          <a href={`tel:${party.phone}`} style={{ fontFamily: 'var(--mono)', fontSize: '13px', color: OLIVE, textDecoration: 'none' }}>
-            ☎ {party.phone}
+          <a href={`tel:${telHref(party.phone)}`} style={{ fontFamily: 'var(--mono)', fontSize: '13px', color: OLIVE, textDecoration: 'none' }}>
+            ☎ {formatPhone(party.phone)}
           </a>
         )}
         {party.email && (
@@ -693,8 +694,8 @@ function LocalContactRow({ contact, isLast }: { contact: LocalContact; isLast: b
       )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: '4px' }}>
         {contact.phone && (
-          <a href={`tel:${contact.phone}`} style={{ fontFamily: 'var(--mono)', fontSize: '13px', color: OLIVE, textDecoration: 'none' }}>
-            ☎ {contact.phone}
+          <a href={`tel:${telHref(contact.phone)}`} style={{ fontFamily: 'var(--mono)', fontSize: '13px', color: OLIVE, textDecoration: 'none' }}>
+            ☎ {formatPhone(contact.phone)}
           </a>
         )}
         {contact.email && (

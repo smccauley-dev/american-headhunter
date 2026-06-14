@@ -7,6 +7,7 @@ use App\Models\Property\PropertyManager;
 use App\Models\Property\PropertyPhoto;
 use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
+use App\Support\PhoneNumber;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DatePicker;
@@ -470,7 +471,7 @@ class PropertyFormV2
         foreach ($rows as [$role, $c]) {
             $html .= "<div style=\"{$cs}font-weight:500;\">" . htmlspecialchars($role) . '</div>';
             $html .= "<div style=\"{$cs}\">" . htmlspecialchars($c['name'] ?? '—') . '</div>';
-            $html .= "<div style=\"{$cs}\">" . htmlspecialchars($c['phone'] ?: '—') . '</div>';
+            $html .= "<div style=\"{$cs}\">" . htmlspecialchars($c['phone'] ? PhoneNumber::format($c['phone']) : '—') . '</div>';
             $html .= "<div style=\"{$cs}\">" . htmlspecialchars($c['email'] ?: '—') . '</div>';
         }
 
@@ -519,6 +520,8 @@ class PropertyFormV2
                 TextInput::make('phone')
                     ->label('Phone')
                     ->tel()
+                    ->placeholder('+1 (123) 456-7890')
+                    ->formatStateUsing(fn (?string $state) => PhoneNumber::format($state))
                     ->maxLength(30),
                 TextInput::make('email')
                     ->label('Email')
