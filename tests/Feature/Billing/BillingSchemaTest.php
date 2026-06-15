@@ -7,6 +7,7 @@ use App\Models\Billing\Payment;
 use App\Models\Billing\PromoCode;
 use App\Models\Billing\Refund;
 use App\Models\Billing\Subscription;
+use App\Models\Billing\W9Record;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -36,6 +37,8 @@ class BillingSchemaTest extends TestCase
     private array $subscriptionIds = [];
     /** @var array<int,string> */
     private array $promoCodeIds = [];
+    /** @var array<int,string> */
+    private array $w9RecordIds = [];
 
     protected function tearDown(): void
     {
@@ -46,6 +49,7 @@ class BillingSchemaTest extends TestCase
         if ($this->invoiceIds)      { $conn->table('invoices')->whereIn('id', $this->invoiceIds)->delete(); }
         if ($this->subscriptionIds) { $conn->table('subscriptions')->whereIn('id', $this->subscriptionIds)->delete(); }
         if ($this->promoCodeIds)    { $conn->table('promo_codes')->whereIn('id', $this->promoCodeIds)->delete(); }
+        if ($this->w9RecordIds)     { $conn->table('w9_records')->whereIn('id', $this->w9RecordIds)->delete(); }
 
         try { $conn->disconnect(); } catch (\Throwable) {}
         parent::tearDown();
@@ -231,5 +235,60 @@ class BillingSchemaTest extends TestCase
             'max_redemptions'       => 5,
             'redemption_count'      => 6,
         ]);
+    }
+
+    private function makeW9(array $overrides = []): W9Record
+    {
+        $w9 = W9Record::create(array_merge([
+            'user_id'            => (string) Str::uuid(),
+            'legal_name'         => 'Jane Q. Landowner',
+            'tax_classification' => 'individual',
+            'tin_type'           => 'ssn',
+            'tin'                => '123-45-6789',
+            'tin_last_four'      => '6789',
+            'address_line1'      => '100 Ridge Rd',
+            'city'               => 'Helena',
+            'state_code'         => 'MT',
+            'postal_code'        => '59601',
+            'status'             => 'pending',
+        ], $overrides));
+
+        $this->w9RecordIds[] = $w9->id;
+
+        return $w9;
+    }
+
+    public function test_w9_tin_is_encrypted_at_rest_and_hidden(): void
+    {
+        $w9 = $this->makeW9();
+
+        // Round-trips through HasEncryptedFields on read.
+        $this->assertSame('123-45-6789', $w9->fresh()->tin);
+
+        // Raw column is base64 ciphertext — never the plaintext TIN.
+        $rawTin = DB::connection('billing')->table('w9_records')->where('id', $w9->id)->value('tin');
+        $this->assertNotSame('123-45-6789', $rawTin);
+        $this->assertStringNotContainsString('123-45-6789', (string) $rawTin);
+
+        // tin is in $hidden — must not serialize.
+        $arr = $w9->fresh()->toArray();
+        $this->assertArrayNotHasKey('tin', $arr);
+        $this->assertSame('6789', $arr['tin_last_four']);
+    }
+
+    public function test_w9_one_active_record_per_user(): void
+    {
+        $userId = (string) Str::uuid();
+        $this->makeW9(['user_id' => $userId, 'status' => 'verified']);
+
+        $this->expectException(QueryException::class); // uq_w9_records_user_active
+        $this->makeW9(['user_id' => $userId, 'status' => 'pending']);
+    }
+
+    public function test_w9_invalid_classification_rejected_by_check(): void
+    {
+        $this->expectException(QueryException::class);
+
+        $this->makeW9(['tax_classification' => 'bogus_class']);
     }
 }

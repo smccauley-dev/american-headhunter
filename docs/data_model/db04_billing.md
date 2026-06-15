@@ -6,7 +6,7 @@
 **Server:** Dedicated PCI-scoped PostgreSQL instance — isolated network segment, access-logged, SOC 2 compliant
 **Encryption Key:** Key D — HSM-backed, rotated monthly via Azure Key Vault
 **Extensions:** `pgcrypto`, `uuid-ossp`
-**RLS Enabled:** Yes — on `invoices`, `payments`, `payment_methods`, `payouts`
+**RLS Enabled:** Yes — on `invoices`, `payments`, `payment_methods`, `payouts`, `w9_records`
 
 This database governs all financial transactions: invoices, payments, refunds, Stripe Connect payouts to landowners, membership subscriptions, and tax records (TaxJar calculations and 1099 filing via Tax1099).
 
@@ -404,17 +404,19 @@ CREATE TRIGGER trg_tax_1099_records_updated_at
 
 ---
 
-## Proposed Tables — Deferred (pending review before build)
+## Extended Billing Tables
 
-> **Status:** these four tables are named in the build roadmap (Phase 5.1) but had **no schema definition anywhere** until now. The DDL below is a *recommendation* — review and accept it before generating migrations. Nothing here is built yet.
+> These four tables were named in the build roadmap (Phase 5.1) but had **no schema definition anywhere** until they were designed here. Build status as of 2026-06-15:
+> - ✅ **`promo_codes`** — BUILT (migration `2026_06_15_000001`)
+> - ✅ **`w9_records`** — BUILT (migration `2026_06_15_000002`); adds `w9_records` to the RLS list
+> - ⏳ **`security_deposits`** — proposed, pending review (will add to RLS list when built)
+> - ⏳ **`tax_nexus_tracking`** — proposed, pending review
 >
-> **Identifier note:** unlike the tables above (which still show the stale `set_updated_at()` / `app.current_role`), these proposals use the **actual codebase identifiers**: trigger function `trigger_set_updated_at()` and RLS settings `app.current_user_id` + `app.user_role` (the `,true` "missing ok" flag is set by `InjectDatabaseContext`). Build them as written.
->
-> When built, the database header's **RLS Enabled** list expands to include `w9_records` and `security_deposits`.
+> **Identifier note:** unlike the tables above (which still show the stale `set_updated_at()` / `app.current_role`), these use the **actual codebase identifiers**: trigger function `trigger_set_updated_at()` and RLS settings `app.current_user_id` + `app.user_role` (the `,true` "missing ok" flag is set by `InjectDatabaseContext`).
 
-### `w9_records` *(proposed)*
+### `w9_records` ✅ *(BUILT 2026-06-15)*
 
-IRS Form W-9 collected from every payee (landowner, seller, outfitter) before any 1099 can be filed. The TIN is the only highly-sensitive field and is **encrypted at rest** via `pgcrypto` (Key D); a display-safe `tin_last_four` is kept for the UI. Permanent compliance record — no `deleted_at`.
+IRS Form W-9 collected from every payee (landowner, seller, outfitter) before any 1099 can be filed. The TIN is the only highly-sensitive field and is **encrypted at rest** via the `HasEncryptedFields` trait — `pgp_sym_encrypt` base64-encoded into a `TEXT` column (Key D, `ENCRYPTION_KEY_BILLING`), exactly like `lease_applications.message`. A display-safe `tin_last_four` is kept for the UI. Permanent compliance record — no `deleted_at`.
 
 ```sql
 CREATE TABLE w9_records (
@@ -427,7 +429,7 @@ CREATE TABLE w9_records (
                                 ('individual','sole_proprietor','c_corp','s_corp',
                                  'partnership','trust_estate','llc')),
     tin_type            VARCHAR(3)   NOT NULL CHECK (tin_type IN ('ssn','ein')),
-    tin_encrypted       BYTEA        NOT NULL,  -- pgp_sym_encrypt(tin, key) — NEVER read raw; decrypt via TaxService
+    tin                 TEXT         NOT NULL,  -- pgp_sym_encrypt base64 (Key D) via HasEncryptedFields; in $hidden — never exposed
     tin_last_four       CHAR(4)      NOT NULL,  -- display-safe only
     address_line1       VARCHAR(200) NOT NULL,
     address_line2       VARCHAR(200) NULL,
@@ -467,14 +469,14 @@ CREATE POLICY w9_records_own_user ON w9_records
 ```
 
 **Notes:**
-- All writes go through `TaxService` (encrypts the TIN before insert). Never insert `tin_encrypted` from a controller or generic service.
+- The model uses `HasEncryptedFields` with `encryptedFields = ['tin']`, so assigning a plaintext TIN to `$model->tin` transparently encrypts on write and decrypts on read. `tin` is also in `$hidden` so it never serializes into API/array output.
 - At most one `pending`/`verified` W-9 per user (partial unique index); re-collection sets the prior row to `superseded`.
 - `tin_last_four` is the only TIN fragment ever returned to the UI. The decrypted TIN is read **only** at 1099-filing time inside `Generate1099RecordsJob`.
 - **Open decision:** whether W-9 certification reuses the Dropbox Sign e-signature flow (Phase 4.5.5) or a lightweight in-app attestation.
 
 ---
 
-### `security_deposits` *(proposed)*
+### `security_deposits` ⏳ *(proposed — pending review)*
 
 Refundable damage deposit held for the life of a lease, then released, partially withheld, or forfeited at lease end. Funded by a dedicated `payments` row; forfeited funds are disbursed to the landowner via a `payouts` row.
 
@@ -538,7 +540,7 @@ CREATE POLICY security_deposits_parties_and_staff ON security_deposits
 
 ---
 
-### `promo_codes` *(accepted — needed)*
+### `promo_codes` ✅ *(BUILT 2026-06-15)*
 
 > **Confirmed needed (2026-06-15):** the platform will run ad-hoc discounts, and **partners can be issued their own codes** — an outfitter code, a landowner code, etc. That requires many distinct code strings with per-code limits and partner attribution, which `promotional_periods` alone cannot express.
 >
@@ -586,7 +588,7 @@ CREATE TRIGGER trg_promo_codes_updated_at
 
 ---
 
-### `tax_nexus_tracking` *(proposed — belongs with 5.5 TaxService)*
+### `tax_nexus_tracking` ⏳ *(proposed — belongs with 5.5 TaxService)*
 
 State-by-state economic-nexus tracking so the platform knows where it is obligated to collect sales tax. One row per US state; updated by a job that rolls up `tax_calculations`/`payments` by destination state (or syncs TaxJar's nexus API). This is operational reference data, not a per-user record.
 

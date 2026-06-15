@@ -693,16 +693,18 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
 - [x] `tax_calculations` — TaxJar results per payment, append-only (canonical doc; not in original roadmap list)
 - [x] `tax_1099_records` — generated 1099 tracking (year, recipient, amount, filing status; append/permanent)
 - [x] `promo_codes` — partner-attributable discount codes (links DB 12 `promotional_periods`; `owner_user_id` for outfitter/landowner codes; case-insensitive unique; redemption CHECK; no RLS) — confirmed needed 2026-06-15, schema in `db04_billing.md`
-- [x] `php artisan migrate:single billing --fresh` — zero errors (12 migrations)
-- [x] **11 Eloquent models** in `app/Models/Billing/` — extend `BaseModel`/`BaseModelWithSoftDeletes`; cents cast to int; Stripe IDs in `$hidden`; `payments`/`refunds` relationships; `Invoice::getLease()` cross-DB getter (added `LeaseService::find()`). Models: `Invoice`, `Payment`, `PaymentMethod`, `Refund`, `Payout`, `StripeAccount`, `Subscription`, `TaxCalculation`, `Tax1099Record`, `PromotionClaim`, `PromoCode`
+- [x] `w9_records` — payee W-9 records; TIN encrypted at rest via `HasEncryptedFields` (pgp_sym_encrypt base64, Key D), `tin` in `$hidden`, `tin_last_four` display-safe; one active W-9 per user; RLS own-user — built 2026-06-15
+- [x] `php artisan migrate:single billing --fresh` — zero errors (13 migrations)
+- [x] **12 Eloquent models** in `app/Models/Billing/` — extend `BaseModel`/`BaseModelWithSoftDeletes`; cents cast to int; Stripe IDs in `$hidden`; `payments`/`refunds` relationships; `Invoice::getLease()` cross-DB getter (added `LeaseService::find()`). Models: `Invoice`, `Payment`, `PaymentMethod`, `Refund`, `Payout`, `StripeAccount`, `Subscription`, `TaxCalculation`, `Tax1099Record`, `PromotionClaim`, `PromoCode`, `W9Record`
 - [x] **Two doc-vs-codebase corrections applied:** trigger fn is `trigger_set_updated_at()` (not the doc's `set_updated_at()`); RLS uses `app.current_user_id` + `app.user_role` with `,true` (not the doc's stale `app.current_role`)
-- [x] **Repeatable verification** — `tests/Feature/Billing/BillingSchemaTest.php` (10 tests, 25 assertions): UUID defaults, FK chain, casts, JSONB, `$hidden`, cross-DB `getLease()`, `updated_at` trigger, soft delete, status CHECK, one-active-subscription partial unique, plus promo_codes (casts/partner attribution, case-insensitive unique, redemption CHECK). Runs against the real `billing` Postgres connection. `php artisan test --filter=BillingSchemaTest` → all green
+- [x] **Repeatable verification** — `tests/Feature/Billing/BillingSchemaTest.php` (13 tests, 32 assertions): UUID defaults, FK chain, casts, JSONB, `$hidden`, cross-DB `getLease()`, `updated_at` trigger, soft delete, status CHECK, one-active-subscription partial unique, promo_codes (casts/partner attribution, case-insensitive unique, redemption CHECK), and w9_records (TIN encrypts at rest + decrypts on read + ciphertext-not-plaintext + `$hidden`, one-active-per-user, classification CHECK). Runs against the real `billing` Postgres connection. `php artisan test --filter=BillingSchemaTest` → all green
 - [x] Commit: "DB 4 Billing migrations" — branch `feature/billing-schema` (rebased onto `feature/document-scan-job`), schema `997cdd0`, test `b0fbb90`
 
-**Deferred — proposed schemas drafted in `db04_billing.md` ("Proposed Tables — Deferred"), pending review before migrating.** Each carries an open design decision; do NOT migrate until the decision is resolved.
-- [ ] `w9_records` — W-9 data (TIN encrypted at rest via pgcrypto, `tin_last_four` display-safe; RLS own-user). **Build next** — required before any 1099 filing (5.5). *Decision: W-9 certification via Dropbox Sign vs. in-app attestation.*
+**Deferred — proposed schemas drafted in `db04_billing.md` ("Extended Billing Tables"), pending review before migrating.** Each carries an open design decision; do NOT migrate until the decision is resolved.
 - [ ] `security_deposits` — held deposit per lease, escrow status, forfeiture → landowner payout (RLS parties+staff). **Build with lease-deposit flow.** *Decision: separate charge+refund (recommended) vs. Stripe auth-hold (rejected — 7-day window too short for leases).*
 - [ ] `tax_nexus_tracking` — state-by-state economic nexus for TaxJar (no RLS, one row/state). **Build with 5.5 TaxService** — nothing consumes it until TaxJar is wired.
+
+> `w9_records` cert flow still open: W-9 certification via Dropbox Sign vs. in-app attestation — the table/model are built; only the `certified_at`-setting flow (Phase 5.2+) depends on this call.
 
 ### 5.2 Billing Services
 
