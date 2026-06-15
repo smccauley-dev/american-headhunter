@@ -686,11 +686,69 @@ The exclusion is now an explicit, documented contract in the middleware: a comme
 
 ---
 
+## SEC-043 — RLS Universally Bypassed: App Role Owns Every Table and `FORCE ROW LEVEL SECURITY` Is Not Set
+
+| Field | Detail |
+|---|---|
+| **Severity** | High |
+| **Status** | OPEN |
+| **Found** | 2026-06-15 |
+| **File** | All RLS-enabled tables across DBs 1/2/3/4 (systemic); migrations under `database/migrations/*` |
+
+**Description:**
+The application connects to PostgreSQL as the role `ah_app`, and `ah_app` is the **owner** of every table. PostgreSQL **does not apply row-level-security policies to a table's owner** unless the table is additionally marked `FORCE ROW LEVEL SECURITY`. A live inspection of the running databases shows every RLS-enabled table has `relrowsecurity = true` but `relforcerowsecurity = false`:
+
+- **billing (DB 4):** `invoices`, `payment_methods`, `payments`, `payouts`, `w9_records`
+- **identity (DB 1):** `users`, `user_profiles`, `mfa_configurations`, `background_check_results`, `api_keys`
+- **property (DB 2):** `property_access_info` (gate codes, wifi/cabin codes)
+- **lease (DB 3):** `leases`, `lease_hunters`, `lease_notes`, `check_ins`
+
+Because the runtime role owns these tables, **none of these policies are ever evaluated.** The `InjectDatabaseContext` middleware faithfully sets `app.current_user_id` / `app.user_role` on each request, but no policy consults them — the entire RLS layer is currently a no-op for the application connection. CLAUDE.md and several prior findings (SEC-003, SEC-018, SEC-023) describe RLS as the DB-level backstop ("RLS policy enforces this at the DB level but the service layer must also enforce it"); in practice only the service-layer half exists.
+
+**Why this matters now:** the new W-9/billing tables were built trusting this same backstop. `w9_records.tin` is encrypted, but the `w9_records_own_user` policy meant to restrict *which rows* a user can read (TINs, legal names, addresses, backup-withholding status) enforces nothing. There is not yet a W-9 or billing read path over HTTP (no routes today), so this is **latent, not yet exploitable** — the danger is that the next developer builds a `TaxService` / billing endpoint reasonably relying on RLS to scope rows and silently leaks every payee's tax/payment data. The same latent gap covers identity and lease data that *do* have live read paths today (currently protected only by whatever service-layer checks each path happens to implement).
+
+**Root Cause:**
+Migrations `ENABLE ROW LEVEL SECURITY` and `CREATE POLICY ... TO ah_app`, but never `ALTER TABLE ... FORCE ROW LEVEL SECURITY`, and the application runs as the table-owning role. Owner-bypass is silent (no error, policies simply never fire), so the gap was invisible without inspecting `pg_class.relforcerowsecurity`.
+
+**Recommended Fix (not yet applied — needs careful, tested rollout):**
+1. Add `ALTER TABLE <t> FORCE ROW LEVEL SECURITY;` to every RLS-enabled table, **or** (preferred long-term) run the app as a dedicated non-owner role that RLS naturally applies to, keeping `ah_app`/migrations as a separate owner role.
+2. **Before** forcing RLS, add the missing write-side policies. Several tables (`w9_records`, `invoices`, `payments`, `payouts`) currently have only `FOR SELECT` policies; once the owner no longer bypasses RLS, inserts/updates will be **denied** unless an `INSERT`/`UPDATE ... WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid OR role in (staff,super_admin))` policy exists. The `WITH CHECK` also closes a second gap: today nothing at the DB level stops a row being written with another user's `user_id`.
+3. Ensure non-HTTP writers (queue jobs, ETL) that touch forced-RLS tables set the RLS context explicitly, or run as a role exempt by policy (extends the SEC-023 contract).
+4. Verify with a regression test that connects as `ah_app`, sets `app.current_user_id` to user A, and confirms user B's rows are invisible.
+
+**Note:** This is a systemic architectural change touching every RLS table across multiple DBs; enabling `FORCE` without step 2 will break writes. It is filed OPEN with the remediation plan above rather than hot-patched, pending a decision on approach (force-in-place vs. dedicated runtime role).
+
+---
+
+## SEC-044 — Encrypted-Field Plaintext and Key Pass Through Query Bindings (Log-Exposure Risk)
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low |
+| **Status** | OPEN |
+| **File** | `app/Models/Traits/HasEncryptedFields.php` |
+
+**Description:**
+`HasEncryptedFields` encrypts/decrypts by issuing `SELECT encode(pgp_sym_encrypt(?, ?), 'base64')` / `pgp_sym_decrypt(decode(?, 'base64'), ?)` with the **plaintext value and the encryption key passed as query bindings.** The values are correctly parameterized (no SQL-injection risk) and are not written to the application log on the normal path. However, any mechanism that records query bindings — Laravel Telescope, `DB::enableQueryLog()`, the debugbar, or a PostgreSQL slow-query/`log_statement=all` setting — would capture **both the plaintext sensitive value (now including W-9 TINs via SEC-044's table) and the symmetric encryption key in the same log line.** CLAUDE.md mandates that encrypted fields "must never appear in application logs, even decrypted."
+
+**Root Cause:**
+The pgcrypto approach requires the plaintext and key to travel to the database over the connection and thus through the query layer, where binding-capturing tooling can observe them. The trait is now used for the most sensitive field on the platform (`w9_records.tin`), raising the impact.
+
+**Recommended Fix:**
+- Confirm and document that Telescope/debugbar/query-log are **disabled in production**, and that PostgreSQL `log_statement` is not `all`/`mod` for the billing/identity roles (these would log bindings).
+- Consider moving encryption app-side (Laravel `Crypt` / sodium) so neither plaintext nor key is ever sent as a query binding — at the cost of losing in-DB `pgp_sym_*` searchability (already not relied upon for these columns).
+- At minimum, add a guard/comment so query logging is never enabled on the `billing`/`identity` connections.
+
+**Verification (pending):** Inspect production logging config; add a test asserting no encrypted-field plaintext appears in `DB::getQueryLog()` output for these connections (or that logging is off).
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
 |---|---|---|---|---|
-| _None_ | All previously tracked open/deferred items in this file were remediated on 2026-06-14. | — | — | — |
+| SEC-043 | RLS bypassed platform-wide — app role owns tables, `FORCE ROW LEVEL SECURITY` unset; missing write-side `WITH CHECK` policies on billing tables | High | OPEN | Pre-launch (before any billing/W-9 read path ships) |
+| SEC-044 | Encrypted-field plaintext + key pass through query bindings (log-exposure if query logging enabled) | Low | OPEN | Pre-launch hardening |
 
 ---
 
@@ -702,6 +760,7 @@ The exclusion is now an explicit, documented contract in the middleware: a comme
 - Phase 3/4 admin UI audit (2026-05-31): Property V2 edit/view pages, amenities resource, login page settings, RLS middleware reviewed. Findings: SEC-017 through SEC-022. All fixed same session. SEC-023 deferred (no RLS on those DBs yet).
 - Last-24h feature audit (2026-06-13): reviewed the DB-managed email template system (`EmailTemplateService`, `MailSettingsService`, `EmailSettings`, version preview), the property-map feature (`PropertyMapService`, `ExifGps`, map editor, public map route), the configurable post-login redirect, and the new encrypted UserProfile contact fields. Findings: SEC-024 (EXIF GPS published by default) and SEC-025 (map route ignored property status) — both fixed same session. **No issue found** in: email template rendering (variables HTML-escaped in HTML bodies via `htmlspecialchars`; admin-only authorship; preview iframe uses `sandbox=""`), SMTP settings (password encrypted at rest via `Crypt`, never echoed to the form, change audit-logged, access gated by `canManageSystem`), or the post-login redirect (value comes from admin-controlled tenant settings, not user input).
 - Last-24h feature audit (2026-06-14): reviewed the member field-check-in + QR system (`CheckInController`, `CheckInService`), the stand-map / boundary overlay (`PropertyMapService::getBoundaryOverlay`, `MemberController`), the property contact directory (`PropertyService::getContactDirectory`, admin Contacts tab, `Api/PropertyContactController`), the opt-in manager-contact flow (`is_field_contact` migration + `PropertyManager` model + `EditPropertyV2::removeManagerContact`), and the executed-lease PDF download (`LeaseSignController`, `EsignatureService::downloadSignedLease`). Finding: SEC-042 (`manager_id` UUID disclosed to lessees) — fixed same session. **No issue found** in: check-in (`checkIn`/`checkOut` enforce `abort_unless(mayCheckIn, 403)` — lessee or approved LeaseHunter only; check-out scoped to the user's own open record), stand-map markers + access info (served only for the lessee's own `active` lease, GPS member-only per SEC-024), contact directory (gated by `userHasActiveLeaseForProperty`, returns 404 not 403 to non-lessees per SEC-024; intended landowner/manager contact details are by design), the opt-in manager flow (admin-only writes via `AdminAuth::canManageProperties`; managers no longer auto-listed to hunters), lease PDF download (`abort_if(403)` unless lessee or lessor; download audit-logged via AuditService), and the PDF/QR/check-in-log blades (all output escaped — no `{!! !!}`). **Out-of-window note:** the admin `auth:web` document download/view routes (`/admin/documents/{documentId}/download`, `/view`) do a bare `findOrFail` + `Storage::download` with no per-document ownership check. These predate this window (commit `05df4a5`) and are reachable only through the `web` (admin) guard — members authenticate via the separate `auth.session`/`RequireSessionAuth` system — so they are effectively admin-restricted, but lack defense-in-depth ownership scoping. Logged here; not assigned a SEC ID this pass.
+- Last-24h security scan (2026-06-15): reviewed all code committed in the prior 24h — the DB 4 billing schema (12 tables / migrations), the `w9_records` table + `W9Record` model + `HasEncryptedFields` TIN encryption, `promo_codes`/`PromoCode`, the billing service layer (`SubscriptionService`, `BillingService`, rewired `EntitlementService`), the `PgTextArray` cast, the ClamAV virus-scan path (`VirusScanService` + `ScanDocumentForViruses`), the entitlement-snapshot backfill migration, the BaseModel platform-model sweep, `config/services.php`, `routes/api.php`, and the env-example diffs. Findings: **SEC-043** (High — RLS bypassed platform-wide; app role owns all tables and `FORCE ROW LEVEL SECURITY` is unset, so every policy including the new W-9/billing ones is a no-op; verified live via `pg_class.relforcerowsecurity`) and **SEC-044** (Low — encrypted-field plaintext + key flow through query bindings, log-exposure risk). **No issue found** in: TIN handling (encrypted via pgcrypto Key D, `tin` in `$hidden`, `tin_last_four` display-only, never logged), the virus-scan job (fail-closed — scanner errors and missing files throw and retry, never `markReady`; infected → quarantine + audit), `PgTextArray` (values are bound parameters — no SQL injection; admin-controlled inputs), billing services (audit-logged, entitlement cache invalidated on every mutation, one-active-subscription enforced, no hardcoded prices/tiers — all DB-12-driven via snapshots), the backfill migration (drops/recreates the `plan_versions_no_update` immutability RULE around a `WHERE entitlements_snapshot = '{}'`-guarded one-time update), `config/services.php` (all secrets via `env()`, no literals), `routes/api.php` (billing/W-9 not yet HTTP-exposed; existing routes auth+throttle gated), and the committed env-example files (placeholder values only — no real keys/secrets).
 - Open-items remediation pass (2026-06-14): cleared the entire Open/Deferred backlog highest-to-lowest — SEC-003-P4 (High, structural access-info lease gate), SEC-006/D01 (Medium, explicit Filament mutation gates + AdminUser privilege-escalation fix), SEC-008 (Medium, read-API throttles), SEC-007/SEC-010/SEC-023/D02/SEC-037/SEC-038 (Low). All `php -l` clean; full suite 72 passed (the lone failure was Postgres connection-slot exhaustion under parallel 14-DB load, not a code defect — passes in isolation).
 - No SQL injection surfaces found — all queries use parameterized bindings or Eloquent ORM.
 - No hardcoded credentials or keys found in application code — all sourced from env/config.
