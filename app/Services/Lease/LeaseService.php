@@ -27,6 +27,11 @@ class LeaseService extends BaseService
         return $this->cache("lease_detail:{$leaseId}", fn () => $this->buildLeaseDetail($leaseId), 10);
     }
 
+    public function find(string $leaseId): ?Lease
+    {
+        return Lease::find($leaseId);
+    }
+
     private function buildLeaseDetail(string $leaseId): LeaseDetailDTO
     {
         $lease    = Lease::with(['hunters', 'notes', 'checkIns', 'renewals'])->findOrFail($leaseId);

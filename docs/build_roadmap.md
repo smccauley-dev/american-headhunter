@@ -680,20 +680,26 @@ The goal: Stripe payment collection, Stripe Connect landowner payouts, subscript
 
 ### 5.1 DB 4 Billing Migrations
 
-- [ ] `subscriptions` — Stripe subscription records with `plan_version_id` and `active_promotion_claim_id` columns
-- [ ] `invoices` — per-billing-cycle invoice records
-- [ ] `payments` — individual Stripe charge records (stripe_charge_id, last_four, brand — no raw card data ever)
-- [ ] `payment_methods` — saved payment method metadata (Stripe token only)
-- [ ] `stripe_connect_accounts` — landowner/outfitter/consultant payout accounts
-- [ ] `payouts` — payout records (lease revenue disbursements to landowners)
+Built per the canonical schema in `docs/data_model/db04_billing.md` (the source of truth) + `promotion_claims` from `pricing_schema_additions.md`:
+
+- [x] `subscriptions` — Stripe subscription records with `plan_version_id` and `active_promotion_claim_id` columns
+- [x] `invoices` — per-billing-cycle invoice records (RLS: parties + staff)
+- [x] `payments` — individual Stripe charge records (stripe_charge_id — no raw card data ever; RLS: own user)
+- [x] `payment_methods` — saved payment method metadata (Stripe token, last_four, brand only; RLS: own user, FOR ALL)
+- [x] `refunds` — partial/full refunds against a payment (canonical doc; not in original roadmap list)
+- [x] `stripe_accounts` — landowner Stripe Connect accounts (canonical name; roadmap called this `stripe_connect_accounts`)
+- [x] `payouts` — payout records (lease revenue disbursements to landowners; RLS: own user)
+- [x] `promotion_claims` — per-user promo claim records (from `pricing_schema_additions.md`; `claim_status` enum)
+- [x] `tax_calculations` — TaxJar results per payment, append-only (canonical doc; not in original roadmap list)
+- [x] `tax_1099_records` — generated 1099 tracking (year, recipient, amount, filing status; append/permanent)
+- [x] `php artisan migrate:single billing --fresh` — zero errors (11 migrations)
+- [ ] Commit: "DB 4 Billing migrations"
+
+**Deferred — no canonical schema exists yet (do NOT fabricate columns):** these four roadmap tables have no definition in any `docs/data_model/db*.md`, so they were intentionally not built. Add a schema to `db04_billing.md` first, then migrate.
 - [ ] `w9_records` — W-9 data (TIN encrypted at rest via pgcrypto)
-- [ ] `promo_codes` — code definitions with usage tracking
-- [ ] `promotion_claims` — per-user promo claim records (from `pricing_schema_additions.md`)
+- [ ] `promo_codes` — code definitions with usage tracking (note: promo codes are currently modeled in DB 12 `promotional_periods.requires_promo_code` + DB 4 `promotion_claims.promo_code_used`)
 - [ ] `security_deposits` — held deposit records with escrow status
 - [ ] `tax_nexus_tracking` — state-by-state economic nexus thresholds for TaxJar
-- [ ] `tax_1099_records` — generated 1099 tracking (year, recipient, amount, filing status)
-- [ ] `php artisan migrate:single billing --fresh` — zero errors
-- [ ] Commit: "DB 4 Billing migrations"
 
 ### 5.2 Billing Services
 
