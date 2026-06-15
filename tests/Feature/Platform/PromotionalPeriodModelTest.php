@@ -29,12 +29,9 @@ class PromotionalPeriodModelTest extends TestCase
         parent::tearDown();
     }
 
-    /** Create a promo with an explicit id (id is not mass-assignable). */
     private function make(array $attrs): PromotionalPeriod
     {
-        $promo = new PromotionalPeriod($attrs);
-        $promo->id = (string) Str::uuid();
-        $promo->save();
+        $promo = PromotionalPeriod::create($attrs);
         $this->promoIds[] = $promo->id;
 
         return $promo;

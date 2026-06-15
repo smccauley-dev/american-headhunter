@@ -3,17 +3,13 @@
 namespace App\Models\Platform;
 
 use App\Casts\PgTextArray;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\BaseModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class PromotionalPeriod extends Model
+class PromotionalPeriod extends BaseModel
 {
     protected $connection = 'platform';
     protected $table      = 'promotional_periods';
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
-    public $timestamps   = false;
 
     protected $fillable = [
         'promo_key',
