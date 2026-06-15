@@ -538,24 +538,25 @@ CREATE POLICY security_deposits_parties_and_staff ON security_deposits
 
 ---
 
-### `promo_codes` *(proposed — confirm it's needed first)*
+### `promo_codes` *(accepted — needed)*
 
-> **Design check:** promo codes are *already* partly modeled — DB 12 `promotional_periods.requires_promo_code` defines the campaign/benefit, and DB 4 `promotion_claims.promo_code_used` records redemption. A dedicated table is only warranted when **one campaign needs many distinct code strings** (influencer codes, batch-generated single-use codes, per-partner tracking) with **per-code redemption limits**. If every campaign uses a single shared code, skip this table and keep using `promotional_periods` alone.
-
-If accepted, the table holds the individual code strings and their limits, linked to the DB 12 campaign that defines the actual benefit:
+> **Confirmed needed (2026-06-15):** the platform will run ad-hoc discounts, and **partners can be issued their own codes** — an outfitter code, a landowner code, etc. That requires many distinct code strings with per-code limits and partner attribution, which `promotional_periods` alone cannot express.
+>
+> Division of responsibility: the linked DB 12 `promotional_period` defines **what the discount is** (benefit, target audience, validity rules); `promo_codes` holds **the actual code strings**, their redemption limits, and **who the code is attributed to** (`owner_user_id`).
 
 ```sql
 CREATE TABLE promo_codes (
     id                    UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
     promotional_period_id UUID        NOT NULL,  -- References DB 12 (Platform) promotional_periods.id (the benefit definition)
     code                  VARCHAR(50) NOT NULL,
+    owner_user_id         UUID        NULL,  -- References DB 1 (Identity) users.id — partner the code is attributed to (outfitter/landowner); null = platform-wide
     max_redemptions       INTEGER     NULL,  -- null = unlimited
     redemption_count      INTEGER     NOT NULL DEFAULT 0,
     per_user_limit        SMALLINT    NOT NULL DEFAULT 1,
     starts_at             TIMESTAMPTZ NULL,
     expires_at            TIMESTAMPTZ NULL,
     is_active             BOOLEAN     NOT NULL DEFAULT true,
-    created_by_user_id    UUID        NULL,  -- References DB 1 (Identity) users.id (admin)
+    created_by_user_id    UUID        NULL,  -- References DB 1 (Identity) users.id (admin who created it)
     notes                 TEXT        NULL,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -568,6 +569,7 @@ CREATE TABLE promo_codes (
 
 CREATE UNIQUE INDEX uq_promo_codes_code     ON promo_codes (LOWER(code)) WHERE deleted_at IS NULL;
 CREATE        INDEX idx_promo_codes_period  ON promo_codes (promotional_period_id);
+CREATE        INDEX idx_promo_codes_owner   ON promo_codes (owner_user_id) WHERE owner_user_id IS NOT NULL;
 CREATE        INDEX idx_promo_codes_active  ON promo_codes (is_active) WHERE is_active = true AND deleted_at IS NULL;
 
 CREATE TRIGGER trg_promo_codes_updated_at
@@ -576,7 +578,8 @@ CREATE TRIGGER trg_promo_codes_updated_at
 ```
 
 **Notes:**
-- No RLS — admin-managed reference data, validated server-side at checkout (same posture as `refunds`/`stripe_accounts`).
+- No RLS — admin/partner-managed reference data, validated server-side at checkout (same posture as `refunds`/`stripe_accounts`). Partner-facing visibility of *their own* codes is enforced at the service/portal layer via `owner_user_id`, not RLS.
+- `owner_user_id` is attribution only — it records which partner the code belongs to for reporting and partner dashboards. What the code *applies to* (e.g. only that outfitter's bookings) is expressed by the DB 12 `promotional_period`'s target, not here.
 - `redemption_count` is incremented atomically inside `BillingService` when a `promotion_claims` row is created carrying this code; `promotion_claims.promo_code_used` stores the code string for the audit trail.
 - Per-user enforcement (`per_user_limit`) is checked against existing `promotion_claims` for the user, not stored here.
 - Code uniqueness is case-insensitive (`LOWER(code)`), scoped to non-deleted rows.

@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Models\Billing\Invoice;
 use App\Models\Billing\Payment;
+use App\Models\Billing\PromoCode;
 use App\Models\Billing\Refund;
 use App\Models\Billing\Subscription;
 use Illuminate\Database\QueryException;
@@ -33,6 +34,8 @@ class BillingSchemaTest extends TestCase
     private array $refundIds = [];
     /** @var array<int,string> */
     private array $subscriptionIds = [];
+    /** @var array<int,string> */
+    private array $promoCodeIds = [];
 
     protected function tearDown(): void
     {
@@ -42,6 +45,7 @@ class BillingSchemaTest extends TestCase
         if ($this->paymentIds)      { $conn->table('payments')->whereIn('id', $this->paymentIds)->delete(); }
         if ($this->invoiceIds)      { $conn->table('invoices')->whereIn('id', $this->invoiceIds)->delete(); }
         if ($this->subscriptionIds) { $conn->table('subscriptions')->whereIn('id', $this->subscriptionIds)->delete(); }
+        if ($this->promoCodeIds)    { $conn->table('promo_codes')->whereIn('id', $this->promoCodeIds)->delete(); }
 
         try { $conn->disconnect(); } catch (\Throwable) {}
         parent::tearDown();
@@ -177,5 +181,55 @@ class BillingSchemaTest extends TestCase
 
         $this->expectException(QueryException::class); // partial unique index violation
         $make();
+    }
+
+    private function makePromoCode(string $code, array $overrides = []): PromoCode
+    {
+        $pc = PromoCode::create(array_merge([
+            'promotional_period_id' => (string) Str::uuid(),
+            'code'                  => $code,
+            'per_user_limit'        => 1,
+        ], $overrides));
+
+        $this->promoCodeIds[] = $pc->id;
+
+        return $pc;
+    }
+
+    public function test_promo_code_create_casts_and_partner_attribution(): void
+    {
+        $owner = (string) Str::uuid();
+        $pc = $this->makePromoCode('SAVE10', [
+            'owner_user_id'   => $owner,        // outfitter/landowner code
+            'max_redemptions' => 100,
+            'is_active'       => true,
+        ]);
+
+        $fresh = $pc->fresh();
+        $this->assertTrue(Str::isUuid($fresh->id));
+        $this->assertSame($owner, $fresh->owner_user_id);
+        $this->assertSame(0, $fresh->redemption_count, 'redemption_count defaults to 0');
+        $this->assertSame(100, $fresh->max_redemptions);
+        $this->assertTrue($fresh->is_active, 'is_active should cast to bool');
+    }
+
+    public function test_promo_code_is_case_insensitively_unique(): void
+    {
+        $this->makePromoCode('FALL2026');
+
+        $this->expectException(QueryException::class); // uq_promo_codes_code on LOWER(code)
+        $this->makePromoCode('fall2026');
+    }
+
+    public function test_promo_code_redemptions_cannot_exceed_max(): void
+    {
+        $this->expectException(QueryException::class); // chk_promo_codes_redemptions
+
+        PromoCode::create([
+            'promotional_period_id' => (string) Str::uuid(),
+            'code'                  => 'OVERMAX',
+            'max_redemptions'       => 5,
+            'redemption_count'      => 6,
+        ]);
     }
 }
