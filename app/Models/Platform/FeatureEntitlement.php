@@ -2,16 +2,12 @@
 
 namespace App\Models\Platform;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\BaseModel;
 
-class FeatureEntitlement extends Model
+class FeatureEntitlement extends BaseModel
 {
     protected $connection = 'platform';
     protected $table      = 'feature_entitlements';
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
-    public $timestamps   = false;
 
     protected $fillable = [
         'plan_id',

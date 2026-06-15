@@ -2,16 +2,12 @@
 
 namespace App\Models\Platform;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\BaseModel;
 
-class NotificationTemplate extends Model
+class NotificationTemplate extends BaseModel
 {
     protected $connection = 'platform';
     protected $table      = 'notification_templates';
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
-    public $timestamps   = false;
 
     protected $fillable = [
         'slug',

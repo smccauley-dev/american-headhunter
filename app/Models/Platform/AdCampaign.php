@@ -2,19 +2,12 @@
 
 namespace App\Models\Platform;
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\BaseModelWithSoftDeletes;
 
-class AdCampaign extends Model
+class AdCampaign extends BaseModelWithSoftDeletes
 {
-    use SoftDeletes;
-
     protected $connection = 'platform';
     protected $table      = 'ad_campaigns';
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
-    public $timestamps   = false;
 
     protected $fillable = [
         'name',

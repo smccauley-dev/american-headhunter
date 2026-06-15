@@ -2,19 +2,12 @@
 
 namespace App\Models\Platform;
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\BaseModelWithSoftDeletes;
 
-class MembershipPlan extends Model
+class MembershipPlan extends BaseModelWithSoftDeletes
 {
-    use SoftDeletes;
-
     protected $connection = 'platform';
     protected $table      = 'membership_plans';
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
-    public $timestamps   = false;
 
     protected $fillable = [
         'plan_key',

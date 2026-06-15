@@ -2,19 +2,12 @@
 
 namespace App\Models\Platform;
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\BaseModelWithSoftDeletes;
 
-class IotDevice extends Model
+class IotDevice extends BaseModelWithSoftDeletes
 {
-    use SoftDeletes;
-
     protected $connection = 'platform';
     protected $table      = 'iot_devices';
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
-    public $timestamps   = false;
 
     // config may contain credentials — never log this model
     protected $fillable = [

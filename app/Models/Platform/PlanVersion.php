@@ -2,16 +2,12 @@
 
 namespace App\Models\Platform;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\BaseModel;
 
-class PlanVersion extends Model
+class PlanVersion extends BaseModel
 {
     protected $connection = 'platform';
     protected $table      = 'plan_versions';
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
-    public $timestamps   = false;
 
     // Plan versions are logically immutable — PostgreSQL RULE blocks UPDATE.
     // Do not call save() or update() on these records.

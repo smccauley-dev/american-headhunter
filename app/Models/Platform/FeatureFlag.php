@@ -2,16 +2,12 @@
 
 namespace App\Models\Platform;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\BaseModel;
 
-class FeatureFlag extends Model
+class FeatureFlag extends BaseModel
 {
     protected $connection = 'platform';
     protected $table      = 'feature_flags';
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
-    public $timestamps   = false;
 
     protected $fillable = [
         'key',

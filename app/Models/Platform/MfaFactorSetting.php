@@ -4,6 +4,9 @@ namespace App\Models\Platform;
 
 use Illuminate\Database\Eloquent\Model;
 
+// Intentionally extends the raw Model, NOT BaseModel: the primary key is the
+// known string `factor` ('totp', 'sms', …), not a generated UUID `id`, so the
+// BaseModel UUID-on-creating hook does not apply here.
 class MfaFactorSetting extends Model
 {
     protected $connection = 'platform';

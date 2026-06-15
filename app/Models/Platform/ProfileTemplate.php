@@ -2,16 +2,12 @@
 
 namespace App\Models\Platform;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\BaseModel;
 
-class ProfileTemplate extends Model
+class ProfileTemplate extends BaseModel
 {
     protected $connection = 'platform';
     protected $table      = 'profile_templates';
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
-    public $timestamps   = false;
 
     protected $fillable = [
         'profile_type',

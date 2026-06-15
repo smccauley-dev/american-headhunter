@@ -2,16 +2,12 @@
 
 namespace App\Models\Platform;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\BaseModel;
 
-class TenantSettings extends Model
+class TenantSettings extends BaseModel
 {
     protected $connection = 'platform';
     protected $table      = 'tenant_settings';
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
-    public $timestamps   = false;
 
     protected $fillable = [
         'key',
