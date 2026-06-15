@@ -540,17 +540,17 @@ The goal: landowners on **Ranch or Estate** tier can attach a custom PDF contrac
 
 ### 4.7 Lease PDF and QR Code Generation Jobs
 
-- [ ] `App\Jobs\Documents\GenerateLeasePdf` — default queue; uses template + merge fields; stores in `ah-documents` bucket
-- [ ] `App\Jobs\Documents\GenerateQrCode` — default queue; QR encodes property UUID + type; stores metadata in DB 11
-- [ ] `App\Jobs\Documents\ScanUploadedFile` — virus scan via ClamAV; updates `documents.status` on pass/fail; moves to quarantine on fail
-- [ ] Commit: "Document generation and scan jobs"
+- [x] Lease PDF generation — implemented synchronously as `App\Services\Lease\LeaseAgreementPdfService::generateAndStore()` (barryvdh/laravel-dompdf) + `BackfillSignedLeasePdf` command, rather than a `GenerateLeasePdf` queue job; output stored in the documents bucket
+- [x] QR code generation — served on the fly via `App\Services\Documents\QrImageService` (Phase 4.6 per-property gate QR). The `App\Jobs\Documents\GenerateQrCodeImage` job remains a no-op stub (kept but unused; on-the-fly serving covers the need)
+- [x] `App\Jobs\Documents\ScanDocumentForViruses` — real virus scan via `VirusScanService` (clamd INSTREAM, config-gated `services.clamav`); marks `documents.status` ready (clean) / quarantined (infected, + audit); scanner errors & missing files retry. Added migration: `quarantined` was missing from `chk_documents_status`. Disabled by default in dev/test (2026-06-15)
+- [x] Commit: `336e86b` "feat(documents): real ClamAV virus scanning for uploads (Phase 4.7)"
 
 ### Phase 4 Milestone
 
 - [x] A hunter can browse, apply for a listed property, and see their application status
 - [x] Admin can review the application, approve it, and trigger in-platform e-signature
 - [x] On final in-platform signature, lease activates automatically
-- [ ] Ranch+ landowner can use a custom PDF contract signed via Dropbox Sign (Phase 4.5.5)
+- [x] Ranch+ landowner can use a custom PDF contract signed via Dropbox Sign (Phase 4.5.5)
 - [x] Member portal shows the active lease with lease details and gate code
 - [x] Gate code is visible in member portal only to the active lessee (encrypted, decrypted by service)
 - [x] QR check-in works and logs entry to DB 3 `check_ins`
