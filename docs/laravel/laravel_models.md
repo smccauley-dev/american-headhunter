@@ -198,6 +198,8 @@ protected $keyType   = 'string';   // UUIDs
 public $timestamps   = false;      // PostgreSQL triggers manage this
 ```
 
+**Always extend `BaseModel` / `BaseModelWithSoftDeletes` — never the raw `Illuminate\Database\Eloquent\Model`.** BaseModel's `creating` hook assigns a `Str::uuid()` when the key is empty. If you extend the raw Model and hand-roll the three properties above, the id is left to the DB `DEFAULT gen_random_uuid()` — which means `$model->id` is **null immediately after `create()`** (the model never learns the DB-generated value), a silent footgun for any code that uses the id right away. The only exception is a model whose primary key is a known natural string (not a generated UUID), e.g. `MfaFactorSetting` keyed by `factor`.
+
 ---
 
 ## Cross-Database Relationships — The Correct Pattern
