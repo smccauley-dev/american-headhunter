@@ -708,14 +708,16 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
 
 ### 5.2 Billing Services
 
-> **Status:** the services below are **blocked offline** — they need `composer require stripe/stripe-php` (internet). Models are already done (5.1). `EntitlementService` still resolves everyone to the free plan (Phase 3 placeholder) until `SubscriptionService` lands here.
+> **Status (2026-06-15):** Stripe-free core landed. `stripe/stripe-php` v20.2.1 is installed; the **paid** flows (`StripeService`/`PayoutService`) are deferred — they need Stripe test keys for live verification (none configured yet; `services.stripe` block wired for mockable injection). `EntitlementService` now resolves promotion-claim → subscription snapshot → free-tier (no longer a free-plan placeholder).
 
-- [ ] `App\Services\Billing\BillingService` — subscription creation, upgrade/downgrade, cancellation, promo claim application; invalidates Valkey entitlement cache on any change
-- [ ] `App\Services\Billing\StripeService` — Payment Intent creation, Stripe webhook verification and routing
-- [ ] `App\Services\Billing\PayoutService` — Stripe Connect disbursement scheduling, platform fee calculation per landowner tier
-- [ ] `App\Services\Billing\SubscriptionService` — trial period management, plan version locking at subscription creation, grandfathering logic
+- [x] `App\Services\Billing\BillingService` — subscription creation, upgrade/downgrade, cancellation, promo claim application; invalidates Valkey entitlement cache on any change
+- [ ] `App\Services\Billing\StripeService` — Payment Intent creation, Stripe webhook verification and routing — **deferred (needs Stripe test keys)**
+- [ ] `App\Services\Billing\PayoutService` — Stripe Connect disbursement scheduling, platform fee calculation per landowner tier — **deferred (needs Stripe test keys)**
+- [x] `App\Services\Billing\SubscriptionService` — trial period management, plan version locking at subscription creation, grandfathering logic
+- [x] `EntitlementService` rewired to snapshot resolution chain + backfill migration for empty `plan_versions.entitlements_snapshot`
+- [x] Tests — `tests/Feature/Billing/BillingServicesTest.php` (9 tests, real billing/platform DBs)
 - [x] Billing models — **done in 5.1** (10 models; note `StripeAccount` not `StripeConnectAccount`, plus `Refund`/`TaxCalculation`/`Tax1099Record`)
-- [ ] Commit: "Billing services"
+- [x] Commit: "Billing services"
 
 ### 5.3 Stripe Webhook Processing
 

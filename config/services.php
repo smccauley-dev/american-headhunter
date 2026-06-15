@@ -49,4 +49,11 @@ return [
         'timeout' => env('CLAMAV_TIMEOUT', 30),
     ],
 
+    'stripe' => [
+        'key'               => env('STRIPE_KEY'),            // publishable key (pk_*)
+        'secret'            => env('STRIPE_SECRET'),         // secret key (sk_*)
+        'webhook_secret'    => env('STRIPE_WEBHOOK_SECRET'), // whsec_* for signature verification
+        'connect_client_id' => env('STRIPE_CONNECT_CLIENT_ID'),
+    ],
+
 ];

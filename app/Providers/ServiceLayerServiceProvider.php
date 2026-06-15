@@ -42,5 +42,9 @@ class ServiceLayerServiceProvider extends ServiceProvider
 
         // Document services
         $this->app->singleton(\App\Services\Documents\DocumentService::class);
+
+        // Billing services
+        $this->app->singleton(\App\Services\Billing\SubscriptionService::class);
+        $this->app->singleton(\App\Services\Billing\BillingService::class);
     }
 }
