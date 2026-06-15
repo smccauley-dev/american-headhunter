@@ -131,21 +131,12 @@ class ProcessDropboxSignWebhook implements ShouldQueue
             'occurred_at' => now(),
         ]);
 
-        // Activate the lease via EsignatureService — reuse the same activation path
+        // Activate via LeaseService — it owns the canonical 'lease.activated'
+        // audit event. No actor: this is a provider-driven (system) activation.
         app(\App\Services\Lease\LeaseService::class)->activate($esigRequest->lease_id);
 
         \App\Models\Lease\LeaseHunter::where('lease_id', $esigRequest->lease_id)
             ->where('role', 'primary')
             ->update(['is_approved' => true, 'approved_at' => now()]);
-
-        try {
-            app(\App\Services\Audit\AuditService::class)->log(
-                eventType:      'lease.activated',
-                sourceDatabase: 'ah_lease',
-                tableName:      'leases',
-                recordId:       $esigRequest->lease_id,
-                actionSummary:  'Lease activated after all Dropbox Sign signatures collected',
-            );
-        } catch (\Throwable) {}
     }
 }
