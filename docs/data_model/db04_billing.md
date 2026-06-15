@@ -404,6 +404,225 @@ CREATE TRIGGER trg_tax_1099_records_updated_at
 
 ---
 
+## Proposed Tables — Deferred (pending review before build)
+
+> **Status:** these four tables are named in the build roadmap (Phase 5.1) but had **no schema definition anywhere** until now. The DDL below is a *recommendation* — review and accept it before generating migrations. Nothing here is built yet.
+>
+> **Identifier note:** unlike the tables above (which still show the stale `set_updated_at()` / `app.current_role`), these proposals use the **actual codebase identifiers**: trigger function `trigger_set_updated_at()` and RLS settings `app.current_user_id` + `app.user_role` (the `,true` "missing ok" flag is set by `InjectDatabaseContext`). Build them as written.
+>
+> When built, the database header's **RLS Enabled** list expands to include `w9_records` and `security_deposits`.
+
+### `w9_records` *(proposed)*
+
+IRS Form W-9 collected from every payee (landowner, seller, outfitter) before any 1099 can be filed. The TIN is the only highly-sensitive field and is **encrypted at rest** via `pgcrypto` (Key D); a display-safe `tin_last_four` is kept for the UI. Permanent compliance record — no `deleted_at`.
+
+```sql
+CREATE TABLE w9_records (
+    id                  UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id             UUID         NOT NULL,  -- References DB 1 (Identity) users.id (the payee)
+    legal_name          VARCHAR(200) NOT NULL,
+    business_name       VARCHAR(200) NULL,
+    tax_classification  VARCHAR(20)  NOT NULL
+                            CHECK (tax_classification IN
+                                ('individual','sole_proprietor','c_corp','s_corp',
+                                 'partnership','trust_estate','llc')),
+    tin_type            VARCHAR(3)   NOT NULL CHECK (tin_type IN ('ssn','ein')),
+    tin_encrypted       BYTEA        NOT NULL,  -- pgp_sym_encrypt(tin, key) — NEVER read raw; decrypt via TaxService
+    tin_last_four       CHAR(4)      NOT NULL,  -- display-safe only
+    address_line1       VARCHAR(200) NOT NULL,
+    address_line2       VARCHAR(200) NULL,
+    city                VARCHAR(100) NOT NULL,
+    state_code          CHAR(2)      NOT NULL,
+    postal_code         VARCHAR(10)  NOT NULL,
+    backup_withholding  BOOLEAN      NOT NULL DEFAULT false,
+    status              VARCHAR(15)  NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending','verified','invalid','superseded')),
+    certified_at        TIMESTAMPTZ  NULL,  -- when the payee e-signed/certified the W-9
+    verified_at         TIMESTAMPTZ  NULL,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    -- No deleted_at — tax compliance record; a re-collected W-9 supersedes the old one (status='superseded')
+);
+
+CREATE UNIQUE INDEX uq_w9_records_user_active ON w9_records (user_id)
+    WHERE status IN ('pending','verified');
+CREATE        INDEX idx_w9_records_user_id    ON w9_records (user_id);
+CREATE        INDEX idx_w9_records_status     ON w9_records (status);
+
+CREATE TRIGGER trg_w9_records_updated_at
+    BEFORE UPDATE ON w9_records
+    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+```
+
+**RLS Policy:**
+```sql
+ALTER TABLE w9_records ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY w9_records_own_user ON w9_records
+    FOR SELECT TO ah_app
+    USING (
+        user_id = current_setting('app.current_user_id', true)::UUID
+        OR current_setting('app.user_role', true) IN ('staff', 'super_admin')
+    );
+```
+
+**Notes:**
+- All writes go through `TaxService` (encrypts the TIN before insert). Never insert `tin_encrypted` from a controller or generic service.
+- At most one `pending`/`verified` W-9 per user (partial unique index); re-collection sets the prior row to `superseded`.
+- `tin_last_four` is the only TIN fragment ever returned to the UI. The decrypted TIN is read **only** at 1099-filing time inside `Generate1099RecordsJob`.
+- **Open decision:** whether W-9 certification reuses the Dropbox Sign e-signature flow (Phase 4.5.5) or a lightweight in-app attestation.
+
+---
+
+### `security_deposits` *(proposed)*
+
+Refundable damage deposit held for the life of a lease, then released, partially withheld, or forfeited at lease end. Funded by a dedicated `payments` row; forfeited funds are disbursed to the landowner via a `payouts` row.
+
+```sql
+CREATE TABLE security_deposits (
+    id                     UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    lease_id               UUID        NOT NULL,  -- References DB 3 (Lease) leases.id
+    payer_user_id          UUID        NOT NULL,  -- References DB 1 (Identity) users.id (lessee)
+    payee_user_id          UUID        NOT NULL,  -- References DB 1 (Identity) users.id (landowner)
+    payment_id             UUID        NULL REFERENCES payments (id),  -- the charge that funded the hold
+    amount_cents           BIGINT      NOT NULL,
+    refunded_amount_cents  BIGINT      NOT NULL DEFAULT 0,
+    forfeited_amount_cents BIGINT      NOT NULL DEFAULT 0,
+    currency               CHAR(3)     NOT NULL DEFAULT 'USD',
+    status                 VARCHAR(20) NOT NULL DEFAULT 'pending'
+                               CHECK (status IN
+                                   ('pending','held','partially_released',
+                                    'released','forfeited','refunded')),
+    forfeit_reason         VARCHAR(200) NULL,
+    stripe_payment_intent_id VARCHAR(100) NULL,  -- the hold/charge
+    stripe_refund_id         VARCHAR(100) NULL,  -- the release refund
+    held_at                TIMESTAMPTZ NULL,
+    released_at            TIMESTAMPTZ NULL,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_security_deposits_amounts
+        CHECK (refunded_amount_cents >= 0
+               AND forfeited_amount_cents >= 0
+               AND refunded_amount_cents + forfeited_amount_cents <= amount_cents)
+);
+
+CREATE        INDEX idx_security_deposits_lease_id   ON security_deposits (lease_id);
+CREATE        INDEX idx_security_deposits_payer      ON security_deposits (payer_user_id);
+CREATE        INDEX idx_security_deposits_payee      ON security_deposits (payee_user_id);
+CREATE        INDEX idx_security_deposits_status     ON security_deposits (status);
+CREATE        INDEX idx_security_deposits_payment_id ON security_deposits (payment_id) WHERE payment_id IS NOT NULL;
+
+CREATE TRIGGER trg_security_deposits_updated_at
+    BEFORE UPDATE ON security_deposits
+    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+```
+
+**RLS Policy:**
+```sql
+ALTER TABLE security_deposits ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY security_deposits_parties_and_staff ON security_deposits
+    FOR SELECT TO ah_app
+    USING (
+        payer_user_id = current_setting('app.current_user_id', true)::UUID
+        OR payee_user_id = current_setting('app.current_user_id', true)::UUID
+        OR current_setting('app.user_role', true) IN ('staff', 'super_admin')
+    );
+```
+
+**Notes:**
+- No `deleted_at` — a deposit is a financial record; it resolves via `status`, never deletes.
+- Forfeiture is a disputed/adjudicated action: `forfeited_amount_cents` should only be set after an incident/dispute resolution (DB 10) and triggers a `payouts` row to the landowner. Partial releases set both `refunded_amount_cents` and `forfeited_amount_cents`.
+- **Open decision:** hold mechanism — a separate captured charge (simplest, funds sit in platform balance) vs. a Stripe manual-capture authorization (cardholder funds held, but max 7-day auth window makes it unsuitable for season-long leases). Recommend a **separate charge + refund-on-release**; the auth-hold path does not fit lease durations.
+
+---
+
+### `promo_codes` *(proposed — confirm it's needed first)*
+
+> **Design check:** promo codes are *already* partly modeled — DB 12 `promotional_periods.requires_promo_code` defines the campaign/benefit, and DB 4 `promotion_claims.promo_code_used` records redemption. A dedicated table is only warranted when **one campaign needs many distinct code strings** (influencer codes, batch-generated single-use codes, per-partner tracking) with **per-code redemption limits**. If every campaign uses a single shared code, skip this table and keep using `promotional_periods` alone.
+
+If accepted, the table holds the individual code strings and their limits, linked to the DB 12 campaign that defines the actual benefit:
+
+```sql
+CREATE TABLE promo_codes (
+    id                    UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    promotional_period_id UUID        NOT NULL,  -- References DB 12 (Platform) promotional_periods.id (the benefit definition)
+    code                  VARCHAR(50) NOT NULL,
+    max_redemptions       INTEGER     NULL,  -- null = unlimited
+    redemption_count      INTEGER     NOT NULL DEFAULT 0,
+    per_user_limit        SMALLINT    NOT NULL DEFAULT 1,
+    starts_at             TIMESTAMPTZ NULL,
+    expires_at            TIMESTAMPTZ NULL,
+    is_active             BOOLEAN     NOT NULL DEFAULT true,
+    created_by_user_id    UUID        NULL,  -- References DB 1 (Identity) users.id (admin)
+    notes                 TEXT        NULL,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at            TIMESTAMPTZ NULL,
+
+    CONSTRAINT chk_promo_codes_redemptions
+        CHECK (redemption_count >= 0
+               AND (max_redemptions IS NULL OR redemption_count <= max_redemptions))
+);
+
+CREATE UNIQUE INDEX uq_promo_codes_code     ON promo_codes (LOWER(code)) WHERE deleted_at IS NULL;
+CREATE        INDEX idx_promo_codes_period  ON promo_codes (promotional_period_id);
+CREATE        INDEX idx_promo_codes_active  ON promo_codes (is_active) WHERE is_active = true AND deleted_at IS NULL;
+
+CREATE TRIGGER trg_promo_codes_updated_at
+    BEFORE UPDATE ON promo_codes
+    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+```
+
+**Notes:**
+- No RLS — admin-managed reference data, validated server-side at checkout (same posture as `refunds`/`stripe_accounts`).
+- `redemption_count` is incremented atomically inside `BillingService` when a `promotion_claims` row is created carrying this code; `promotion_claims.promo_code_used` stores the code string for the audit trail.
+- Per-user enforcement (`per_user_limit`) is checked against existing `promotion_claims` for the user, not stored here.
+- Code uniqueness is case-insensitive (`LOWER(code)`), scoped to non-deleted rows.
+
+---
+
+### `tax_nexus_tracking` *(proposed — belongs with 5.5 TaxService)*
+
+State-by-state economic-nexus tracking so the platform knows where it is obligated to collect sales tax. One row per US state; updated by a job that rolls up `tax_calculations`/`payments` by destination state (or syncs TaxJar's nexus API). This is operational reference data, not a per-user record.
+
+```sql
+CREATE TABLE tax_nexus_tracking (
+    id                          UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    state_code                  CHAR(2)     NOT NULL,
+    threshold_amount_cents      BIGINT      NULL,  -- e.g., 10000000 = $100k
+    threshold_transaction_count INTEGER     NULL,  -- e.g., 200
+    measurement_period          VARCHAR(25) NOT NULL DEFAULT 'previous_or_current_year'
+                                    CHECK (measurement_period IN
+                                        ('calendar_year','rolling_12_months','previous_or_current_year')),
+    current_amount_cents        BIGINT      NOT NULL DEFAULT 0,
+    current_transaction_count   INTEGER     NOT NULL DEFAULT 0,
+    nexus_status                VARCHAR(15) NOT NULL DEFAULT 'none'
+                                    CHECK (nexus_status IN ('none','approaching','met','registered')),
+    registered_at               TIMESTAMPTZ NULL,  -- when AH registered to collect in this state
+    taxjar_managed              BOOLEAN     NOT NULL DEFAULT true,
+    last_evaluated_at           TIMESTAMPTZ NULL,
+    notes                       TEXT        NULL,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX uq_tax_nexus_state  ON tax_nexus_tracking (state_code);
+CREATE        INDEX idx_tax_nexus_status ON tax_nexus_tracking (nexus_status);
+
+CREATE TRIGGER trg_tax_nexus_tracking_updated_at
+    BEFORE UPDATE ON tax_nexus_tracking
+    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+```
+
+**Notes:**
+- No RLS — internal/admin reference data.
+- When `nexus_status` transitions to `met` while `registered_at IS NULL`, the evaluation job alerts admin to register in that state.
+- This is the data backing `TaxService` (Phase 5.5); recommend building it **with** the tax-integration work rather than now, since nothing consumes it until TaxJar is wired up.
+
+---
+
 ## Eloquent Models
 
 ### `App\Models\Billing\Invoice`

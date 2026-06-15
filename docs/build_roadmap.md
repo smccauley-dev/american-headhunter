@@ -698,11 +698,11 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
 - [x] **Repeatable verification** — `tests/Feature/Billing/BillingSchemaTest.php` (7 tests, 18 assertions): UUID defaults, FK chain, casts, JSONB, `$hidden`, cross-DB `getLease()`, `updated_at` trigger, soft delete, status CHECK, one-active-subscription partial unique. Runs against the real `billing` Postgres connection. `php artisan test --filter=BillingSchemaTest` → all green
 - [x] Commit: "DB 4 Billing migrations" — branch `feature/billing-schema` (rebased onto `feature/document-scan-job`), schema `997cdd0`, test `b0fbb90`
 
-**Deferred — no canonical schema exists yet (do NOT fabricate columns):** these four roadmap tables have no definition in any `docs/data_model/db*.md`, so they were intentionally not built. Add a schema to `db04_billing.md` first, then migrate.
-- [ ] `w9_records` — W-9 data (TIN encrypted at rest via pgcrypto)
-- [ ] `promo_codes` — code definitions with usage tracking (note: promo codes are currently modeled in DB 12 `promotional_periods.requires_promo_code` + DB 4 `promotion_claims.promo_code_used`)
-- [ ] `security_deposits` — held deposit records with escrow status
-- [ ] `tax_nexus_tracking` — state-by-state economic nexus thresholds for TaxJar
+**Deferred — proposed schemas now drafted in `db04_billing.md` ("Proposed Tables — Deferred"), pending review before migrating.** Each carries an open design decision; do NOT migrate until the decision is resolved.
+- [ ] `w9_records` — W-9 data (TIN encrypted at rest via pgcrypto, `tin_last_four` display-safe; RLS own-user). **Build next** — required before any 1099 filing (5.5). *Decision: W-9 certification via Dropbox Sign vs. in-app attestation.*
+- [ ] `security_deposits` — held deposit per lease, escrow status, forfeiture → landowner payout (RLS parties+staff). **Build with lease-deposit flow.** *Decision: separate charge+refund (recommended) vs. Stripe auth-hold (rejected — 7-day window too short for leases).*
+- [ ] `tax_nexus_tracking` — state-by-state economic nexus for TaxJar (no RLS, one row/state). **Build with 5.5 TaxService** — nothing consumes it until TaxJar is wired.
+- [ ] `promo_codes` — **confirm needed first.** Only warranted for many distinct codes per campaign with per-code limits; otherwise DB 12 `promotional_periods.requires_promo_code` + DB 4 `promotion_claims.promo_code_used` already cover it. Schema drafted but may be skipped.
 
 ### 5.2 Billing Services
 
