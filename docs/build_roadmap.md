@@ -453,6 +453,8 @@ The goal: the full lease pipeline — application, negotiation, approval, e-sign
 
 ### 4.5.5 Custom Lease Contracts — Ranch+ Tier (Dropbox Sign)
 
+**Status: COMPLETE** — built and committed `c21bd8d` (2026-06-12); migrations applied and `custom_lease_template` seeded for Ranch + Estate. Implementation notes vs. the spec below: the Dropbox Sign request id is stored in the existing `esignature_requests.provider_signature_request_id` column (not a new `external_envelope_id`); the per-signer id is `esignature_signers.provider_signer_id`; webhook HMAC follows Dropbox Sign's scheme `HMAC-SHA256(event_time + event_type, API_KEY)`; the simulate command is `php artisan dropbox-sign:simulate {leaseId} --event=… --signer=…`.
+
 The goal: landowners on **Ranch or Estate** tier can attach a custom PDF contract (e.g., attorney-drafted) to a lease at approval time. The platform sends it via Dropbox Sign for embedded in-browser signing. On completion, the signed PDF is downloaded and stored in `ah-documents`. The in-platform signing flow (Phase 4.5) is unchanged for standard leases.
 
 #### Design decisions (resolved 2026-06-10)
@@ -464,32 +466,32 @@ The goal: landowners on **Ranch or Estate** tier can attach a custom PDF contrac
 
 #### DB changes
 
-- [ ] `property_listings.custom_contract_document_id UUID NULL` — migration (DB 2); references DB 11 `documents.id`; NULL = in-platform signing; NOT NULL = Dropbox Sign with this PDF. **Note:** column added at listing level for future use even though upload is at approval time — admin sets it during approval, not the landowner.
-- [ ] Verify `esignature_requests.external_envelope_id` column exists in DB 11 migration — stores Dropbox Sign `signature_request_id` for webhook lookup
-- [ ] DB 12 entitlement seed migration — `custom_lease_template` (boolean `true`) added to Ranch and Estate plan versions
+- [x] `property_listings.custom_contract_document_id UUID NULL` — migration (DB 2); references DB 11 `documents.id`; NULL = in-platform signing; NOT NULL = Dropbox Sign with this PDF. **Note:** column added at listing level for future use even though upload is at approval time — admin sets it during approval, not the landowner.
+- [x] DB 11 webhook lookup column — used existing `esignature_requests.provider_signature_request_id` (stores Dropbox Sign `signature_request_id`) rather than adding `external_envelope_id`
+- [x] DB 12 entitlement seed migration — `custom_lease_template` (boolean `true`) added to Ranch and Estate plans
 
 #### New constants
 
-- [ ] `Entitlements::CUSTOM_LEASE_TEMPLATE = 'custom_lease_template'` added to `app/Support/Entitlements.php`
+- [x] `Entitlements::CUSTOM_LEASE_TEMPLATE = 'custom_lease_template'` added to `app/Support/Entitlements.php`
 
 #### New files
 
-- [ ] `app/Services/Lease/DropboxSignService.php` — Dropbox Sign API wrapper
+- [x] `app/Services/Lease/DropboxSignService.php` — Dropbox Sign API wrapper
   - `createEmbeddedEnvelope(Document $pdf, array $lessor, array $lessee): array` — POST `/v3/signature_request/send_with_reusable_form` or `/v3/signature_request/send`; returns `signature_request_id` + per-signer embedded signing URLs
   - `getEmbeddedSigningUrl(string $signatureId): string` — GET `/v3/embedded/sign_url/{id}`; used to generate lessee's in-browser signing URL
   - `downloadSignedPdf(string $signatureRequestId): string` — GET `/v3/signature_request/{id}/files`; returns raw PDF bytes
   - `verifyWebhookSignature(string $payload, string $headerSig): bool` — HMAC-SHA256 verification using `DROPBOX_SIGN_WEBHOOK_SECRET`
-- [ ] `app/Http/Controllers/Api/DropboxSignWebhookController.php`
+- [x] `app/Http/Controllers/Api/DropboxSignWebhookController.php`
   - `handle(Request $request): Response` — verifies HMAC; dispatches `ProcessDropboxSignWebhook` job on `priority` queue; returns 200 immediately
-- [ ] `app/Jobs/Lease/ProcessDropboxSignWebhook.php` — `priority` queue; extracts `signature_request_id`; looks up `EsignatureRequest` by `external_envelope_id`; marks all signers `signed`; calls `DropboxSignService::downloadSignedPdf()` → `DocumentService::storeRawFile()` → updates `EsignatureRequest.signed_document_id`; calls `activateIfComplete()`
-- [ ] `app/Console/Commands/DropboxSignSimulate.php` — dev-only Artisan command; builds `signature_request_all_signed` payload; generates valid HMAC; calls `DropboxSignWebhookController::handle()` in-process; `DropboxSignService::downloadSignedPdf()` returns stub PDF in non-production environments
+- [x] `app/Jobs/Lease/ProcessDropboxSignWebhook.php` — `priority` queue; extracts `signature_request_id`; looks up `EsignatureRequest` by `provider_signature_request_id`; marks all signers `signed`; calls `DropboxSignService::downloadSignedPdf()` → `DocumentService::storeRawBytes()` → updates `EsignatureRequest.signed_document_id`; calls `LeaseService::activate()` (canonical audit owner)
+- [x] `app/Console/Commands/DropboxSignSimulate.php` — dev-only Artisan command; builds `signature_request_all_signed` payload; generates valid HMAC; calls `DropboxSignWebhookController::handle()` in-process; `DropboxSignService::downloadSignedPdf()` returns stub PDF in non-production environments
 
 #### Modified files
 
-- [ ] `app/Services/Lease/EsignatureService.php` — `createRequest()` accepts optional `Document $customPdf`; if provided AND lessor has `custom_lease_template` entitlement → calls `DropboxSignService::createEmbeddedEnvelope()`; stores `provider = 'dropbox_sign'`, `external_envelope_id = signature_request_id`; otherwise falls through to existing in-platform path
-- [ ] `app/Filament/Admin/Resources/Applications/Pages/ViewLeaseApplication.php` — Approve action form gains optional `FileUpload::make('custom_contract_pdf')` field (visible only when `EntitlementService::can($lessor, CUSTOM_LEASE_TEMPLATE)`); uploaded file passed to `EsignatureService::createRequest()`
-- [ ] `routes/api.php` — `POST /api/webhooks/dropbox-sign` — no auth middleware; HMAC-verified internally
-- [ ] `.env.example` — add `DROPBOX_SIGN_API_KEY`, `DROPBOX_SIGN_WEBHOOK_SECRET`, `DROPBOX_SIGN_TEST_MODE=true`
+- [x] `app/Services/Lease/EsignatureService.php` — `createRequest()` accepts optional `Document $customPdf`; if provided AND lessor has `custom_lease_template` entitlement → calls `DropboxSignService::createEmbeddedEnvelope()`; stores `provider = 'dropbox_sign'`, `provider_signature_request_id = signature_request_id`; otherwise falls through to existing in-platform path
+- [x] `app/Filament/Admin/Resources/Applications/Pages/ViewLeaseApplication.php` — Approve action form gains optional `FileUpload::make('custom_contract_pdf')` field (visible only when `EntitlementService::can($lessor, CUSTOM_LEASE_TEMPLATE)`); uploaded file passed to `EsignatureService::createRequest()`
+- [x] `routes/api.php` — `POST /api/webhooks/dropbox-sign` — no auth middleware; HMAC-verified internally
+- [x] `.env.example` — added `DROPBOX_SIGN_API_KEY`, `DROPBOX_SIGN_CLIENT_ID`, `DROPBOX_SIGN_WEBHOOK_SECRET`, `DROPBOX_SIGN_TEST_MODE=true`
 
 #### Signing flow (custom contract path)
 
@@ -518,13 +520,14 @@ The goal: landowners on **Ranch or Estate** tier can attach a custom PDF contrac
 
 #### Milestone checklist
 
-- [ ] Ranch+ landowner can have admin attach a custom PDF when approving their application
-- [ ] Both parties receive embedded signing experience inside the platform (no redirect to Dropbox Sign)
-- [ ] Lease activates after final signature via webhook
-- [ ] Signed PDF stored in `ah-documents` and accessible via "Download Signed Contract" button
-- [ ] `dropboxsign:simulate` command fires the full webhook flow locally without ngrok
-- [ ] Standard in-platform signing for Homestead-tier leases is completely unaffected
-- [ ] Commit: "Custom lease contracts via Dropbox Sign (Ranch+ entitlement)"
+- [x] Ranch+ landowner can have admin attach a custom PDF when approving their application
+- [x] Both parties receive embedded signing experience inside the platform (no redirect to Dropbox Sign)
+- [x] Lease activates after final signature via webhook
+- [x] Signed PDF stored in `ah-documents` and accessible via "Download Signed Contract" button
+- [x] `dropbox-sign:simulate` command fires the full webhook flow locally without ngrok
+- [x] Standard in-platform signing for Homestead-tier leases is completely unaffected
+- [x] Commit: `c21bd8d` "feat: Phase 4.5.5 — Dropbox Sign custom lease contracts for Ranch+/Estate landowners" (+ follow-up `3e80014` removing a duplicate `lease.activated` audit write in the webhook job)
+- [ ] Pre-launch only: real end-to-end validation via ngrok against live Dropbox Sign (requires internet; deferred)
 
 ### 4.6 Member Portal — Lease Dashboard (`/member`)
 
@@ -552,7 +555,7 @@ The goal: landowners on **Ranch or Estate** tier can attach a custom PDF contrac
 - [x] Gate code is visible in member portal only to the active lessee (encrypted, decrypted by service)
 - [x] QR check-in works and logs entry to DB 3 `check_ins`
 - [x] All lease-lifecycle events in DB 9 audit log — application apply/approve/reject/override/withdraw (`ApplicationService`), e-signature sent/signed/completed (`EsignatureService`), and lease created/activated/cancelled/terminated/expired centralized in `LeaseService` (2026-06-14)
-- [ ] **MILESTONE: Full lease lifecycle functional end-to-end** (remaining: Phase 4.5.5 Dropbox Sign custom contracts)
+- [x] **MILESTONE: Full lease lifecycle functional end-to-end** (Phase 4.5.5 Dropbox Sign custom contracts complete; only pre-launch live ngrok validation remains)
 
 ## PHASE 4.8 — Admin Security: Azure SSO (Admin Panel Only)
 
