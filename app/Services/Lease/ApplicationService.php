@@ -283,7 +283,7 @@ class ApplicationService extends BaseService
                 'end_date'       => $leaseTerms['end_date'],
                 'total_price'    => $leaseTerms['total_price'],
                 'deposit_paid'   => 0.00,
-            ]);
+            ], $reviewerUserId);
 
             LeaseHunter::create([
                 'lease_id'    => $lease->id,
@@ -428,15 +428,13 @@ class ApplicationService extends BaseService
                 }
 
                 $this->esignatureService->cancelRequest($lease->id, $reviewerUserId);
-                $this->leaseService->cancel($lease->id, "Application decision overridden: {$reason}");
 
-                $this->auditService->log(
-                    eventType:      'lease.cancelled',
-                    sourceDatabase: 'ah_lease',
-                    tableName:      'leases',
-                    recordId:       $lease->id,
-                    userId:         $reviewerUserId,
-                    actionSummary:  'Lease cancelled — application approval overridden to rejected',
+                // LeaseService::cancel() writes the canonical 'lease.cancelled'
+                // audit event (with the reviewer as actor).
+                $this->leaseService->cancel(
+                    $lease->id,
+                    "Application approval overridden to rejected: {$reason}",
+                    $reviewerUserId,
                 );
             }
         }

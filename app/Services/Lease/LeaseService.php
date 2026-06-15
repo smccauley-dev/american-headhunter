@@ -5,6 +5,7 @@ namespace App\Services\Lease;
 use App\Models\Lease\Club;
 use App\Models\Lease\ClubMember;
 use App\Models\Lease\Lease;
+use App\Services\Audit\AuditService;
 use App\Services\BaseService;
 use App\Services\Property\PropertyService;
 use App\Services\Identity\UserService;
@@ -16,6 +17,7 @@ class LeaseService extends BaseService
     public function __construct(
         private readonly PropertyService $propertyService,
         private readonly UserService     $userService,
+        private readonly AuditService    $auditService,
     ) {}
 
     // ── Read ──────────────────────────────────────────────────────────────────
@@ -164,21 +166,40 @@ class LeaseService extends BaseService
 
     // ── Writes ────────────────────────────────────────────────────────────────
 
-    public function createFromApplication(string $applicationId, array $attributes): Lease
+    public function createFromApplication(string $applicationId, array $attributes, ?string $actorUserId = null): Lease
     {
         $lease = Lease::create(array_merge($attributes, [
             'application_id' => $applicationId,
             'status'         => 'pending_signatures',
         ]));
 
+        $this->auditService->log(
+            eventType:      'lease.created',
+            sourceDatabase: 'ah_lease',
+            tableName:      'leases',
+            recordId:       $lease->id,
+            userId:         $actorUserId,
+            actionSummary:  'Lease created from approved application (pending signatures)',
+            newValues:      ['application_id' => $applicationId, 'status' => 'pending_signatures'],
+        );
+
         return $lease;
     }
 
-    public function activate(string $leaseId): void
+    public function activate(string $leaseId, ?string $actorUserId = null): void
     {
         $lease = Lease::findOrFail($leaseId);
         $lease->update(['status' => 'active']);
         $this->invalidate("lease_detail:{$leaseId}");
+
+        $this->auditService->log(
+            eventType:      'lease.activated',
+            sourceDatabase: 'ah_lease',
+            tableName:      'leases',
+            recordId:       $leaseId,
+            userId:         $actorUserId,
+            actionSummary:  'Lease activated',
+        );
 
         // Lease is now executed — ensure the property has a check-in QR (used at
         // the gate). Never let QR setup break activation.
@@ -190,7 +211,7 @@ class LeaseService extends BaseService
      * Cancel a lease that never went into effect (no signatures recorded).
      * Use terminate() for leases that were active.
      */
-    public function cancel(string $leaseId, string $reason): void
+    public function cancel(string $leaseId, string $reason, ?string $actorUserId = null): void
     {
         $lease = Lease::findOrFail($leaseId);
         $lease->update([
@@ -199,9 +220,18 @@ class LeaseService extends BaseService
             'termination_reason' => $reason,
         ]);
         $this->invalidate("lease_detail:{$leaseId}");
+
+        $this->auditService->log(
+            eventType:      'lease.cancelled',
+            sourceDatabase: 'ah_lease',
+            tableName:      'leases',
+            recordId:       $leaseId,
+            userId:         $actorUserId,
+            actionSummary:  "Lease cancelled: {$reason}",
+        );
     }
 
-    public function terminate(string $leaseId, string $reason): void
+    public function terminate(string $leaseId, string $reason, ?string $actorUserId = null): void
     {
         $lease = Lease::findOrFail($leaseId);
         $lease->update([
@@ -210,12 +240,30 @@ class LeaseService extends BaseService
             'termination_reason'   => $reason,
         ]);
         $this->invalidate("lease_detail:{$leaseId}");
+
+        $this->auditService->log(
+            eventType:      'lease.terminated',
+            sourceDatabase: 'ah_lease',
+            tableName:      'leases',
+            recordId:       $leaseId,
+            userId:         $actorUserId,
+            actionSummary:  "Lease terminated: {$reason}",
+        );
     }
 
-    public function expire(string $leaseId): void
+    public function expire(string $leaseId, ?string $actorUserId = null): void
     {
         $lease = Lease::findOrFail($leaseId);
         $lease->update(['status' => 'expired']);
         $this->invalidate("lease_detail:{$leaseId}");
+
+        $this->auditService->log(
+            eventType:      'lease.expired',
+            sourceDatabase: 'ah_lease',
+            tableName:      'leases',
+            recordId:       $leaseId,
+            userId:         $actorUserId,
+            actionSummary:  'Lease expired',
+        );
     }
 }

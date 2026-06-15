@@ -353,7 +353,9 @@ class EsignatureService extends BaseService
             'occurred_at' => now(),
         ]);
 
-        // Activate the lease record
+        // Activate the lease record — LeaseService::activate() writes the
+        // canonical 'lease.activated' audit event (no actor: automatic on the
+        // final signature; the SignatureEvent rows record who signed).
         $this->leaseService->activate($request->lease_id);
 
         // Approve the primary lessee in lease_hunters
@@ -371,16 +373,6 @@ class EsignatureService extends BaseService
                 'error'      => $e->getMessage(),
             ]);
         }
-
-        try {
-            $this->auditService->log(
-                eventType:      'lease.activated',
-                sourceDatabase: 'ah_lease',
-                tableName:      'leases',
-                recordId:       $request->lease_id,
-                actionSummary:  'Lease activated after all in-platform signatures collected',
-            );
-        } catch (\Throwable) {}
 
         return true;
     }

@@ -551,8 +551,8 @@ The goal: landowners on **Ranch or Estate** tier can attach a custom PDF contrac
 - [x] Member portal shows the active lease with lease details and gate code
 - [x] Gate code is visible in member portal only to the active lessee (encrypted, decrypted by service)
 - [x] QR check-in works and logs entry to DB 3 `check_ins`
-- [ ] All events in DB 9 audit log
-- [ ] **MILESTONE: Full lease lifecycle functional end-to-end**
+- [x] All lease-lifecycle events in DB 9 audit log — application apply/approve/reject/override/withdraw (`ApplicationService`), e-signature sent/signed/completed (`EsignatureService`), and lease created/activated/cancelled/terminated/expired centralized in `LeaseService` (2026-06-14)
+- [ ] **MILESTONE: Full lease lifecycle functional end-to-end** (remaining: Phase 4.5.5 Dropbox Sign custom contracts)
 
 ## PHASE 4.8 — Admin Security: Azure SSO (Admin Panel Only)
 
