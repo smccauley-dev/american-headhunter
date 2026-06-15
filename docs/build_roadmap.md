@@ -704,7 +704,7 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
 - [ ] `security_deposits` — held deposit per lease, escrow status, forfeiture → landowner payout (RLS parties+staff). **Build with lease-deposit flow.** *Decision: separate charge+refund (recommended) vs. Stripe auth-hold (rejected — 7-day window too short for leases).*
 - [ ] `tax_nexus_tracking` — state-by-state economic nexus for TaxJar (no RLS, one row/state). **Build with 5.5 TaxService** — nothing consumes it until TaxJar is wired.
 
-> `w9_records` cert flow still open: W-9 certification via Dropbox Sign vs. in-app attestation — the table/model are built; only the `certified_at`-setting flow (Phase 5.2+) depends on this call.
+> **`w9_records` cert flow — DECIDED 2026-06-15: in-app attestation (not Dropbox Sign).** Keeps the TIN inside the isolated/encrypted billing boundary, no per-envelope cost, industry-norm for self-certification. Phase 5.2+ `TaxService::certifyW9()` shows the IRS penalties-of-perjury statement, requires typed legal name + certify checkbox, audit-logs (DB 9) user/time/IP/UA/cert-text-version, snapshots a filled W-9 PDF to DB 11, then sets `certified_at`/`status`. No schema/model change needed. Full rationale in `db04_billing.md` `w9_records` notes. (Verify 1099-NEC vs Stripe-Connect 1099-K split before collecting.)
 
 ### 5.2 Billing Services
 

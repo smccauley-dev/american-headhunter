@@ -472,7 +472,13 @@ CREATE POLICY w9_records_own_user ON w9_records
 - The model uses `HasEncryptedFields` with `encryptedFields = ['tin']`, so assigning a plaintext TIN to `$model->tin` transparently encrypts on write and decrypts on read. `tin` is also in `$hidden` so it never serializes into API/array output.
 - At most one `pending`/`verified` W-9 per user (partial unique index); re-collection sets the prior row to `superseded`.
 - `tin_last_four` is the only TIN fragment ever returned to the UI. The decrypted TIN is read **only** at 1099-filing time inside `Generate1099RecordsJob`.
-- **Open decision:** whether W-9 certification reuses the Dropbox Sign e-signature flow (Phase 4.5.5) or a lightweight in-app attestation.
+- **Certification flow (decided 2026-06-15 — in-app attestation, *not* Dropbox Sign).** The W-9 "signature" is a certification under penalties of perjury, and the IRS explicitly permits an electronic W-9. Rationale for in-app over Dropbox Sign: it keeps the TIN inside this isolated, PCI-scoped, encrypted-at-rest billing boundary instead of transmitting SSN/EIN to a third party; it carries no per-envelope cost across every payee; and it is the industry norm for self-certification forms. Dropbox Sign stays reserved for negotiated two-party lease contracts (Phase 4.5.5). Phase 5.2+ `TaxService::certifyW9()` must, to satisfy IRS electronic-W-9 requirements:
+  1. present the full IRS penalties-of-perjury statement and the same content as the paper form;
+  2. require an explicit affirmative certification act — typed legal name + an "Under penalties of perjury, I certify…" checkbox (payee is already authenticated, ideally behind MFA, which covers submitter-identity assurance);
+  3. write an audit event to DB 9 capturing user_id, timestamp, IP, user-agent, and the exact certification-text version;
+  4. generate a filled W-9 PDF snapshot stored in DB 11 (the IRS "produce a hard copy on request" requirement);
+  5. only then set `certified_at` and advance `status`.
+  No schema/model change is required — `w9_records` already has `certified_at`/`status`. (Note for 5.x: confirm the 1099-NEC vs Stripe-Connect-collected-1099-K split so we don't double-collect tax info.)
 
 ---
 
