@@ -14,8 +14,10 @@ use App\Services\Documents\DocumentService;
 use App\Services\Lease\LeaseService;
 use App\Services\Platform\ProfileTemplateService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -383,8 +385,10 @@ class ProfileController extends Controller
                 });
         } catch (\Throwable) {}
 
-        // Harvests from wildlife DB (table may not exist until Phase 5 migration)
-        try {
+        // Harvests from wildlife DB. The wildlife schema is not built yet, so
+        // guard on the table existing — otherwise every profile load fires a
+        // doomed query that PostgreSQL records as a server-side ERROR.
+        if ($this->tableExists('wildlife', 'harvest_logs')) {
             HarvestLog::on('wildlife')
                 ->where('user_id', $userId)
                 ->whereNull('deleted_at')
@@ -403,7 +407,7 @@ class ProfileController extends Controller
                         'notes'       => $h->notes,
                     ]);
                 });
-        } catch (\Throwable) {}
+        }
 
         return [
             'events' => $events
@@ -412,6 +416,20 @@ class ProfileController extends Controller
                 ->take(30)
                 ->toArray(),
         ];
+    }
+
+    /**
+     * Whether a table exists on a connection, cached briefly so we don't hit
+     * information_schema on every request. The short TTL self-heals once the
+     * schema for a not-yet-built domain (e.g. wildlife) is migrated in.
+     */
+    private function tableExists(string $connection, string $table): bool
+    {
+        return Cache::store('valkey')->remember(
+            "schema_exists:{$connection}:{$table}",
+            now()->addMinutes(10),
+            fn () => Schema::connection($connection)->hasTable($table),
+        );
     }
 
     private function buildSecurityProps(string $userId): array
