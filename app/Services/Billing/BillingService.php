@@ -82,10 +82,6 @@ class BillingService
      */
     public function applyPromotion(User $user, PromotionalPeriod $promo, array $opts = []): PromotionClaim
     {
-        // NOTE: reads the actual promotional_periods columns (grants_plan_id,
-        // duration_days, discount_percentage, discount_amount_cents) — the
-        // PromotionalPeriod model's fillable/casts are stale and name these
-        // differently (tier_grant_plan_id, trial_days, discount_pct, …).
         $grantedVersionId = $opts['granted_plan_version_id'] ?? null;
         if (! $grantedVersionId && $promo->grants_plan_id) {
             $grantedVersionId = $this->currentVersionIdForPlanId($promo->grants_plan_id);
