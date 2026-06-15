@@ -693,7 +693,10 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
 - [x] `tax_calculations` — TaxJar results per payment, append-only (canonical doc; not in original roadmap list)
 - [x] `tax_1099_records` — generated 1099 tracking (year, recipient, amount, filing status; append/permanent)
 - [x] `php artisan migrate:single billing --fresh` — zero errors (11 migrations)
-- [ ] Commit: "DB 4 Billing migrations"
+- [x] **10 Eloquent models** in `app/Models/Billing/` — extend `BaseModel`/`BaseModelWithSoftDeletes`; cents cast to int; Stripe IDs in `$hidden`; `payments`/`refunds` relationships; `Invoice::getLease()` cross-DB getter (added `LeaseService::find()`). Models: `Invoice`, `Payment`, `PaymentMethod`, `Refund`, `Payout`, `StripeAccount`, `Subscription`, `TaxCalculation`, `Tax1099Record`, `PromotionClaim`
+- [x] **Two doc-vs-codebase corrections applied:** trigger fn is `trigger_set_updated_at()` (not the doc's `set_updated_at()`); RLS uses `app.current_user_id` + `app.user_role` with `,true` (not the doc's stale `app.current_role`)
+- [x] **Repeatable verification** — `tests/Feature/Billing/BillingSchemaTest.php` (7 tests, 18 assertions): UUID defaults, FK chain, casts, JSONB, `$hidden`, cross-DB `getLease()`, `updated_at` trigger, soft delete, status CHECK, one-active-subscription partial unique. Runs against the real `billing` Postgres connection. `php artisan test --filter=BillingSchemaTest` → all green
+- [x] Commit: "DB 4 Billing migrations" — branch `feature/billing-schema` (rebased onto `feature/document-scan-job`), schema `997cdd0`, test `b0fbb90`
 
 **Deferred — no canonical schema exists yet (do NOT fabricate columns):** these four roadmap tables have no definition in any `docs/data_model/db*.md`, so they were intentionally not built. Add a schema to `db04_billing.md` first, then migrate.
 - [ ] `w9_records` — W-9 data (TIN encrypted at rest via pgcrypto)
@@ -703,11 +706,13 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
 
 ### 5.2 Billing Services
 
+> **Status:** the services below are **blocked offline** — they need `composer require stripe/stripe-php` (internet). Models are already done (5.1). `EntitlementService` still resolves everyone to the free plan (Phase 3 placeholder) until `SubscriptionService` lands here.
+
 - [ ] `App\Services\Billing\BillingService` — subscription creation, upgrade/downgrade, cancellation, promo claim application; invalidates Valkey entitlement cache on any change
 - [ ] `App\Services\Billing\StripeService` — Payment Intent creation, Stripe webhook verification and routing
 - [ ] `App\Services\Billing\PayoutService` — Stripe Connect disbursement scheduling, platform fee calculation per landowner tier
 - [ ] `App\Services\Billing\SubscriptionService` — trial period management, plan version locking at subscription creation, grandfathering logic
-- [ ] Billing models: `Subscription`, `Invoice`, `Payment`, `PaymentMethod`, `StripeConnectAccount`, `Payout`, `PromotionClaim`
+- [x] Billing models — **done in 5.1** (10 models; note `StripeAccount` not `StripeConnectAccount`, plus `Refund`/`TaxCalculation`/`Tax1099Record`)
 - [ ] Commit: "Billing services"
 
 ### 5.3 Stripe Webhook Processing
