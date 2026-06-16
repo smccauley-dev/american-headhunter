@@ -169,7 +169,10 @@ class PropertyMapService extends BaseService
     {
         $image = PropertyMapImage::whereNull('deleted_at')->findOrFail($mapImageId);
 
-        $image->update(['deleted_at' => now()]);
+        // deleted_at is intentionally not in $fillable, so set it directly —
+        // $image->update(['deleted_at' => ...]) would silently drop the key.
+        $image->deleted_at = now();
+        $image->save();
 
         if ($image->is_boundary) {
             $image->update(['is_boundary' => false]);
@@ -191,7 +194,9 @@ class PropertyMapService extends BaseService
     {
         $image = PropertyMapImage::whereNotNull('deleted_at')->findOrFail($mapImageId);
 
-        $image->update(['deleted_at' => null]);
+        // Not in $fillable — set directly (see deleteMapImage).
+        $image->deleted_at = null;
+        $image->save();
 
         $hasBoundary = PropertyMapImage::where('property_id', $image->property_id)
             ->whereNull('deleted_at')
@@ -291,8 +296,11 @@ class PropertyMapService extends BaseService
 
     public function deleteMarker(string $markerId): void
     {
-        PropertyMapMarker::whereNull('deleted_at')->findOrFail($markerId)
-            ->update(['deleted_at' => now()]);
+        $marker = PropertyMapMarker::whereNull('deleted_at')->findOrFail($markerId);
+
+        // Not in $fillable — set directly (see deleteMapImage).
+        $marker->deleted_at = now();
+        $marker->save();
     }
 
     private function assertMarkerInput(string $markerType, float $xPercent, float $yPercent): void

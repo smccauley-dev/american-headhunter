@@ -143,7 +143,10 @@ class EmailTemplateService extends BaseService
             throw new \InvalidArgumentException('System templates cannot be deleted — they are wired to application code.');
         }
 
-        $template->update(['deleted_at' => now()]);
+        // deleted_at is intentionally not in $fillable, so set it directly —
+        // $template->update(['deleted_at' => ...]) would silently drop the key.
+        $template->deleted_at = now();
+        $template->save();
         $this->invalidate("email_template:{$template->template_key}");
     }
 

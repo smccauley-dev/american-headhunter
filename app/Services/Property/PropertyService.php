@@ -587,7 +587,10 @@ class PropertyService extends BaseService
     {
         $photo = PropertyPhoto::whereNull('deleted_at')->findOrFail($photoId);
 
-        $photo->update(['deleted_at' => now()]);
+        // deleted_at is intentionally not in $fillable, so set it directly —
+        // $photo->update(['deleted_at' => ...]) would silently drop the key.
+        $photo->deleted_at = now();
+        $photo->save();
 
         // Mark the underlying document deleted so the purge job picks it up
         try {
