@@ -154,7 +154,7 @@ After Step 3, the flow branches based on `account_type`.
 
 ## Flow 3 — Hunting Club
 
-**Account type:** `club_officer` (for whoever creates it) — members join later with `club_member`
+**Account type:** `club` (for whoever creates it). The creator is granted the `club_admin` role at signup; members join later and receive the `club_member` role. (Club admin vs member is a **role** distinction — `account_type` stays the coarse portal bucket `club`.)
 
 ### Club-specific steps
 
@@ -292,7 +292,7 @@ After Step 3, the flow branches based on `account_type`.
 
 ## Flow 6 — Marketplace Seller
 
-**Account type:** `marketplace_seller`
+**Account type:** `seller` (granted the `seller` role at signup)
 
 ### Seller-specific steps
 

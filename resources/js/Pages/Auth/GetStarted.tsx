@@ -5,10 +5,10 @@ import AuthLayout from '@/Components/Auth/AuthLayout';
 const ACCOUNT_TYPES = [
     { value: 'hunter',             label: 'Hunt',                       description: 'Find and lease hunting land' },
     { value: 'landowner',          label: 'Lease out my land',           description: 'List your property for hunting' },
-    { value: 'club_officer',       label: 'Join or start a hunting club', description: 'Manage a club and its members' },
+    { value: 'club',               label: 'Start a hunting club',         description: 'Create and manage a club and its members' },
     { value: 'outfitter',          label: 'Offer guided hunts',           description: 'List outfitter packages and bookings' },
     { value: 'consultant',         label: 'Offer land consulting',        description: 'Wildlife biology, habitat management' },
-    { value: 'marketplace_seller', label: 'Sell gear',                   description: 'List hunting equipment and apparel' },
+    { value: 'seller',             label: 'Sell gear',                   description: 'List hunting equipment and apparel' },
 ] as const;
 
 export default function GetStarted() {

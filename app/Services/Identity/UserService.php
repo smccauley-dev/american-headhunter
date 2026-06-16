@@ -6,6 +6,7 @@ use App\Mail\MfaFactorEnabledByAdminMail;
 use App\Mail\RecoveryCodesEmail;
 use App\Models\Identity\ConsentLog;
 use App\Models\Identity\MfaConfiguration;
+use App\Models\Identity\Role;
 use App\Models\Identity\User;
 use App\Models\Identity\UserProfile;
 use App\Services\Audit\AuditService;
@@ -18,6 +19,20 @@ use Illuminate\Support\Facades\Mail;
 class UserService extends BaseService
 {
     private const CACHE_TTL_MINUTES = 15;
+
+    /**
+     * Signup account_type (coarse portal bucket) → platform role granted at
+     * signup. Mostly 1:1; a club signup creates the club's club_admin (finer
+     * club roles such as club_member are granted later, not at signup).
+     */
+    private const ACCOUNT_TYPE_ROLE = [
+        'hunter'     => 'hunter',
+        'landowner'  => 'landowner',
+        'club'       => 'club_admin',
+        'outfitter'  => 'outfitter',
+        'consultant' => 'consultant',
+        'seller'     => 'seller',
+    ];
 
     public function __construct(
         private readonly AuditService $audit,
@@ -69,9 +84,32 @@ class UserService extends BaseService
             'user_agent'   => $data['user_agent'] ?? null,
         ]);
 
+        $this->assignSignupRole($user);
+
         $this->audit->logAccountCreated($user->id, $user->account_type);
 
         return $user;
+    }
+
+    /**
+     * Grant the platform role that matches the chosen account type at signup.
+     * Self-service grant, so granted_by_user_id is left null. Idempotent.
+     */
+    private function assignSignupRole(User $user): void
+    {
+        $roleName = self::ACCOUNT_TYPE_ROLE[$user->account_type] ?? null;
+        if ($roleName === null) {
+            return;
+        }
+
+        $role = Role::where('name', $roleName)->first();
+        if ($role === null) {
+            return;
+        }
+
+        $user->roles()->syncWithoutDetaching([
+            $role->id => ['granted_at' => now()],
+        ]);
     }
 
     public function updateProfile(User $user, array $profileData): UserProfile

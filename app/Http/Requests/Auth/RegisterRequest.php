@@ -16,7 +16,7 @@ class RegisterRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'account_type' => ['required', 'string', 'in:hunter,landowner,club_officer,outfitter,consultant,marketplace_seller'],
+            'account_type' => ['required', 'string', 'in:hunter,landowner,club,outfitter,consultant,seller'],
             'email'        => ['required', 'email:rfc,dns', 'max:255', Rule::unique(User::class, 'email')],
             'password'     => ['required', 'string', 'min:12', 'confirmed', 'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/'],
             'first_name'   => ['required', 'string', 'max:100'],

@@ -16,12 +16,12 @@ interface RegisterProps {
 }
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
-    hunter:             'Hunter',
-    landowner:          'Landowner',
-    club_officer:       'Hunting Club',
-    outfitter:          'Outfitter',
-    consultant:         'Land Consultant',
-    marketplace_seller: 'Marketplace Seller',
+    hunter:     'Hunter',
+    landowner:  'Landowner',
+    club:       'Hunting Club',
+    outfitter:  'Outfitter',
+    consultant: 'Land Consultant',
+    seller:     'Marketplace Seller',
 };
 
 export default function Register() {
