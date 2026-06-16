@@ -760,8 +760,9 @@ function AvailabilityCalendar({ seasonStart, seasonEnd, today, unavailable, star
                     if (!iso) return <div key={`e${i}`} />;
                     const s = dayState(iso);
                     const dayNum = Number(iso.slice(8, 10));
-                    const bg = s === 'selected' ? 'var(--blaze)' : s === 'in-range' ? '#f6dccb' : 'transparent';
-                    const color = s === 'disabled' ? '#c8c3ba' : s === 'selected' ? 'white' : 'var(--ink)';
+                    const inSelection = s === 'selected' || s === 'in-range';
+                    const bg = inSelection ? 'var(--blaze)' : 'transparent';
+                    const color = s === 'disabled' ? '#c8c3ba' : inSelection ? 'white' : 'var(--ink)';
                     return (
                         <button
                             key={iso}
@@ -784,7 +785,6 @@ function AvailabilityCalendar({ seasonStart, seasonEnd, today, unavailable, star
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 14 }}>
                 <div style={{ display: 'flex', gap: 16, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sage-dim)' }}>
                     <span><span style={{ display: 'inline-block', width: 10, height: 10, background: 'var(--blaze)', marginRight: 5, verticalAlign: 'middle' }} />Selected</span>
-                    <span><span style={{ display: 'inline-block', width: 10, height: 10, background: '#f6dccb', marginRight: 5, verticalAlign: 'middle' }} />In range</span>
                     <span style={{ textDecoration: 'line-through' }}>Unavailable</span>
                 </div>
                 {start && (
