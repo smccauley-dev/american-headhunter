@@ -1024,8 +1024,8 @@ class EditCustomerUser extends EditRecord
                 'modalName'   => 'Authenticator App MFA',
                 'enableIcon'  => 'heroicon-o-device-phone-mobile',
                 'disableIcon' => 'heroicon-o-shield-check',
-                'enableDesc'  => 'Re-activates TOTP for this account. Only works if the user has already enrolled an authenticator app from their Security settings — admins cannot enroll a secret on their behalf.',
-                'disableDesc' => 'Removes TOTP two-factor authentication. The user will need to re-scan the QR code to re-enroll.',
+                'enableDesc'  => 'Admins cannot enroll an authenticator on a user\'s behalf. This only succeeds if the user currently has an enrolled secret on file — after a disable the secret is cleared, so this will fail and the user must re-enroll from their own Security settings. If it does enable, the user will be required to provide an authenticator code at their next login; if they no longer have the app set up they must sign in with a recovery code. Prefer asking the user to set up TOTP themselves.',
+                'disableDesc' => 'Removes TOTP two-factor authentication and clears the stored secret. The user will need to re-scan a new QR code to re-enroll.',
             ],
             'sms' => [
                 'name'        => 'SMS MFA',
@@ -1040,7 +1040,7 @@ class EditCustomerUser extends EditRecord
         $actions = [];
 
         foreach ($factors as $method => $f) {
-            $actions[] = Action::make("enable_{$method}_mfa")
+            $enable = Action::make("enable_{$method}_mfa")
                 ->label("Enable {$f['name']}")
                 ->icon($f['enableIcon'])
                 ->color('success')
@@ -1059,6 +1059,17 @@ class EditCustomerUser extends EditRecord
                         Notification::make()->danger()->title('Error')->body($e->getMessage())->send();
                     }
                 });
+
+            // TOTP cannot be enrolled by an admin — re-enabling carries a real
+            // lockout risk, so flag the confirmation as a warning and make the
+            // submit button say what it does rather than a generic "Confirm".
+            if ($method === 'totp') {
+                $enable->modalIcon('heroicon-o-exclamation-triangle')
+                    ->modalIconColor('warning')
+                    ->modalSubmitActionLabel('Enable anyway');
+            }
+
+            $actions[] = $enable;
 
             $actions[] = Action::make("disable_{$method}_mfa")
                 ->label("Disable {$f['name']}")

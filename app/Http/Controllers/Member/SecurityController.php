@@ -152,9 +152,19 @@ class SecurityController extends Controller
             return back()->withErrors(['mfa_password' => 'Password is incorrect.']);
         }
 
+        // SEC-042 follow-up: clear the stored TOTP secret on disable so that a
+        // later re-enable can never reactivate a stale secret. The user may have
+        // already removed American Headhunter from their authenticator app, in
+        // which case a re-enabled-but-stale secret would lock them out at login.
+        // Re-enabling TOTP therefore always requires a fresh enrollment.
+        $attributes = ['is_enabled' => false, 'verified_at' => null];
+        if ($method === 'totp') {
+            $attributes['secret_encrypted'] = null;
+        }
+
         MfaConfiguration::where('user_id', $userId)
             ->where('method', $method)
-            ->update(['is_enabled' => false, 'verified_at' => null]);
+            ->update($attributes);
 
         try {
             $this->audit->log(

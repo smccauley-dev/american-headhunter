@@ -34,6 +34,9 @@ class EmailTemplateVariables
         'auth.recovery_codes' => [
             'codes' => ['label' => 'Recovery codes (one per line)', 'sample' => "AAAA-1111\nBBBB-2222\nCCCC-3333"],
         ],
+        'auth.mfa_enabled_by_admin' => [
+            'method_label' => ['label' => 'Enabled 2FA method name', 'sample' => 'Authenticator app (TOTP)'],
+        ],
         'application.message' => [
             'recipient_name'  => ['label' => "Recipient's name",                 'sample' => 'John'],
             'sender_role'     => ['label' => 'Sender role label',                'sample' => 'Property Owner'],

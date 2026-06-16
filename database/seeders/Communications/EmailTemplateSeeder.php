@@ -93,6 +93,22 @@ class EmailTemplateSeeder extends Seeder
         );
 
         $this->seed(
+            key: 'auth.mfa_enabled_by_admin',
+            name: 'MFA Method Enabled by Admin',
+            subject: 'A two-factor method was enabled on your {platform_name} account',
+            htmlBody: null,
+            textBody: <<<'TEXT'
+                An administrator has enabled a two-factor authentication method on your {platform_name} account: {method_label}.
+
+                The next time you sign in, you will be asked for this second factor in addition to your password.
+
+                If this is the authenticator app and you no longer have {platform_name} set up in your authenticator, sign in using one of your recovery codes, then re-enroll from your Security settings. If you have also lost your recovery codes, contact support to regain access.
+
+                If you did not expect this change, contact support immediately.
+                TEXT,
+        );
+
+        $this->seed(
             key: 'application.message',
             name: 'Application Message Notification',
             subject: 'New message regarding your application — {platform_name}',

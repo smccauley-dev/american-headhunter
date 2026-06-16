@@ -2,6 +2,7 @@
 
 namespace App\Services\Identity;
 
+use App\Mail\MfaFactorEnabledByAdminMail;
 use App\Mail\RecoveryCodesEmail;
 use App\Models\Identity\ConsentLog;
 use App\Models\Identity\MfaConfiguration;
@@ -114,11 +115,20 @@ class UserService extends BaseService
      */
     public function disableMfaFactor(User $user, string $method, ?string $adminUserId = null): void
     {
+        // SEC-042 follow-up: clear the TOTP secret on disable so a later
+        // re-enable cannot reactivate a stale secret the user may have already
+        // removed from their authenticator app (which would lock them out at
+        // login). Re-enabling TOTP always requires a fresh enrollment.
+        $attributes = ['is_enabled' => false, 'verified_at' => null];
+        if ($method === 'totp') {
+            $attributes['secret_encrypted'] = null;
+        }
+
         DB::connection('identity')
             ->table('mfa_configurations')
             ->where('user_id', $user->id)
             ->where('method', $method)
-            ->update(['is_enabled' => false, 'verified_at' => null]);
+            ->update($attributes);
 
         $this->invalidate("user:{$user->id}");
 
@@ -128,7 +138,8 @@ class UserService extends BaseService
             tableName:      'mfa_configurations',
             recordId:       $user->id,
             userId:         $adminUserId,
-            actionSummary:  "MFA factor disabled: {$method} (admin-initiated)",
+            actionSummary:  "MFA factor disabled: {$method}"
+                . ($method === 'totp' ? ' (secret cleared)' : '') . ' (admin-initiated)',
         );
     }
 
@@ -166,6 +177,36 @@ class UserService extends BaseService
             userId:         $adminUserId,
             actionSummary:  "MFA factor enabled: {$method} (admin-initiated)",
         );
+
+        $this->notifyUserFactorEnabled($user, $method);
+    }
+
+    /**
+     * Out-of-band notice to the account holder that an admin enabled a 2FA
+     * method, so they know their login now requires a second factor and how to
+     * recover if they cannot complete it. Never throws — a mail failure must
+     * not roll back the security change.
+     */
+    private function notifyUserFactorEnabled(User $user, string $method): void
+    {
+        try {
+            Mail::to($user->email)->send(
+                new MfaFactorEnabledByAdminMail($this->methodLabel($method)),
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /** Human-readable 2FA method name for user-facing notifications. */
+    private function methodLabel(string $method): string
+    {
+        return match ($method) {
+            'totp'  => 'Authenticator app (TOTP)',
+            'email' => 'Email',
+            'sms'   => 'SMS',
+            default => ucfirst($method),
+        };
     }
 
     /**
