@@ -107,10 +107,8 @@ CREATE TABLE user_profiles (
                                         'army','navy','air_force','marine_corps',
                                         'coast_guard','space_force','national_guard','reserves'
                                     ) OR veteran_branch IS NULL),
-    veteran_service_start       SMALLINT    NULL
-                                    CHECK (veteran_service_start BETWEEN 1940 AND 2100 OR veteran_service_start IS NULL),
-    veteran_service_end         SMALLINT    NULL
-                                    CHECK (veteran_service_end BETWEEN 1940 AND 2100 OR veteran_service_end IS NULL),
+    veteran_service_start       DATE        NULL,  -- Date military service began
+    veteran_service_end         DATE        NULL,  -- Date military service ended
     veteran_is_active           BOOLEAN      NOT NULL DEFAULT false,
     veteran_last_rank           VARCHAR(100) NULL,
     veteran_bio                 TEXT         NULL,
@@ -119,10 +117,8 @@ CREATE TABLE user_profiles (
                                         'law_enforcement','fire','emt','search_rescue',
                                         'corrections','dispatch','other'
                                     ) OR first_responder_type IS NULL),
-    first_responder_service_start SMALLINT   NULL
-                                    CHECK (first_responder_service_start BETWEEN 1940 AND 2100 OR first_responder_service_start IS NULL),
-    first_responder_service_end   SMALLINT   NULL
-                                    CHECK (first_responder_service_end BETWEEN 1940 AND 2100 OR first_responder_service_end IS NULL),
+    first_responder_service_start DATE       NULL,  -- Date first responder service began
+    first_responder_service_end   DATE       NULL,  -- Date first responder service ended
     first_responder_is_active   BOOLEAN      NOT NULL DEFAULT false,
     first_responder_last_rank   VARCHAR(100) NULL,
     first_responder_bio         TEXT         NULL,
