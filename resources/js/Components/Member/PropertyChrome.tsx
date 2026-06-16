@@ -45,14 +45,16 @@ export function Section({ title, action, children }: { title: string; action?: R
   )
 }
 
-/** Field-record tab bar — stamped boxes, active tab filled ink with a brass shadow. */
+/** Tab bar — underlined text tabs (mirrors the admin Filament tab row): the
+ * active tab is ink with an accent underline, the rest muted, all sitting on a
+ * single divider line. */
 export function TabBar({ tabs, active, onChange }: {
   tabs: { key: string; label: string }[]
   active: string
   onChange: (key: string) => void
 }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '24px' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0', marginBottom: '24px', borderBottom: `1px solid ${DIVIDER}` }}>
       {tabs.map(t => {
         const on = t.key === active
         return (
@@ -61,11 +63,11 @@ export function TabBar({ tabs, active, onChange }: {
             type="button"
             onClick={() => onChange(t.key)}
             style={{
-              fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.12em',
+              fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600, letterSpacing: '.12em',
               textTransform: 'uppercase', padding: '10px 16px', cursor: 'pointer',
-              border: `1px solid ${INK}`, whiteSpace: 'nowrap',
-              background: on ? INK : PAPER, color: on ? '#F4ECDC' : INK,
-              boxShadow: on ? `3px 3px 0 ${BRASS}` : 'none',
+              background: 'none', border: 'none', whiteSpace: 'nowrap', marginBottom: '-1px',
+              borderBottom: on ? `2px solid ${ACCENT}` : '2px solid transparent',
+              color: on ? INK : TAN,
             }}
           >
             {t.label}
