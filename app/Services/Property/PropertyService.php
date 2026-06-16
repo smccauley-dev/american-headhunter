@@ -573,6 +573,120 @@ class PropertyService extends BaseService
         }
     }
 
+    // ─── Managers ─────────────────────────────────────────────────────────────
+
+    /**
+     * Active managers on a property with cross-DB-resolved identities, for the
+     * member-portal team view. Read replica + a single identity bulk-load — no
+     * Eloquent cross-DB relationship.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getManagersForProperty(string $propertyId): array
+    {
+        $managers = PropertyManager::on('property_read')
+            ->where('property_id', $propertyId)
+            ->whereNull('revoked_at')
+            ->orderBy('granted_at')
+            ->get();
+
+        if ($managers->isEmpty()) {
+            return [];
+        }
+
+        $userIds = $managers->pluck('user_id')
+            ->merge($managers->pluck('granted_by_user_id'))
+            ->filter()->unique()->values()->all();
+
+        $users = \App\Models\Identity\User::on('identity')
+            ->with('profile')
+            ->whereIn('id', $userIds)
+            ->get()
+            ->keyBy('id');
+
+        return $managers->map(function (PropertyManager $m) use ($users) {
+            $user      = $users->get($m->user_id);
+            $grantedBy = $users->get($m->granted_by_user_id);
+
+            return [
+                'id'         => $m->id,
+                'name'       => $user?->profile?->full_name ?: ($user?->email ?? '—'),
+                'email'      => $user?->email ?? '',
+                'role'       => $m->role,
+                'granted_at' => $m->granted_at?->format('M j, Y'),
+                'granted_by' => $grantedBy?->profile?->full_name ?: ($grantedBy?->email ?? '—'),
+            ];
+        })->all();
+    }
+
+    /**
+     * Grant a manager role on a property to the user with the given email. Returns
+     * a status array — ok=false carries a user-facing message (no such user /
+     * already a manager). The actor is recorded as granted_by.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function grantManager(string $propertyId, string $email, string $role, string $grantedByUserId): array
+    {
+        $user = app(\App\Services\Identity\UserService::class)->findByEmail($email);
+
+        if (! $user) {
+            return ['ok' => false, 'message' => 'No user found with that email address.'];
+        }
+
+        $exists = PropertyManager::on('property')
+            ->where('property_id', $propertyId)
+            ->where('user_id', $user->id)
+            ->whereNull('revoked_at')
+            ->exists();
+
+        if ($exists) {
+            return ['ok' => false, 'message' => 'That user already has active manager access.'];
+        }
+
+        PropertyManager::on('property')->create([
+            'property_id'        => $propertyId,
+            'user_id'            => $user->id,
+            'role'               => $role,
+            'granted_by_user_id' => $grantedByUserId,
+            'granted_at'         => now(),
+        ]);
+
+        $this->invalidate(
+            "property:user:{$user->id}:manager_grants",
+            "property:user:{$user->id}:owned_summaries",
+        );
+
+        return ['ok' => true, 'message' => 'Manager access granted.'];
+    }
+
+    /**
+     * Revoke a manager grant scoped to its property. Returns false when no active
+     * grant with that id exists on the property.
+     */
+    public function revokeManager(string $propertyId, string $managerId): bool
+    {
+        $manager = PropertyManager::on('property')
+            ->where('property_id', $propertyId)
+            ->where('id', $managerId)
+            ->whereNull('revoked_at')
+            ->first();
+
+        if (! $manager) {
+            return false;
+        }
+
+        $manager->revoked_at = now();
+        $manager->save();
+
+        $this->invalidate(
+            "property:user:{$manager->user_id}:manager_grants",
+            "property:user:{$manager->user_id}:owned_summaries",
+        );
+
+        return true;
+    }
+
     // ─── Access Info (encrypted) ──────────────────────────────────────────────
 
     /**

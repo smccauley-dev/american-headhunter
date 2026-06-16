@@ -222,9 +222,15 @@ export default function PropertyForm({ property, states, statuses }: Props) {
                 >
                   Edit Details →
                 </a>
+                <a
+                  href={`/member/properties/${property.id}/team`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: 'transparent', color: INK, border: '1px solid #d4c9b0', textDecoration: 'none' }}
+                >
+                  Manage Team →
+                </a>
               </div>
               <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', color: '#6b5e50', marginTop: '14px', lineHeight: 1.5 }}>
-                Game types, rules, and amenities are on the details page. Photos, maps, and contacts are coming next.
+                Game types, rules, and amenities are on the details page. Photos and maps are coming next.
               </p>
             </div>
           )}

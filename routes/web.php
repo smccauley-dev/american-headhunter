@@ -11,6 +11,7 @@ use App\Http\Controllers\Member\ProfileController;
 use App\Http\Controllers\Member\PropertyController as MemberPropertyController;
 use App\Http\Controllers\Member\PropertyDetailController as MemberPropertyDetailController;
 use App\Http\Controllers\Member\PropertyListingController as MemberPropertyListingController;
+use App\Http\Controllers\Member\PropertyManagerController as MemberPropertyManagerController;
 use App\Http\Controllers\Api\MentionController;
 use App\Http\Controllers\Member\SecurityController;
 use App\Http\Controllers\Public\HunterPublicProfileController;
@@ -185,6 +186,11 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/properties/{property}/listings',             [MemberPropertyListingController::class, 'store'])->name('properties.listings.store');
     Route::put('/properties/{property}/listings/{listing}',    [MemberPropertyListingController::class, 'update'])->name('properties.listings.update');
     Route::delete('/properties/{property}/listings/{listing}', [MemberPropertyListingController::class, 'destroy'])->name('properties.listings.destroy');
+
+    // Team & activity: managers (grant/revoke) + read-only check-in log.
+    Route::get('/properties/{property}/team',                  [MemberPropertyManagerController::class, 'index'])->name('properties.team.index');
+    Route::post('/properties/{property}/managers',            [MemberPropertyManagerController::class, 'store'])->name('properties.managers.store');
+    Route::delete('/properties/{property}/managers/{manager}', [MemberPropertyManagerController::class, 'destroy'])->name('properties.managers.destroy');
 
     Route::post('/security/password',                [SecurityController::class, 'changePassword'])->name('security.password')->middleware('throttle:5,1');
     Route::post('/security/mfa/totp/enroll',         [SecurityController::class, 'enrollTotp'])->name('security.mfa.totp.enroll')->middleware('throttle:10,1');
