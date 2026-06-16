@@ -403,6 +403,7 @@ interface ActivityEvent {
 interface LeaseSummary {
   id: string
   status: 'active' | 'pending_signatures'
+  needs_my_signature: boolean
   start_date: string | null
   end_date: string | null
   total_price: string
@@ -1369,6 +1370,8 @@ function LeasesTab({ leases }: { leases: LeaseSummary[] }) {
 
 function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
   const pending = lease.status === 'pending_signatures'
+  const needsMySignature = pending && lease.needs_my_signature
+  const awaitingCountersign = pending && !lease.needs_my_signature
   const expiringSoon = lease.days_until_expiry !== null && lease.days_until_expiry <= 30 && lease.days_until_expiry > 0
 
   return (
@@ -1393,7 +1396,7 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
           color: pending ? '#d8b15e' : '#7bbd8e',
           border: pending ? '1px solid rgba(184,147,74,0.5)' : '1px solid rgba(74,124,89,0.5)',
         }}>
-          {pending ? 'Awaiting Signature' : 'Active'}
+          {needsMySignature ? 'Signature Required' : awaitingCountersign ? 'Awaiting Landowner' : 'Active'}
         </span>
       </div>
 
@@ -1421,9 +1424,15 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
         </div>
       )}
 
+      {awaitingCountersign && (
+        <div style={{ padding: '8px 18px', background: 'rgba(74,124,89,0.08)', borderTop: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: '#4a7c59' }}>
+          You've signed — awaiting the landowner's countersignature.
+        </div>
+      )}
+
       {/* Actions */}
       <div style={{ display: 'flex', gap: '8px', padding: '14px 18px', borderTop: '1px solid #e5ddd0' }}>
-        {pending && (
+        {needsMySignature && (
           <a
             href={`/member/leases/${lease.id}/sign`}
             style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'var(--ah-accent)', color: '#fff', textDecoration: 'none' }}

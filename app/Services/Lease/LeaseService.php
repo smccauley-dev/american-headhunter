@@ -75,13 +75,35 @@ class LeaseService extends BaseService
             ->orderByDesc('start_date')
             ->get();
 
-        return $leases->map(function (Lease $lease) {
+        // Resolved lazily — EsignatureService depends on LeaseService, so it
+        // cannot be a constructor dependency without creating a cycle.
+        $esig = app(EsignatureService::class);
+
+        return $leases->map(function (Lease $lease) use ($userId, $esig) {
             $property = rescue(fn () => $this->propertyService->find($lease->property_id), null);
             $endDate  = $lease->end_date;
 
+            // A lease stays 'pending_signatures' until both parties sign, so the
+            // status alone can't tell the lessee whether THEY still owe a
+            // signature. Surface that explicitly so the portal stops showing
+            // "Sign Now" to someone who has already signed.
+            $needsMySignature = false;
+            if ($lease->status === 'pending_signatures') {
+                $needsMySignature = rescue(function () use ($esig, $lease, $userId) {
+                    $request = $esig->getRequestForLease($lease->id);
+                    if ($request === null) {
+                        return false;
+                    }
+                    $signer = $esig->signerForUser($request->id, $userId);
+
+                    return $signer !== null && $signer->status !== 'signed';
+                }, false);
+            }
+
             return [
-                'id'                => $lease->id,
-                'status'            => $lease->status,
+                'id'                 => $lease->id,
+                'status'             => $lease->status,
+                'needs_my_signature' => $needsMySignature,
                 'start_date'        => $lease->start_date?->format('M j, Y'),
                 'end_date'          => $endDate?->format('M j, Y'),
                 'total_price'       => number_format((float) $lease->total_price, 2),
