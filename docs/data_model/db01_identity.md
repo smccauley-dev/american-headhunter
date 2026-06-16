@@ -116,8 +116,8 @@ CREATE TABLE user_profiles (
     veteran_bio                 TEXT         NULL,
     first_responder_type        VARCHAR(30)  NULL
                                     CHECK (first_responder_type IN (
-                                        'police','sheriff','fire','emt_paramedic',
-                                        'search_rescue','dispatcher','correctional'
+                                        'law_enforcement','fire','emt','search_rescue',
+                                        'corrections','dispatch','other'
                                     ) OR first_responder_type IS NULL),
     first_responder_service_start SMALLINT   NULL
                                     CHECK (first_responder_service_start BETWEEN 1940 AND 2100 OR first_responder_service_start IS NULL),

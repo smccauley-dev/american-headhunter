@@ -283,13 +283,13 @@ class EditCustomerUser extends EditRecord
                                     Select::make('first_responder_type')
                                         ->label('Type')
                                         ->options([
-                                            'police'       => 'Police Officer',
-                                            'sheriff'      => 'Sheriff / Deputy',
-                                            'fire'         => 'Firefighter',
-                                            'emt_paramedic'=> 'EMT / Paramedic',
-                                            'search_rescue'=> 'Search & Rescue',
-                                            'dispatcher'   => '911 Dispatcher',
-                                            'correctional' => 'Correctional Officer',
+                                            'law_enforcement' => 'Law Enforcement',
+                                            'fire'            => 'Fire Fighter',
+                                            'emt'             => 'EMT / Paramedic',
+                                            'search_rescue'   => 'Search & Rescue',
+                                            'corrections'     => 'Corrections Officer',
+                                            'dispatch'        => 'Dispatcher / 911',
+                                            'other'           => 'Other',
                                         ])
                                         ->placeholder('Select type')
                                         ->hidden(fn (Get $get) => ! $get('is_first_responder')),
