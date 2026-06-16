@@ -8,6 +8,7 @@ use App\Http\Controllers\Member\LeaseDocumentController;
 use App\Http\Controllers\Member\LeaseSignController;
 use App\Http\Controllers\Member\MemberController;
 use App\Http\Controllers\Member\ProfileController;
+use App\Http\Controllers\Member\PropertyController as MemberPropertyController;
 use App\Http\Controllers\Api\MentionController;
 use App\Http\Controllers\Member\SecurityController;
 use App\Http\Controllers\Public\HunterPublicProfileController;
@@ -165,6 +166,13 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->name('profile.avatar.upload');
     Route::post('/profile/photos', [ProfileController::class, 'uploadPhoto'])->name('profile.photos.upload');
     Route::delete('/profile/photos/{documentId}', [ProfileController::class, 'deletePhoto'])->name('profile.photos.delete');
+
+    // Landowner front-end property management. 'create' is declared before the
+    // '{property}' wildcard so it is not captured as a property id.
+    Route::get('/properties/create',     [MemberPropertyController::class, 'create'])->name('properties.create');
+    Route::post('/properties',           [MemberPropertyController::class, 'store'])->name('properties.store');
+    Route::get('/properties/{property}', [MemberPropertyController::class, 'edit'])->name('properties.edit');
+    Route::put('/properties/{property}', [MemberPropertyController::class, 'update'])->name('properties.update');
 
     Route::post('/security/password',                [SecurityController::class, 'changePassword'])->name('security.password')->middleware('throttle:5,1');
     Route::post('/security/mfa/totp/enroll',         [SecurityController::class, 'enrollTotp'])->name('security.mfa.totp.enroll')->middleware('throttle:10,1');

@@ -185,6 +185,32 @@ class PropertyService extends BaseService
     }
 
     /**
+     * Whether a user may manage a property from the member portal — true if they
+     * own it or hold an active (non-revoked) manager grant of any role. The
+     * `properties` table has no RLS policy, so member-portal property management
+     * must scope every read and write through this check. Mirrors exactly the
+     * set surfaced by getManagedPropertySummaries(), so no blade link 404s.
+     */
+    public function userCanManageProperty(string $userId, string $propertyId): bool
+    {
+        $owns = Property::on('property_read')
+            ->where('id', $propertyId)
+            ->where('owner_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if ($owns) {
+            return true;
+        }
+
+        return PropertyManager::on('property_read')
+            ->where('property_id', $propertyId)
+            ->where('user_id', $userId)
+            ->whereNull('revoked_at')
+            ->exists();
+    }
+
+    /**
      * Find an active listing by UUID. Uses the read replica.
      */
     public function findListing(string $listingId): ?PropertyListing
