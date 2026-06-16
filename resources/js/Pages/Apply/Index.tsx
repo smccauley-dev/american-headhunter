@@ -646,6 +646,15 @@ export default function ApplyIndex({ listing, property, primaryHunter, savedGues
     const [showGuestPicker, setShowGuestPicker] = useState(false);
     const [showCertModal, setShowCertModal] = useState(false);
 
+    const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local tz
+    // Only prefill the proposed term from the listing's season when it is still a
+    // valid forward-looking range. A past season (e.g. a stale active listing)
+    // would otherwise pre-load dates that always fail server validation
+    // (proposed_start must be today or later), making the submit appear to do
+    // nothing.
+    const seasonUsable = !!listing.season_start && !!listing.season_end
+        && listing.season_start >= today && listing.season_end > listing.season_start;
+
     const { data, setData, post, processing, errors } = useForm<{
         application_type: 'individual' | 'club';
         proposed_start: string;
@@ -655,8 +664,8 @@ export default function ApplyIndex({ listing, property, primaryHunter, savedGues
         certification_accepted: boolean;
     }>({
         application_type: 'individual',
-        proposed_start:   listing.season_start ?? '',
-        proposed_end:     listing.season_end ?? '',
+        proposed_start:   seasonUsable ? listing.season_start! : '',
+        proposed_end:     seasonUsable ? listing.season_end!   : '',
         message:                  '',
         hunters:                  [{ ...primaryHunter, dl_photo: null, dl_photo_back: null, hunting_license_photo: null, hunting_license_photo_back: null }],
         certification_accepted:   false,
@@ -689,15 +698,28 @@ export default function ApplyIndex({ listing, property, primaryHunter, savedGues
     }
 
     function validateStep1(): boolean {
-        // Inertia will handle final server-side validation; do basic client checks here
+        // Mirror the server rules so the step gate matches: start today-or-later,
+        // end after start. (Inertia still runs full server-side validation.)
         if (!data.proposed_start || !data.proposed_end) return false;
+        if (data.proposed_start < today) return false;
         if (data.proposed_end <= data.proposed_start) return false;
         return true;
     }
 
     function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
-        post(`/apply/${listing.id}`);
+        post(`/apply/${listing.id}`, {
+            onError: (formErrors) => {
+                // Step-1 errors are invisible while the user is on step 2, which
+                // made a failed submit look like it did nothing. Jump back to the
+                // offending step so the failure is always surfaced.
+                const step1Fields = ['application_type', 'proposed_start', 'proposed_end', 'message'];
+                if (Object.keys(formErrors).some(key => step1Fields.includes(key))) {
+                    setStep(1);
+                }
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            },
+        });
     }
 
     // ── Sidebar card (shared across steps) ───────────────────────────────────
@@ -889,12 +911,12 @@ export default function ApplyIndex({ listing, property, primaryHunter, savedGues
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                                     <div>
                                         <label style={labelStyle}>Start Date *</label>
-                                        <input type="date" value={data.proposed_start} onChange={e => setData('proposed_start', e.target.value)} style={inputStyle(!!errors.proposed_start)} />
+                                        <input type="date" min={today} value={data.proposed_start} onChange={e => setData('proposed_start', e.target.value)} style={inputStyle(!!errors.proposed_start)} />
                                         {errors.proposed_start && <div style={{ color: 'var(--blaze)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4 }}>{errors.proposed_start}</div>}
                                     </div>
                                     <div>
                                         <label style={labelStyle}>End Date *</label>
-                                        <input type="date" value={data.proposed_end} onChange={e => setData('proposed_end', e.target.value)} style={inputStyle(!!errors.proposed_end)} />
+                                        <input type="date" min={data.proposed_start || today} value={data.proposed_end} onChange={e => setData('proposed_end', e.target.value)} style={inputStyle(!!errors.proposed_end)} />
                                         {errors.proposed_end && <div style={{ color: 'var(--blaze)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4 }}>{errors.proposed_end}</div>}
                                     </div>
                                 </div>
