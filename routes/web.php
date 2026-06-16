@@ -161,4 +161,9 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::get('/security/username-check/{username}', [SecurityController::class, 'checkUsername'])->name('security.username.check')->middleware('throttle:30,1');
 });
 
-require __DIR__ . '/auth.php';
+// SEC-043: the auth bootstrap (login, register, email verification, MFA,
+// password reset, logout) runs before a per-user RLS context exists, so it
+// connects as the trusted ah_system (BYPASSRLS) role.
+Route::middleware('db.system')->group(function () {
+    require __DIR__ . '/auth.php';
+});

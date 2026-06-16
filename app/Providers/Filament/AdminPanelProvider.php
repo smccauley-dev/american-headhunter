@@ -241,6 +241,9 @@ class AdminPanelProvider extends PanelProvider
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
                 \App\Http\Middleware\EnsureAdminIpAllowed::class,
+                // SEC-043: trusted staff CRUD spans all users and cannot run
+                // under per-user RLS, so the admin panel uses the ah_system role.
+                \App\Http\Middleware\UseSystemDatabaseRole::class,
             ])
             ->authMiddleware([
                 Authenticate::class,

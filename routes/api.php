@@ -37,7 +37,8 @@ Route::prefix('v1/properties')
 Route::prefix('properties')->middleware('throttle:public-api')->group($propertyRoutes);
 
 // Auth — login, MFA challenge verification, recovery, logout
-Route::prefix('v1/auth')->group(function () {
+// SEC-043: pre-context auth bootstrap runs as the trusted ah_system role.
+Route::prefix('v1/auth')->middleware('db.system')->group(function () {
     Route::post('/login',      [AuthController::class, 'login']);
     Route::post('/mfa/send',   [AuthController::class, 'mfaSend'])->middleware('throttle:mfa-send');
     Route::post('/mfa/verify', [AuthController::class, 'mfaVerify'])->middleware('throttle:mfa-verify');

@@ -18,34 +18,38 @@ The platform uses **14 PostgreSQL databases** on a single PostgreSQL 16 + PostGI
 
 | Connection key | Database name | DB # | Purpose | User |
 |---|---|---|---|---|
-| `identity` | `ah_identity` | 1 | Auth, users, roles, MFA, trust scores | `ah_app` |
-| `property` | `ah_property` | 2 | Property listings, photos, pricing | `ah_app` |
+| `identity` | `ah_identity` | 1 | Auth, users, roles, MFA, trust scores | `ah_runtime` |
+| `property` | `ah_property` | 2 | Property listings, photos, pricing | `ah_runtime` |
 | `property_read` | `ah_property` | 2 | Read replica — public listing queries | `ah_readonly` |
-| `lease` | `ah_lease` | 3 | Leases, applications, clubs, check-in | `ah_app` |
-| `billing` | `ah_billing` | 4 | Payments, invoices, Stripe, payouts | `ah_app` |
-| `wildlife` | `ah_wildlife` | 5 | Harvest logs, trail cameras, quotas | `ah_app` |
+| `lease` | `ah_lease` | 3 | Leases, applications, clubs, check-in | `ah_runtime` |
+| `billing` | `ah_billing` | 4 | Payments, invoices, Stripe, payouts | `ah_runtime` |
+| `wildlife` | `ah_wildlife` | 5 | Harvest logs, trail cameras, quotas | `ah_runtime` |
 | `wildlife_read` | `ah_wildlife` | 5 | Read replica — reporting queries | `ah_readonly` |
-| `commerce` | `ah_commerce` | 6 | Auctions, marketplace, outfitter bookings | `ah_app` |
-| `communications` | `ah_communications` | 7 | Messages, notifications, SOS events | `ah_app` |
+| `commerce` | `ah_commerce` | 6 | Auctions, marketplace, outfitter bookings | `ah_runtime` |
+| `communications` | `ah_communications` | 7 | Messages, notifications, SOS events | `ah_runtime` |
 | `analytics` | `ah_analytics` | 8 | Read-only reporting (ETL-populated) | `ah_readonly` |
 | `analytics_etl` | `ah_analytics` | 8 | ETL writer — only ETL job classes use this | `ah_etl` |
-| `audit` | `ah_audit` | 9 | Append-only audit log — 10yr retention | `ah_app` |
-| `incidents` | `ah_incidents` | 10 | Safety incidents, disputes, moderation | `ah_app` |
-| `documents` | `ah_documents` | 11 | File metadata, e-sign requests, QR codes | `ah_app` |
-| `platform` | `ah_platform` | 12 | Feature flags, tenant config, IoT, promos | `ah_app` |
-| `geospatial` | `ah_geospatial` | 13 | PostGIS: boundaries, zones, harvest locations | `ah_app` |
+| `audit` | `ah_audit` | 9 | Append-only audit log — 10yr retention | `ah_runtime` |
+| `incidents` | `ah_incidents` | 10 | Safety incidents, disputes, moderation | `ah_runtime` |
+| `documents` | `ah_documents` | 11 | File metadata, e-sign requests, QR codes | `ah_runtime` |
+| `platform` | `ah_platform` | 12 | Feature flags, tenant config, IoT, promos | `ah_runtime` |
+| `geospatial` | `ah_geospatial` | 13 | PostGIS: boundaries, zones, harvest locations | `ah_runtime` |
 | `geospatial_read` | `ah_geospatial` | 13 | Read replica — Mapbox tile queries, spatial reads | `ah_readonly` |
 | `research` | `ah_research` | 14 | Air-gapped anonymized dataset — ETL only | `ah_etl` |
 
 ### Database Users
 
-Three users are provisioned by `docker/postgres/init.sql`:
+Users are provisioned by `docker/postgres/init.sql`:
 
 | User | Purpose | Who uses it |
 |---|---|---|
-| `ah_app` | Standard read/write application user | All app connections for DBs 1–7, 9–13 |
+| `ah_app` | Schema **owner** (DDL). Bypasses RLS as owner — **never a runtime connection** | Migrations & seeders only (`migrate:*`, `db:seed`) |
+| `ah_runtime` | Non-owner read/write app user — **RLS applies to it** | All user-facing HTTP requests (web + API) on DBs 1–7, 9–13 |
+| `ah_system` | Non-owner, **BYPASSRLS**, member of `ah_runtime` (inherits its grants) | Trusted, pre-/no-context subsystems: auth bootstrap, Filament admin, queue worker, console |
 | `ah_readonly` | SELECT-only | `property_read`, `wildlife_read`, `geospatial_read`, `analytics` |
 | `ah_etl` | ETL writes; owner of DBs 8 and 14 | `analytics_etl`, `research` |
+
+**SEC-043 three-role model.** The application must never connect as the table owner at runtime — a table owner bypasses RLS unless `FORCE ROW LEVEL SECURITY` is set, which made every policy a silent no-op. User-facing requests connect as the non-owner `ah_runtime` so policies are enforced; subsystems that legitimately run before a per-user context exists (login/register/MFA, admin, queue jobs) connect as `ah_system` (BYPASSRLS). Role selection is centralized in `App\Database\ConnectionRole` and driven by `RuntimeDatabaseRoleProvider` (console: owner for schema commands, system otherwise; testing: owner) plus the `db.system` middleware (`UseSystemDatabaseRole`) on auth routes and the Filament panel. The connection-username defaults in `config/database.php` are `ah_runtime`; `.env` provides `DB_*_USERNAME` per connection plus `DB_APP_*` (owner) and `DB_SYSTEM_*`. Because docker-compose uses `env_file: .env`, changing these requires **recreating** the app container, not just `config:clear`.
 
 ### Read Replica Pattern
 
@@ -285,7 +289,7 @@ public function handle(Request $request, Closure $next): Response
 
 `set_config(..., false)` makes the setting local to the current transaction. Do not use `SET app.current_user_id = ?` (which is session-scoped and persists across transactions on pooled connections).
 
-RLS policies are bypassed by `ah_readonly` and `ah_etl` (they use `BYPASSRLS` privilege in production). Application code always goes through `ah_app` with RLS active.
+RLS policies are bypassed by `ah_system`, `ah_readonly`, and `ah_etl` (all have the `BYPASSRLS` privilege). User-facing application code connects as the non-owner `ah_runtime`, to which RLS **applies** — so the `app.current_user_id` / `app.user_role` context set above is load-bearing. The owner `ah_app` is used only for migrations/seeders (it bypasses RLS as owner, which is why it must never be a runtime connection — see SEC-043 in `security.md`).
 
 ---
 

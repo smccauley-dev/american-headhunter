@@ -238,6 +238,16 @@ These rules are architecture-level constraints. Do not work around them.
 
 - **No application service ever touches DB 14.** Only ETL job classes connect to `research`. No controller, model, or service in the application tier should reference this connection.
 
+### Database Roles & RLS (three-role model — SEC-043)
+
+The app connects to PostgreSQL as one of three roles depending on trust context. **Never connect to a runtime path as the table owner** — owners bypass RLS, which silently turns every policy into a no-op.
+
+- **`ah_app`** — schema **owner**. Migrations and seeders **only** (DDL). Bypasses RLS as owner. Never a runtime/HTTP connection.
+- **`ah_runtime`** — non-owner user-facing role. All web + API requests. **RLS applies**, so policies actually enforce. DML only.
+- **`ah_system`** — non-owner, **BYPASSRLS**, member of `ah_runtime`. Trusted subsystems that run before/without a per-user context: auth bootstrap (login/register/MFA/verify/reset), the Filament admin panel, the queue worker, and console commands.
+
+Role selection is centralized — **do not set DB usernames ad hoc.** `App\Database\ConnectionRole` swaps roles; `RuntimeDatabaseRoleProvider` picks owner (schema commands), system (other console/queue), or owner (testing); the `db.system` middleware (`UseSystemDatabaseRole`) marks routes/panels that need `ah_system`. New routes that must run before a user context exists (or any new admin panel) must be wrapped in `db.system`. RLS context (`app.current_user_id`/`app.user_role`) is set per request by `InjectDatabaseContext` and is load-bearing under `ah_runtime`. Because docker-compose uses `env_file: .env`, changing `DB_*_USERNAME` requires **recreating** the app container, not just `config:clear`. Regression coverage: `tests/Feature/Security/RlsEnforcementTest`.
+
 ### Encryption
 
 - **Never hardcode encryption keys.** They come from Azure Key Vault in production and from environment variables in development. Use `config('encryption_keys.<connection>')`.

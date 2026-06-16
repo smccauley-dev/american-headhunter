@@ -8,10 +8,18 @@
 --              owner it bypasses RLS (this is intentional — migrations/seeders
 --              must see and write every row). NEVER used as the application's
 --              runtime connection.
--- ah_runtime — application RUNTIME role (HTTP + queue). A non-owner, so RLS
---              policies actually apply to it (SEC-043). Granted DML only.
+-- ah_runtime — application RUNTIME role for user-facing HTTP requests. A
+--              non-owner, so RLS policies actually apply to it (SEC-043).
+--              Granted DML only.
+-- ah_system  — TRUSTED-subsystem role (auth bootstrap, queue worker, Filament
+--              admin). A non-owner (cannot DDL) but holds BYPASSRLS so the
+--              pre-context / trusted paths that cannot satisfy a user-scoped
+--              policy still function. Inherits ah_runtime's DML grants via role
+--              membership, so it needs no table grants of its own (SEC-043).
 CREATE USER ah_app      WITH PASSWORD 'secret';
 CREATE USER ah_runtime  WITH PASSWORD 'secret';
+CREATE ROLE ah_system   WITH LOGIN PASSWORD 'secret' BYPASSRLS;
+GRANT ah_runtime TO ah_system;
 CREATE USER ah_readonly WITH PASSWORD 'secret';
 CREATE USER ah_etl      WITH PASSWORD 'secret';
 

@@ -12,16 +12,29 @@ class InjectDatabaseContext
     /**
      * Set PostgreSQL session-level variables for RLS policies.
      * These variables are read by policies like:
-     *   USING (user_id = current_setting('app.current_user_id', true)::UUID)
+     *   USING (user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID)
      *
-     * Runs on every request. Uses `true` as the second arg to current_setting()
-     * so unset variables return NULL rather than throwing an error.
+     * Runs inside the web and api groups (after the session is started) so the
+     * authenticated user can be resolved. Uses `true` as the second arg to
+     * current_setting() so unset variables return NULL rather than throwing.
+     *
+     * SEC-043: the web portals authenticate via a custom session key
+     * (`auth.user_id`), NOT Laravel's guard — so $request->user() is null for
+     * web requests and only populated for token (Sanctum) API requests. Derive
+     * the id from whichever is present. This was previously masked because the
+     * app connected as the table owner (ah_app) and bypassed RLS entirely; now
+     * that user-facing requests run as ah_runtime, an empty context would make
+     * every RLS-protected read return zero rows.
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $user     = $request->user();
-        $userId   = $user?->id ?? '';
-        $userRole = $user?->roles->first()?->name ?? '';
+        $tokenUser = $request->user();                              // Sanctum / API
+        $userId    = $tokenUser?->id
+            // Stateless API requests have no session store; guard before reading.
+            ?? ($request->hasSession() ? $request->session()->get('auth.user_id') : null)
+            ?? '';
+
+        $userRole = $this->resolveRole($tokenUser, $userId);
 
         // RLS context is injected only for connections that carry (or may carry)
         // user-scoped row-level-security policies reachable from an HTTP request.
@@ -45,10 +58,10 @@ class InjectDatabaseContext
 
         foreach ($connections as $connection) {
             try {
-                $pdo        = DB::connection($connection)->getPdo();
+                $conn       = DB::connection($connection);
+                $pdo        = $conn->getPdo();
                 $quotedId   = $pdo->quote($userId);
                 $quotedRole = $pdo->quote($userRole);
-                $conn = DB::connection($connection);
                 $conn->unprepared("SET SESSION app.current_user_id = {$quotedId}");
                 $conn->unprepared("SET SESSION app.user_role = {$quotedRole}");
             } catch (\Throwable $e) {
@@ -60,5 +73,30 @@ class InjectDatabaseContext
         }
 
         return $next($request);
+    }
+
+    /**
+     * Resolve the user's role name for RLS. For token requests the model is
+     * already loaded; for web requests look it up directly from user_roles/roles
+     * (neither table is RLS-protected, so this works regardless of context).
+     */
+    private function resolveRole(mixed $tokenUser, string $userId): string
+    {
+        if ($tokenUser) {
+            return $tokenUser->roles->first()?->name ?? '';
+        }
+
+        if ($userId === '') {
+            return '';
+        }
+
+        try {
+            return (string) (DB::connection('identity')->table('user_roles')
+                ->join('roles', 'roles.id', '=', 'user_roles.role_id')
+                ->where('user_roles.user_id', $userId)
+                ->value('roles.name') ?? '');
+        } catch (\Throwable) {
+            return '';
+        }
     }
 }

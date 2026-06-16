@@ -26,13 +26,19 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
+            // SEC-043: must run AFTER StartSession so it can read the custom
+            // `auth.user_id` session key to set the RLS context.
+            \App\Http\Middleware\InjectDatabaseContext::class,
         ]);
 
-        $middleware->append(\App\Http\Middleware\InjectDatabaseContext::class);
+        $middleware->api(append: [
+            \App\Http\Middleware\InjectDatabaseContext::class,
+        ]);
 
         $middleware->alias([
             'guest'        => \App\Http\Middleware\RedirectIfAuthenticated::class,
             'auth.session' => \App\Http\Middleware\RequireSessionAuth::class,
+            'db.system'    => \App\Http\Middleware\UseSystemDatabaseRole::class,
             'feature'      => \App\Http\Middleware\FeatureFlagCheck::class,
             'entitlement'  => \App\Http\Middleware\EnforceEntitlements::class,
             // Sanctum ability gates

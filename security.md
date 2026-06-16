@@ -691,7 +691,7 @@ The exclusion is now an explicit, documented contract in the middleware: a comme
 | Field | Detail |
 |---|---|
 | **Severity** | High |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-06-16) |
 | **Found** | 2026-06-15 |
 | **File** | All RLS-enabled tables across DBs 1/2/3/4 (systemic); migrations under `database/migrations/*` |
 
@@ -710,13 +710,30 @@ Because the runtime role owns these tables, **none of these policies are ever ev
 **Root Cause:**
 Migrations `ENABLE ROW LEVEL SECURITY` and `CREATE POLICY ... TO ah_app`, but never `ALTER TABLE ... FORCE ROW LEVEL SECURITY`, and the application runs as the table-owning role. Owner-bypass is silent (no error, policies simply never fire), so the gap was invisible without inspecting `pg_class.relforcerowsecurity`.
 
-**Recommended Fix (not yet applied — needs careful, tested rollout):**
-1. Add `ALTER TABLE <t> FORCE ROW LEVEL SECURITY;` to every RLS-enabled table, **or** (preferred long-term) run the app as a dedicated non-owner role that RLS naturally applies to, keeping `ah_app`/migrations as a separate owner role.
-2. **Before** forcing RLS, add the missing write-side policies. Several tables (`w9_records`, `invoices`, `payments`, `payouts`) currently have only `FOR SELECT` policies; once the owner no longer bypasses RLS, inserts/updates will be **denied** unless an `INSERT`/`UPDATE ... WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid OR role in (staff,super_admin))` policy exists. The `WITH CHECK` also closes a second gap: today nothing at the DB level stops a row being written with another user's `user_id`.
-3. Ensure non-HTTP writers (queue jobs, ETL) that touch forced-RLS tables set the RLS context explicitly, or run as a role exempt by policy (extends the SEC-023 contract).
-4. Verify with a regression test that connects as `ah_app`, sets `app.current_user_id` to user A, and confirms user B's rows are invisible.
+**Fix Applied (2026-06-16) — dedicated non-owner runtime role (a three-role architecture):**
 
-**Note:** This is a systemic architectural change touching every RLS table across multiple DBs; enabling `FORCE` without step 2 will break writes. It is filed OPEN with the remediation plan above rather than hot-patched, pending a decision on approach (force-in-place vs. dedicated runtime role).
+Rather than `FORCE ROW LEVEL SECURITY` on the owner (which keeps the app as owner and is easy to silently undo with a new un-forced table), the app no longer connects as the table owner at all. Three roles now split by trust:
+
+| Role | Attributes | Used by |
+|---|---|---|
+| `ah_app` | schema **owner**, no BYPASSRLS | Migrations & seeders **only** (DDL). Never a runtime connection. |
+| `ah_runtime` | non-owner, **RLS applies** | All user-facing HTTP requests (web + API). DML only. |
+| `ah_system` | non-owner, **BYPASSRLS**, member of `ah_runtime` | Trusted subsystems that run before/without a per-user RLS context: auth bootstrap (login/register/MFA/verify/reset), the Filament admin panel, the queue worker, and console commands. |
+
+Because `ah_runtime` is **not** the owner, every existing `relrowsecurity = true` policy is now evaluated against it — `relforcerowsecurity` is unnecessary for a non-owner. Owner-only operations (migrations) keep bypassing RLS as before via `ah_app`.
+
+What was implemented:
+1. **Roles provisioned** — `docker/postgres/init.sql` creates `ah_runtime` (LOGIN, CONNECT on all 14 DBs) and `ah_system` (LOGIN, BYPASSRLS, `GRANT ah_runtime TO ah_system` so it inherits all of runtime's table/sequence grants). Provisioned live on the running cluster (volume predates the file, so it won't re-run on restart).
+2. **Policies retargeted** — the Stage-2 migrations (`*_retarget_rls_policies_to_runtime.php`) recreate every policy `TO ah_runtime` (identity, property, lease, billing) and harden the empty-context cast to `NULLIF(current_setting('app.current_user_id', true), '')::uuid` so an unset context yields NULL (deny) instead of erroring. Grant migrations (`*_grant_runtime_permissions.php`) give `ah_runtime` table DML; audit (DB 9) is restricted to SELECT+INSERT (append-only).
+3. **App flipped to `ah_runtime`** — `config/database.php` defaults the 12 writer connections to `ah_runtime`; `.env`/`.env.example` set the per-connection `DB_*_USERNAME=ah_runtime` and add `DB_SYSTEM_*`/`DB_APP_*`. (Note: docker-compose `env_file: .env` bakes these at container creation — the container must be recreated, not just `config:clear`'d.)
+4. **Trusted paths routed through `ah_system`** — `App\Database\ConnectionRole` swaps role per process/request; `RuntimeDatabaseRoleProvider` selects owner (migrate/seed), system (queue/console), or testing→owner; `UseSystemDatabaseRole` middleware (alias `db.system`) wraps the auth routes (`routes/auth.php`, `/v1/auth`) and is added to the Filament admin panel.
+5. **Per-user context unchanged but now load-bearing** — `InjectDatabaseContext` still sets `app.current_user_id`/`app.user_role`; it now also resolves the web custom-session user (`session('auth.user_id')`, guarded by `hasSession()` for stateless API) since `$request->user()` is null for the web portals.
+6. **Write-side coverage:** tables with only `FOR SELECT` policies (`users` INSERT, `w9_records`, `invoices`, `payments`, `payouts`) are written only by trusted paths (registration, billing jobs/webhooks) that run as `ah_system`, so the owner-bypass removal does not break those writes. Adding user-scoped `INSERT/UPDATE ... WITH CHECK` policies so these can run as plain `ah_runtime` is a follow-up hardening (tracked under SEC-023's writer contract), not required for this fix.
+
+**Verification (2026-06-16):**
+- Live enforcement matrix on `lease.leases` (11 rows) as `ah_runtime`: no context → **0** (default-deny); lessee context → **1** (own row); `app.user_role=staff` → **11**; as `ah_system` → **11** (BYPASSRLS). As the old `ah_app` it was 11 regardless.
+- Automated regression: `tests/Feature/Security/RlsEnforcementTest` connects explicitly as `ah_runtime` and asserts not-owner, RLS-enabled, default-deny, own-row, cross-user-deny, staff-override — **6/6 pass**. Fails if the app reverts to the owner, RLS is disabled, or a policy is dropped.
+- End-to-end as `ah_runtime`: public pages + API 200; member login (via `db.system`) → member dashboard shows only the lessee's own lease; Filament admin login 200. Full suite: 124/124 except one pre-existing, environment-only `max_connections=100` exhaustion in the full run (every group passes in isolation; unrelated to RLS).
 
 ---
 
@@ -747,7 +764,7 @@ The pgcrypto approach requires the plaintext and key to travel to the database o
 
 | ID | Description | Severity | Status | Target Phase |
 |---|---|---|---|---|
-| SEC-043 | RLS bypassed platform-wide — app role owns tables, `FORCE ROW LEVEL SECURITY` unset; missing write-side `WITH CHECK` policies on billing tables | High | OPEN | Pre-launch (before any billing/W-9 read path ships) |
+| SEC-043 | RLS bypassed platform-wide — app role owns tables, `FORCE ROW LEVEL SECURITY` unset; missing write-side `WITH CHECK` policies on billing tables | High | **FIXED (2026-06-16)** — app runs as non-owner `ah_runtime`; trusted paths via `ah_system` (BYPASSRLS); regression test green | — |
 | SEC-044 | Encrypted-field plaintext + key pass through query bindings (log-exposure if query logging enabled) | Low | OPEN | Pre-launch hardening |
 
 ---
