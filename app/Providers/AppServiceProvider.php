@@ -69,5 +69,24 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(120)->by($request->user()?->id ?: $request->ip());
         });
+
+        // SEC-043: Livewire registers its component-update endpoint globally in the
+        // bare `web` group, NOT through the Filament admin panel's middleware. Yet
+        // every admin interaction (form saves, table actions) is a Livewire update,
+        // so without intervention they run as the non-owner `ah_runtime` role. The
+        // admin panel authenticates with Laravel's `web` guard, whose user is
+        // resolved by an RLS-protected SELECT on identity.users that happens before
+        // any per-user RLS context is set — under ah_runtime that returns zero rows,
+        // the guard sees no user, and Filament bounces the request to /admin/login
+        // (which then 500s mid-render). Panel routes already fix this with
+        // UseSystemDatabaseRole; the Livewire update route must match. Livewire is
+        // admin-only here (public/member portals are Inertia/React), so applying it
+        // to the single update route is safe.
+        $this->app->booted(function () {
+            $updateRoute = collect($this->app['router']->getRoutes()->getRoutes())
+                ->first(fn ($route) => str((string) $route->getName())->endsWith('livewire.update'));
+
+            $updateRoute?->middleware(\App\Http\Middleware\UseSystemDatabaseRole::class);
+        });
     }
 }
