@@ -7,8 +7,11 @@ use App\Models\Property\PropertyListing;
 use App\Models\Property\PropertyManager;
 use App\Models\Property\PropertyContact;
 use App\Models\Property\PropertyAccessInfo;
+use App\Models\Property\PropertyAmenity;
 use App\Models\Property\PropertyAvailability;
 use App\Models\Property\PropertyPhoto;
+use App\Models\Property\PropertyRule;
+use App\Models\Property\PropertySpecies;
 use App\Services\BaseService;
 use App\Services\Documents\DocumentService;
 use App\Support\PhoneNumber;
@@ -22,6 +25,25 @@ class PropertyService extends BaseService
         'whitetail_deer', 'mule_deer', 'turkey', 'waterfowl', 'dove', 'hog',
         'elk', 'bear', 'antelope', 'pheasant', 'quail', 'rabbit', 'squirrel',
         'coyote', 'other',
+    ];
+
+    /** Game-type species codes → display labels (mirrors PropertyFormV2). */
+    public const SPECIES_LABELS = [
+        'whitetail_deer' => 'Whitetail Deer',
+        'mule_deer'      => 'Mule Deer',
+        'turkey'         => 'Turkey',
+        'waterfowl'      => 'Waterfowl',
+        'dove'           => 'Dove',
+        'hog'            => 'Hog',
+        'elk'            => 'Elk',
+        'bear'           => 'Bear',
+        'antelope'       => 'Antelope',
+        'pheasant'       => 'Pheasant',
+        'quail'          => 'Quail',
+        'rabbit'         => 'Rabbit',
+        'squirrel'       => 'Squirrel',
+        'coyote'         => 'Coyote',
+        'other'          => 'Other',
     ];
 
     public function __construct(
@@ -453,6 +475,102 @@ class PropertyService extends BaseService
             ->where('property_id', $propertyId)
             ->whereNull('deleted_at')
             ->first();
+    }
+
+    // ─── Property details: species, rules, amenities ─────────────────────────
+
+    /** Game-type species rows for a property (read replica). */
+    public function getSpeciesFor(string $propertyId): array
+    {
+        return PropertySpecies::on('property_read')
+            ->where('property_id', $propertyId)
+            ->orderByDesc('is_primary')
+            ->orderBy('species_code')
+            ->get(['species_code', 'is_primary'])
+            ->map(fn (PropertySpecies $s) => [
+                'species_code' => $s->species_code,
+                'is_primary'   => (bool) $s->is_primary,
+            ])
+            ->all();
+    }
+
+    /** Property rules ordered by sort_order (read replica). */
+    public function getRulesFor(string $propertyId): array
+    {
+        return PropertyRule::on('property_read')
+            ->where('property_id', $propertyId)
+            ->orderBy('sort_order')
+            ->get(['rule_text'])
+            ->map(fn (PropertyRule $r) => ['rule_text' => $r->rule_text])
+            ->all();
+    }
+
+    /** Amenity ids currently offered on a property (read replica). */
+    public function getAmenityIdsFor(string $propertyId): array
+    {
+        return DB::connection('property_read')
+            ->table('property_amenity_offerings')
+            ->where('property_id', $propertyId)
+            ->pluck('amenity_id')
+            ->all();
+    }
+
+    /** Full amenity catalogue grouped by category, for the picker (read replica). */
+    public function getAmenityCatalog(): array
+    {
+        return PropertyAmenity::on('property_read')
+            ->orderBy('category')
+            ->orderBy('name')
+            ->get(['id', 'name', 'category'])
+            ->groupBy('category')
+            ->map(fn ($items, $category) => [
+                'category' => $category,
+                'label'    => PropertyAmenity::categoryLabel($category),
+                'items'    => $items->map(fn ($a) => ['id' => $a->id, 'name' => $a->name])->values()->all(),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Replace a property's game-type species and rules, and sync its amenity
+     * offerings, in one transaction. Species and rules are full-replace
+     * (hard delete + reinsert — both are non-soft-delete child tables); rule
+     * order follows array position. Inputs are validated by the controller.
+     *
+     * @param  array<int, array{species_code: string, is_primary?: bool}>  $species
+     * @param  array<int, array{rule_text: string}>                        $rules
+     * @param  array<int, string>                                          $amenityIds
+     */
+    public function saveDetails(string $propertyId, array $species, array $rules, array $amenityIds): void
+    {
+        DB::connection('property')->transaction(function () use ($propertyId, $species, $rules, $amenityIds) {
+            PropertySpecies::on('property')->where('property_id', $propertyId)->delete();
+            foreach ($species as $s) {
+                PropertySpecies::on('property')->create([
+                    'property_id'  => $propertyId,
+                    'species_code' => $s['species_code'],
+                    'is_primary'   => (bool) ($s['is_primary'] ?? false),
+                ]);
+            }
+
+            PropertyRule::on('property')->where('property_id', $propertyId)->delete();
+            foreach (array_values($rules) as $i => $r) {
+                PropertyRule::on('property')->create([
+                    'property_id' => $propertyId,
+                    'rule_text'   => $r['rule_text'],
+                    'sort_order'  => $i,
+                ]);
+            }
+
+            Property::on('property')->findOrFail($propertyId)
+                ->amenities()->sync($amenityIds);
+        });
+
+        $property = Property::on('property')->find($propertyId);
+        if ($property) {
+            $this->invalidatePropertyCache($propertyId, $property->slug, $property->owner_user_id);
+        }
     }
 
     // ─── Access Info (encrypted) ──────────────────────────────────────────────

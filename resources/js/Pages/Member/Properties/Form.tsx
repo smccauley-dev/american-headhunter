@@ -209,14 +209,22 @@ export default function PropertyForm({ property, states, statuses }: Props) {
 
           {isEdit && property && (
             <div style={{ marginTop: '24px', borderTop: '1px solid #e5ddd0', paddingTop: '22px' }}>
-              <a
-                href={`/member/properties/${property.id}/listings`}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: ACCENT, color: '#fff', textDecoration: 'none' }}
-              >
-                Manage Listings →
-              </a>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <a
+                  href={`/member/properties/${property.id}/listings`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: ACCENT, color: '#fff', textDecoration: 'none' }}
+                >
+                  Manage Listings →
+                </a>
+                <a
+                  href={`/member/properties/${property.id}/details`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: 'transparent', color: INK, border: '1px solid #d4c9b0', textDecoration: 'none' }}
+                >
+                  Edit Details →
+                </a>
+              </div>
               <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', color: '#6b5e50', marginTop: '14px', lineHeight: 1.5 }}>
-                Game types, photos, maps, rules, and contacts for this property are coming to this page next.
+                Game types, rules, and amenities are on the details page. Photos, maps, and contacts are coming next.
               </p>
             </div>
           )}

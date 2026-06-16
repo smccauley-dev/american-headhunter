@@ -9,6 +9,7 @@ use App\Http\Controllers\Member\LeaseSignController;
 use App\Http\Controllers\Member\MemberController;
 use App\Http\Controllers\Member\ProfileController;
 use App\Http\Controllers\Member\PropertyController as MemberPropertyController;
+use App\Http\Controllers\Member\PropertyDetailController as MemberPropertyDetailController;
 use App\Http\Controllers\Member\PropertyListingController as MemberPropertyListingController;
 use App\Http\Controllers\Api\MentionController;
 use App\Http\Controllers\Member\SecurityController;
@@ -174,6 +175,10 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/properties',           [MemberPropertyController::class, 'store'])->name('properties.store');
     Route::get('/properties/{property}', [MemberPropertyController::class, 'edit'])->name('properties.edit');
     Route::put('/properties/{property}', [MemberPropertyController::class, 'update'])->name('properties.update');
+
+    // Property details (game types, rules, amenities) nested under a property.
+    Route::get('/properties/{property}/details', [MemberPropertyDetailController::class, 'edit'])->name('properties.details.edit');
+    Route::put('/properties/{property}/details', [MemberPropertyDetailController::class, 'update'])->name('properties.details.update');
 
     // Listings nested under a property.
     Route::get('/properties/{property}/listings',              [MemberPropertyListingController::class, 'index'])->name('properties.listings.index');
