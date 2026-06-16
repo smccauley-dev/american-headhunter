@@ -78,11 +78,4 @@ class CreateAdminUser extends CreateRecord
             );
         }
     }
-
-    protected function mutateFormDataBeforeCreate(array $data): array
-    {
-        // Handled in handleRecordCreation — strip virtual fields from base save
-        unset($data['first_name'], $data['last_name'], $data['password']);
-        return $data;
-    }
 }

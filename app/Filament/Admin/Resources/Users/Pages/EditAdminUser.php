@@ -109,10 +109,4 @@ class EditAdminUser extends EditRecord
 
         return $record;
     }
-
-    protected function mutateFormDataBeforeSave(array $data): array
-    {
-        unset($data['first_name'], $data['last_name'], $data['password']);
-        return $data;
-    }
 }
