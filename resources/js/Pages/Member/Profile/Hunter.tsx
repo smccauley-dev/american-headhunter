@@ -318,6 +318,7 @@ interface UserData {
   id: string
   email: string
   phone: string | null
+  account_type: string
   trust_score: number
   is_veteran: boolean
   is_first_responder: boolean
@@ -411,6 +412,23 @@ interface LeaseSummary {
   property: { id: string; title: string; county: string; state: string; acres: string | number } | null
 }
 
+// A property the current user owns or manages — populated for landowner
+// accounts only, drives the "My Properties" blade in the left sidebar.
+interface PropertySummary {
+  id: string
+  title: string
+  slug: string
+  county: string | null
+  state_code: string | null
+  status: string
+  total_acres: number | null
+  huntable_acres: number | null
+  role: string
+  listings_count: number
+  active_listings_count: number
+  primary_photo_url: string | null
+}
+
 interface Props {
   user: UserData
   profile: ProfileData
@@ -424,7 +442,23 @@ interface Props {
   }
   leases: LeaseSummary[]
   initial_tab: 'about' | 'leases'
-  template: TemplateConfig
+  // Null for account types without a CMS profile template (e.g. landowner);
+  // the component falls back to DEFAULT_TEMPLATE.
+  template: TemplateConfig | null
+  // Landowner accounts only.
+  properties?: PropertySummary[]
+}
+
+// Mirror of ProfileTemplateService::DEFAULT_TEMPLATE — used when the server
+// sends no template (account types that have no public profile, e.g. landowner).
+const DEFAULT_TEMPLATE: TemplateConfig = {
+  decorations: {
+    coffee_stain: { enabled: true, opacity: 0.45 },
+    registration_marks: { enabled: true },
+    topo_background: { enabled: true },
+  },
+  modules: {},
+  theme: { accent: '#C84C21', paper: '#F8F4EB', ink: '#0A1512' },
 }
 
 // Admin-controlled CMS config for this profile type (DB 12 profile_templates).
@@ -668,10 +702,14 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, activity, security, leases, initial_tab, template }: Props) {
+export default function HunterProfile({ user, profile, photos, activity, security, leases, initial_tab, template, properties }: Props) {
+  // Landowner accounts reuse this profile shell but swap the hunting-specific
+  // modules (gear, hunting prefs) for a "My Properties" blade.
+  const isLandowner = user.account_type === 'landowner'
   // Template-driven decorations + module enablement (admin CMS, DB 12).
-  const deco = template.decorations
-  const mods = template.modules
+  const tpl = template ?? DEFAULT_TEMPLATE
+  const deco = tpl.decorations
+  const mods = tpl.modules
   const stainEnabled = deco.coffee_stain.enabled
   const stainOpacity = Number(deco.coffee_stain.opacity)
   const showRegMarks = deco.registration_marks.enabled
@@ -682,13 +720,15 @@ export default function HunterProfile({ user, profile, photos, activity, securit
   // Theme tokens — exposed as CSS custom properties on the page wrapper so every
   // descendant inline style (var(--ah-…)) recolors without prop drilling.
   const themeVars = {
-    '--ah-accent': template.theme.accent,
-    '--ah-paper': template.theme.paper,
-    '--ah-ink': template.theme.ink,
+    '--ah-accent': tpl.theme.accent,
+    '--ah-paper': tpl.theme.paper,
+    '--ah-ink': tpl.theme.ink,
   } as React.CSSProperties
   // Content tabs in admin-defined order; security is always appended last.
+  // Landowners have no gear locker, so that tab is dropped for them.
   const orderedTabs = (['about', 'contact', 'social', 'photos', 'gear', 'activity'] as const)
     .filter(k => moduleEnabled(k))
+    .filter(k => !(isLandowner && k === 'gear'))
     .sort((a, b) => (Number(mods[a]?.order) || 0) - (Number(mods[b]?.order) || 0))
   const tabList = [...orderedTabs, 'security'] as
     ('about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security')[]
@@ -1028,7 +1068,52 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                 })}
               </div>
 
+              {/* ── My Properties (landowner) ───────────────────────────── */}
+              {isLandowner && (
+                <div style={{ padding: '0 18px 16px' }}>
+                  <SideLabel>My Properties</SideLabel>
+                  {(properties && properties.length > 0) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {properties.map(p => (
+                        <a
+                          key={p.id}
+                          href={`/member/properties/${p.id}`}
+                          style={{ display: 'block', textDecoration: 'none', border: '1px solid #e5ddd0', background: '#F3EDD8', padding: '8px 9px' }}
+                        >
+                          <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '12px', fontWeight: 500, color: 'var(--ah-ink)', lineHeight: 1.25, marginBottom: '3px' }}>
+                            {p.title}
+                          </div>
+                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#a89874', letterSpacing: '.04em', marginBottom: '4px' }}>
+                            {[p.county, p.state_code].filter(Boolean).join(', ')}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '1px 6px', background: p.status === 'active' ? 'var(--ah-accent)' : 'var(--ah-ink)', color: '#fff' }}>
+                              {p.status}
+                            </span>
+                            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#6b7856' }}>
+                              {p.active_listings_count}/{p.listings_count} listings
+                            </span>
+                            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a89874', marginLeft: 'auto' }}>
+                              {p.role}
+                            </span>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#ccc', fontStyle: 'italic' }}>No properties yet</span>
+                  )}
+                  <a
+                    href="/member/properties/create"
+                    style={{ display: 'block', marginTop: '10px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 0', background: 'var(--ah-ink)', color: '#F4ECDC', textDecoration: 'none' }}
+                  >
+                    + Add Property
+                  </a>
+                </div>
+              )}
+
               {/* ── Hunting Areas ───────────────────────────────────────── */}
+              {!isLandowner && (
               <div style={{ padding: '0 18px 16px' }}>
                 <SideLabel>Hunting Areas</SideLabel>
                 {editing ? (
@@ -1064,8 +1149,10 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#ccc', fontStyle: 'italic' }}>Not set</span>
                 )}
               </div>
+              )}
 
               {/* ── Game Pursued ────────────────────────────────────────── */}
+              {!isLandowner && (
               <div style={{ padding: '14px 2px 20px', borderTop: '1px solid #e5ddd0', margin: '0 16px' }}>
                 <SideLabel>Game Pursued</SideLabel>
                 {editing ? (
@@ -1082,6 +1169,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#ccc', fontStyle: 'italic' }}>Not set</span>
                 )}
               </div>
+              )}
 
               {/* ── Social links (view mode only — shows only platforms with values) */}
               {(() => {
@@ -1150,7 +1238,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                     </div>
                   </div>
                   <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '11px', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ah-accent)', border: '1.5px solid var(--ah-accent)', padding: '3px 10px', transform: 'rotate(-6deg)', marginRight: '6px' }}>
-                    Hunter
+                    {isLandowner ? 'Landowner' : 'Hunter'}
                   </div>
                 </div>
 
@@ -1265,6 +1353,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                       profile={profile}
                       form={form}
                       editing={editing}
+                      isLandowner={isLandowner}
                       onField={field}
                       onHunting={hunting}
                       visibilityValue={form.visibility?.about ?? 'public'}
@@ -1568,11 +1657,12 @@ function TabPrivacyHeader({ value, editing, onChange }: {
 
 // ── About tab ─────────────────────────────────────────────────────────────────
 
-function AboutTab({ user, profile, form, editing, onField, onHunting, visibilityValue, onVisibility }: {
+function AboutTab({ user, profile, form, editing, isLandowner, onField, onHunting, visibilityValue, onVisibility }: {
   user: UserData
   profile: ProfileData
   form: ReturnType<typeof useState<any>>[0]
   editing: boolean
+  isLandowner: boolean
   onField: (key: any, val: any) => void
   onHunting: (key: any, val: any) => void
   visibilityValue: 'public' | 'private'
@@ -1607,6 +1697,7 @@ function AboutTab({ user, profile, form, editing, onField, onHunting, visibility
       </div>
 
       {/* Hunting Profile */}
+      {!isLandowner && (
       <div>
         <SectionLabel>Hunting Profile</SectionLabel>
         {editing ? (
@@ -1658,6 +1749,7 @@ function AboutTab({ user, profile, form, editing, onField, onHunting, visibility
           </div>
         )}
       </div>
+      )}
 
       {/* Basic info */}
       <div>

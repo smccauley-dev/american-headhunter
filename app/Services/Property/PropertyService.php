@@ -122,6 +122,69 @@ class PropertyService extends BaseService
     }
 
     /**
+     * Properties a landowner owns or actively manages, assembled for the member
+     * portal "My Properties" blade. Each row carries listing counts and the
+     * user's role on that property. Owned = direct owner_user_id OR an active
+     * 'owner' grant; managed = an active co_owner/manager/operator grant. Not
+     * cached: a freshly created property must appear immediately.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getManagedPropertySummaries(string $userId): array
+    {
+        $grants = PropertyManager::on('property_read')
+            ->where('user_id', $userId)
+            ->whereNull('revoked_at')
+            ->get(['property_id', 'role'])
+            ->keyBy('property_id');
+
+        $ids = Property::on('property_read')
+            ->where('owner_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->pluck('id')
+            ->merge($grants->keys())
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $properties = Property::on('property_read')
+            ->withCount([
+                'listings as listings_count',
+                'listings as active_listings_count' => fn ($q) => $q->where('status', 'active'),
+            ])
+            ->whereIn('id', $ids)
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')
+            ->get();
+
+        return $properties->map(function (Property $p) use ($userId, $grants) {
+            $role = $p->owner_user_id === $userId
+                ? 'owner'
+                : ($grants->get($p->id)?->role ?? 'manager');
+
+            return [
+                'id'                    => $p->id,
+                'title'                 => $p->title,
+                'slug'                  => $p->slug,
+                'county'                => $p->county,
+                'state_code'            => $p->state_code,
+                'status'                => $p->status,
+                'total_acres'           => $p->total_acres !== null ? (float) $p->total_acres : null,
+                'huntable_acres'        => $p->huntable_acres !== null ? (float) $p->huntable_acres : null,
+                'role'                  => $role,
+                'listings_count'        => (int) $p->listings_count,
+                'active_listings_count' => (int) $p->active_listings_count,
+                'primary_photo_url'     => $p->primary_photo_document_id
+                    ? route('property-photos.show', $p->primary_photo_document_id)
+                    : null,
+            ];
+        })->all();
+    }
+
+    /**
      * Find an active listing by UUID. Uses the read replica.
      */
     public function findListing(string $listingId): ?PropertyListing

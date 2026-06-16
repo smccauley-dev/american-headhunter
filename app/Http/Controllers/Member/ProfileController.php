@@ -13,6 +13,7 @@ use App\Models\Wildlife\HarvestLog;
 use App\Services\Documents\DocumentService;
 use App\Services\Lease\LeaseService;
 use App\Services\Platform\ProfileTemplateService;
+use App\Services\Property\PropertyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -27,12 +28,14 @@ class ProfileController extends Controller
 {
     public function __construct(private readonly DocumentService $documents) {}
 
-    public function show(LeaseService $leaseService, ProfileTemplateService $templates, string $initialTab = 'about'): Response
+    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, string $initialTab = 'about'): Response
     {
         $userId  = session('auth.user_id');
         $user    = User::findOrFail($userId);
         $profile = $user->profile;
         $hunting = $profile?->hunting_profile ?? [];
+
+        $isLandowner = $user->account_type === 'landowner';
 
         $photos = Document::where('owner_user_id', $userId)
             ->where('document_type', 'profile_photo')
@@ -46,11 +49,12 @@ class ProfileController extends Controller
             ->values()
             ->toArray();
 
-        return Inertia::render('Member/Profile/Hunter', [
+        $props = [
             'user' => [
                 'id'                 => $user->id,
                 'email'              => $user->email,
                 'phone'              => $user->phone,
+                'account_type'       => $user->account_type,
                 'trust_score'        => $user->trust_score,
                 'is_veteran'         => $user->is_veteran,
                 'is_first_responder' => $user->is_first_responder,
@@ -105,8 +109,14 @@ class ProfileController extends Controller
             'security'    => $this->buildSecurityProps($userId),
             'leases'      => $leaseService->getLeaseSummariesForLessee($userId),
             'initial_tab' => $initialTab,
-            'template'    => $templates->getPublishedConfig('hunter'),
-        ]);
+            'template'    => $isLandowner ? null : $templates->getPublishedConfig('hunter'),
+        ];
+
+        if ($isLandowner) {
+            $props['properties'] = $properties->getManagedPropertySummaries($userId);
+        }
+
+        return Inertia::render('Member/Profile/Hunter', $props);
     }
 
     public function update(Request $request)
