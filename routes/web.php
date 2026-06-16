@@ -12,6 +12,9 @@ use App\Http\Controllers\Member\PropertyController as MemberPropertyController;
 use App\Http\Controllers\Member\PropertyDetailController as MemberPropertyDetailController;
 use App\Http\Controllers\Member\PropertyListingController as MemberPropertyListingController;
 use App\Http\Controllers\Member\PropertyManagerController as MemberPropertyManagerController;
+use App\Http\Controllers\Member\PropertyPhotoController as MemberPropertyPhotoController;
+use App\Http\Controllers\Member\PropertyMapController as MemberPropertyMapController;
+use App\Http\Controllers\Member\PropertyContactController as MemberPropertyContactController;
 use App\Http\Controllers\Api\MentionController;
 use App\Http\Controllers\Member\SecurityController;
 use App\Http\Controllers\Public\HunterPublicProfileController;
@@ -187,10 +190,34 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::put('/properties/{property}/listings/{listing}',    [MemberPropertyListingController::class, 'update'])->name('properties.listings.update');
     Route::delete('/properties/{property}/listings/{listing}', [MemberPropertyListingController::class, 'destroy'])->name('properties.listings.destroy');
 
-    // Team & activity: managers (grant/revoke) + read-only check-in log.
-    Route::get('/properties/{property}/team',                  [MemberPropertyManagerController::class, 'index'])->name('properties.team.index');
+    // Team tab: managers (grant/revoke). The check-in log + all other tabs are
+    // served by the details hub (PropertyDetailController::edit).
     Route::post('/properties/{property}/managers',            [MemberPropertyManagerController::class, 'store'])->name('properties.managers.store');
     Route::delete('/properties/{property}/managers/{manager}', [MemberPropertyManagerController::class, 'destroy'])->name('properties.managers.destroy');
+
+    // Photos tab.
+    Route::post('/properties/{property}/photos',                     [MemberPropertyPhotoController::class, 'store'])->name('properties.photos.store')->middleware('throttle:30,1');
+    Route::put('/properties/{property}/photos/{photo}',             [MemberPropertyPhotoController::class, 'update'])->name('properties.photos.update');
+    Route::post('/properties/{property}/photos/{photo}/primary',    [MemberPropertyPhotoController::class, 'setPrimary'])->name('properties.photos.primary');
+    Route::post('/properties/{property}/photos/{photo}/move',       [MemberPropertyPhotoController::class, 'move'])->name('properties.photos.move');
+    Route::delete('/properties/{property}/photos/{photo}',          [MemberPropertyPhotoController::class, 'destroy'])->name('properties.photos.destroy');
+
+    // Map tab — image-based maps with percent-coordinate markers.
+    Route::get('/properties/{property}/map-images/{documentId}',    [MemberPropertyMapController::class, 'serveImage'])->name('properties.map.serve');
+    Route::post('/properties/{property}/map-images',                [MemberPropertyMapController::class, 'storeImage'])->name('properties.map.store')->middleware('throttle:30,1');
+    Route::post('/properties/{property}/map-images/{mapImage}/boundary', [MemberPropertyMapController::class, 'setBoundary'])->name('properties.map.boundary');
+    Route::delete('/properties/{property}/map-images/{mapImage}',   [MemberPropertyMapController::class, 'destroyImage'])->name('properties.map.destroy');
+    Route::post('/properties/{property}/map-images/{mapImage}/markers', [MemberPropertyMapController::class, 'addMarker'])->name('properties.map.markers.store');
+    Route::put('/properties/{property}/markers/{marker}',           [MemberPropertyMapController::class, 'updateMarker'])->name('properties.map.markers.update');
+    Route::post('/properties/{property}/markers/{marker}/move',     [MemberPropertyMapController::class, 'moveMarker'])->name('properties.map.markers.move');
+    Route::delete('/properties/{property}/markers/{marker}',        [MemberPropertyMapController::class, 'destroyMarker'])->name('properties.map.markers.destroy');
+
+    // Contacts tab — manager field contacts + emergency/local contacts.
+    Route::post('/properties/{property}/manager-contacts',          [MemberPropertyContactController::class, 'addManager'])->name('properties.contacts.managers.store');
+    Route::delete('/properties/{property}/manager-contacts/{manager}', [MemberPropertyContactController::class, 'removeManager'])->name('properties.contacts.managers.destroy');
+    Route::post('/properties/{property}/contacts',                  [MemberPropertyContactController::class, 'store'])->name('properties.contacts.store');
+    Route::put('/properties/{property}/contacts/{contact}',         [MemberPropertyContactController::class, 'update'])->name('properties.contacts.update');
+    Route::delete('/properties/{property}/contacts/{contact}',      [MemberPropertyContactController::class, 'destroy'])->name('properties.contacts.destroy');
 
     Route::post('/security/password',                [SecurityController::class, 'changePassword'])->name('security.password')->middleware('throttle:5,1');
     Route::post('/security/mfa/totp/enroll',         [SecurityController::class, 'enrollTotp'])->name('security.mfa.totp.enroll')->middleware('throttle:10,1');

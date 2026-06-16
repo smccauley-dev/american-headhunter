@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
 use App\Models\Property\PropertyAmenity;
+use App\Models\Property\PropertyContact;
+use App\Models\Property\PropertyMapMarker;
+use App\Services\Lease\CheckInService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,15 +15,26 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Landowner front-end property details (member portal), Slice 4 — the Game Type
- * (species), Property Rules, and Amenities tabs from the admin PropertyFormV2,
- * edited together on one page. Scoped through PropertyService::userCanManageProperty
- * (the properties table has no RLS policy). Submitted amenity ids are filtered
- * against the live catalogue so a forged id is silently dropped.
+ * Landowner front-end property details (member portal) — the tabbed management
+ * hub that mirrors the admin PropertyFormV2: Game Type, Property Rules, Amenities
+ * (edited together), plus Photos, Map, Check In/Out, Team (managers) and Contacts.
+ * Game-type/rules/amenities are saved here via update(); the other tabs post to
+ * their own dedicated controllers. Every action is scoped through
+ * PropertyService::userCanManageProperty (the properties table has no RLS policy).
  */
 class PropertyDetailController extends Controller
 {
-    public function __construct(private readonly PropertyService $properties) {}
+    public function __construct(
+        private readonly PropertyService $properties,
+        private readonly CheckInService $checkIns,
+    ) {}
+
+    private const ROLES = [
+        'owner'    => 'Owner',
+        'co_owner' => 'Co-Owner',
+        'manager'  => 'Manager',
+        'operator' => 'Operator',
+    ];
 
     public function edit(string $property): Response
     {
@@ -28,14 +42,34 @@ class PropertyDetailController extends Controller
 
         return Inertia::render('Member/Properties/Details', [
             'property' => [
-                'id'    => $record->id,
-                'title' => $record->title,
+                'id'          => $record->id,
+                'title'       => $record->title,
+                'status'      => $record->status,
+                'state_code'  => $record->state_code,
+                'county'      => $record->county,
+                'total_acres' => $record->total_acres !== null ? (float) $record->total_acres : null,
             ],
+            // Game type / rules / amenities (shared form)
             'species'        => $this->properties->getSpeciesFor($property),
             'rules'          => $this->properties->getRulesFor($property),
             'amenityIds'     => $this->properties->getAmenityIdsFor($property),
             'speciesOptions' => PropertyService::SPECIES_LABELS,
             'amenityCatalog' => $this->properties->getAmenityCatalog(),
+            // Photos
+            'photos'         => $this->properties->getPhotosForDisplay($property),
+            // Map
+            'mapImages'      => $this->properties->getMapImagesForDisplay($property),
+            'markerTypes'    => PropertyMapMarker::TYPES,
+            // Check In/Out
+            'checkIns'       => $this->presentCheckIns($property),
+            // Team (managers)
+            'managers'       => $this->properties->getManagersForProperty($property),
+            'roles'          => self::ROLES,
+            // Contacts
+            'contactDirectory' => $this->properties->getContactDirectory($property, includeManagerIds: true),
+            'eligibleManagers' => $this->properties->getEligibleManagerContacts($property),
+            'editableContacts' => $this->properties->getEditableContacts($property),
+            'contactTypes'     => PropertyContact::TYPES,
         ]);
     }
 
@@ -66,9 +100,21 @@ class PropertyDetailController extends Controller
             $amenityIds,
         );
 
-        return redirect()
-            ->route('member.properties.details.edit', $property)
-            ->with('status', 'Property details saved.');
+        return back()->with('status', 'Property details saved.');
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private function presentCheckIns(string $propertyId): array
+    {
+        return array_map(fn (array $r) => [
+            'name'           => $r['name'],
+            'email'          => $r['email'],
+            'lease_ref'      => $r['lease_ref'],
+            'checked_in_at'  => $r['checked_in_at']?->format('M j, Y g:i A'),
+            'checked_out_at' => $r['checked_out_at']?->format('M j, Y g:i A'),
+            'open'           => $r['open'],
+        ], $this->checkIns->getHistoryForProperty($propertyId));
     }
 
     /** Resolve a property the current user owns or actively manages, or 404. */

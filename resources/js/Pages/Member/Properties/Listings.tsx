@@ -1,5 +1,6 @@
-import { Head, useForm, router } from '@inertiajs/react'
+import { useForm, router } from '@inertiajs/react'
 import { useState } from 'react'
+import { PortalChrome, PropertyHead, Section, BackLink, INK, ACCENT, type PropertySummary } from '@/Components/Member/PropertyChrome'
 
 interface Listing {
   id: string
@@ -18,17 +19,12 @@ interface Listing {
 }
 
 interface Props {
-  property: { id: string; title: string }
+  property: PropertySummary & { id: string }
   listings: Listing[]
   listingTypes: Record<string, string>
   statuses: Record<string, string>
   visibilities: Record<string, string>
 }
-
-// ── Design tokens ───────────────────────────────────────────────────────────
-const INK = '#0A1512'
-const ACCENT = '#C84C21'
-const PAPER = '#F8F4EB'
 
 const label: React.CSSProperties = {
   display: 'block',
@@ -119,8 +115,8 @@ function ListingForm({ property, listing, listingTypes, statuses, visibilities, 
   }
 
   return (
-    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '18px', border: `1px solid ${ACCENT}`, background: '#FBF7EE', padding: '24px 22px', marginBottom: '20px' }}>
-      <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '18px', color: INK }}>
+    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '18px', border: `1px solid ${ACCENT}`, background: '#fff', padding: '24px 22px', marginBottom: '20px' }}>
+      <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color: INK }}>
         {isEdit ? 'Edit Listing' : 'New Listing'}
       </div>
 
@@ -208,120 +204,88 @@ export default function PropertyListings({ property, listings, listingTypes, sta
     ? listings.find(l => l.id === editing) ?? null
     : null
 
+  const addAction = editing === null ? (
+    <button onClick={() => setEditing('new')} style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 16px', background: INK, color: '#F4ECDC', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+      + Add Listing
+    </button>
+  ) : undefined
+
   return (
-    <>
-      <Head title={`Listings · ${property.title}`} />
+    <PortalChrome headTitle={`Listings · ${property.title}`}>
 
-      <div style={{ minHeight: '100vh', background: PAPER }}>
+      <BackLink href={`/member/properties/${property.id}`}>← Back to Property</BackLink>
 
-        {/* Topbar */}
-        <div style={{ background: INK, borderBottom: '1px solid #1a2e28' }}>
-          <div style={{ maxWidth: '760px', margin: '0 auto', padding: '0 16px', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.15em', textTransform: 'uppercase', color: ACCENT, fontWeight: 700 }}>
-                American Headhunter
-              </span>
-              <span style={{ color: '#3a5a50', fontSize: '12px' }}>·</span>
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f' }}>
-                Property Management
-              </span>
+      <PropertyHead property={property} />
+
+      <Section title="Listings" action={addAction}>
+
+        {/* Create / edit form */}
+        {editing === 'new' && (
+          <ListingForm key="new" property={property} listing={null} listingTypes={listingTypes} statuses={statuses} visibilities={visibilities} onClose={() => setEditing(null)} />
+        )}
+        {editingListing && (
+          <ListingForm key={editingListing.id} property={property} listing={editingListing} listingTypes={listingTypes} statuses={statuses} visibilities={visibilities} onClose={() => setEditing(null)} />
+        )}
+
+        {/* Existing listings */}
+        {listings.length === 0 && editing === null ? (
+          <div style={{ border: '1px dashed #d4c9b0', background: '#fff', padding: '36px 24px', textAlign: 'center' }}>
+            <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '16px', color: '#6b5e50' }}>
+              No listings yet. Add one to put this property in front of hunters.
             </div>
-            <button onClick={() => router.post('/logout')} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}>
-              Sign Out
-            </button>
           </div>
-        </div>
-
-        <div style={{ maxWidth: '760px', margin: '0 auto', padding: '36px 16px 64px' }}>
-
-          <a href={`/member/properties/${property.id}`} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#a89874', textDecoration: 'none', display: 'inline-block', marginBottom: '18px' }}>
-            ← {property.title}
-          </a>
-
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '28px' }}>
-            <div>
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874', marginBottom: '6px' }}>
-                Listings
-              </div>
-              <h1 style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '28px', fontWeight: 400, color: INK, margin: 0, lineHeight: 1.1 }}>
-                {property.title}
-              </h1>
-            </div>
-            {editing === null && (
-              <button onClick={() => setEditing('new')} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '10px 22px', background: INK, color: '#F4ECDC', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                + Add Listing
-              </button>
-            )}
-          </div>
-
-          {/* Create / edit form */}
-          {editing === 'new' && (
-            <ListingForm key="new" property={property} listing={null} listingTypes={listingTypes} statuses={statuses} visibilities={visibilities} onClose={() => setEditing(null)} />
-          )}
-          {editingListing && (
-            <ListingForm key={editingListing.id} property={property} listing={editingListing} listingTypes={listingTypes} statuses={statuses} visibilities={visibilities} onClose={() => setEditing(null)} />
-          )}
-
-          {/* Existing listings */}
-          {listings.length === 0 && editing === null ? (
-            <div style={{ border: '1px dashed #d4c9b0', background: '#FBF7EE', padding: '36px 24px', textAlign: 'center' }}>
-              <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '16px', color: '#6b5e50' }}>
-                No listings yet. Add one to put this property in front of hunters.
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {listings.map(l => (
-                <div key={l.id} style={{ border: '1px solid #d4c9b0', background: '#FBF7EE', padding: '18px 20px', opacity: editing === l.id ? 0.45 : 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                        <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '18px', color: INK }}>
-                          {listingTypes[l.listing_type] ?? l.listing_type}
-                        </span>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '2px 7px', background: STATUS_COLOR[l.status] ?? INK, color: '#fff' }}>
-                          {statuses[l.status] ?? l.status}
-                        </span>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', letterSpacing: '.06em', color: '#a89874' }}>
-                          {visibilities[l.visibility] ?? l.visibility}
-                        </span>
-                      </div>
-                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: '#6b5e50', lineHeight: 1.7 }}>
-                        <span>{money(l.price_per_hunter)}/hunter</span>
-                        <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
-                        <span>Total {money(l.price_total)}</span>
-                        <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
-                        <span>{l.min_hunters ? `${l.min_hunters}–` : ''}{l.max_hunters} hunters</span>
-                        {(l.season_start || l.season_end) && (
-                          <>
-                            <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
-                            <span>{l.season_start ?? '?'} → {l.season_end ?? '?'}</span>
-                          </>
-                        )}
-                        {l.auto_renew && (
-                          <>
-                            <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
-                            <span>auto-renew</span>
-                          </>
-                        )}
-                      </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {listings.map(l => (
+              <div key={l.id} style={{ border: '1px solid #d4c9b0', background: '#fff', padding: '18px 20px', opacity: editing === l.id ? 0.45 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                      <span style={{ fontFamily: 'var(--display)', fontSize: '18px', color: INK }}>
+                        {listingTypes[l.listing_type] ?? l.listing_type}
+                      </span>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '2px 7px', background: STATUS_COLOR[l.status] ?? INK, color: '#fff' }}>
+                        {statuses[l.status] ?? l.status}
+                      </span>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', letterSpacing: '.06em', color: '#a89874' }}>
+                        {visibilities[l.visibility] ?? l.visibility}
+                      </span>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                      <button onClick={() => setEditing(l.id)} disabled={editing !== null} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '7px 14px', background: 'transparent', color: INK, border: '1px solid #d4c9b0', cursor: editing !== null ? 'not-allowed' : 'pointer' }}>
-                        Edit
-                      </button>
-                      <button onClick={() => remove(l.id)} disabled={editing !== null} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '7px 14px', background: 'transparent', color: ACCENT, border: '1px solid rgba(200,76,33,0.4)', cursor: editing !== null ? 'not-allowed' : 'pointer' }}>
-                        Delete
-                      </button>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: '#6b5e50', lineHeight: 1.7 }}>
+                      <span>{money(l.price_per_hunter)}/hunter</span>
+                      <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
+                      <span>Total {money(l.price_total)}</span>
+                      <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
+                      <span>{l.min_hunters ? `${l.min_hunters}–` : ''}{l.max_hunters} hunters</span>
+                      {(l.season_start || l.season_end) && (
+                        <>
+                          <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
+                          <span>{l.season_start ?? '?'} → {l.season_end ?? '?'}</span>
+                        </>
+                      )}
+                      {l.auto_renew && (
+                        <>
+                          <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
+                          <span>auto-renew</span>
+                        </>
+                      )}
                     </div>
                   </div>
+                  <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                    <button onClick={() => setEditing(l.id)} disabled={editing !== null} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '7px 14px', background: 'transparent', color: INK, border: '1px solid #d4c9b0', cursor: editing !== null ? 'not-allowed' : 'pointer' }}>
+                      Edit
+                    </button>
+                    <button onClick={() => remove(l.id)} disabled={editing !== null} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '7px 14px', background: 'transparent', color: ACCENT, border: '1px solid rgba(200,76,33,0.4)', cursor: editing !== null ? 'not-allowed' : 'pointer' }}>
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
 
-        </div>
-      </div>
-    </>
+    </PortalChrome>
   )
 }

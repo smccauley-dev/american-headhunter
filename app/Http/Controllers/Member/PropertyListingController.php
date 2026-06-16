@@ -54,8 +54,12 @@ class PropertyListingController extends Controller
 
         return Inertia::render('Member/Properties/Listings', [
             'property' => [
-                'id'    => $record->id,
-                'title' => $record->title,
+                'id'          => $record->id,
+                'title'       => $record->title,
+                'status'      => $record->status,
+                'state_code'  => $record->state_code,
+                'county'      => $record->county,
+                'total_acres' => $record->total_acres !== null ? (float) $record->total_acres : null,
             ],
             'listings'     => $listings,
             'listingTypes' => self::LISTING_TYPES,

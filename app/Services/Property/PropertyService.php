@@ -6,6 +6,8 @@ use App\Models\Property\Property;
 use App\Models\Property\PropertyListing;
 use App\Models\Property\PropertyManager;
 use App\Models\Property\PropertyContact;
+use App\Models\Property\PropertyMapImage;
+use App\Models\Property\PropertyMapMarker;
 use App\Models\Property\PropertyAccessInfo;
 use App\Models\Property\PropertyAmenity;
 use App\Models\Property\PropertyAvailability;
@@ -871,6 +873,249 @@ class PropertyService extends BaseService
             ->all();
 
         return compact('landowner', 'managers', 'contacts');
+    }
+
+    /**
+     * Active managers who could be promoted to field contacts but aren't yet —
+     * options for the member portal "Add Manager Contact" picker.
+     *
+     * @return list<array{id:string, name:string, role_label:string}>
+     */
+    public function getEligibleManagerContacts(string $propertyId): array
+    {
+        $managers = PropertyManager::on('property_read')
+            ->where('property_id', $propertyId)
+            ->whereNull('revoked_at')
+            ->whereIn('role', ['co_owner', 'manager', 'operator'])
+            ->where('is_field_contact', false)
+            ->orderBy('granted_at')
+            ->get();
+
+        if ($managers->isEmpty()) {
+            return [];
+        }
+
+        $users = \App\Models\Identity\User::on('identity')
+            ->with('profile')
+            ->whereIn('id', $managers->pluck('user_id')->all())
+            ->get()
+            ->keyBy('id');
+
+        $roleLabels = ['co_owner' => 'Co-Owner', 'manager' => 'Property Manager', 'operator' => 'Operator'];
+
+        return $managers->map(function (PropertyManager $m) use ($users, $roleLabels) {
+            $user = $users->get($m->user_id);
+            return [
+                'id'         => $m->id,
+                'name'       => $user?->profile?->full_name ?: ($user?->email ?? $m->user_id),
+                'role_label' => $roleLabels[$m->role] ?? ucfirst($m->role),
+            ];
+        })->values()->all();
+    }
+
+    /** Promote an active manager to a field contact, scoped to its property. */
+    public function addManagerContact(string $propertyId, string $managerId): bool
+    {
+        $manager = PropertyManager::on('property')
+            ->where('property_id', $propertyId)
+            ->where('id', $managerId)
+            ->whereNull('revoked_at')
+            ->whereIn('role', ['co_owner', 'manager', 'operator'])
+            ->first();
+
+        if (! $manager || $manager->is_field_contact) {
+            return false;
+        }
+
+        $manager->is_field_contact = true;
+        $manager->save();
+
+        return true;
+    }
+
+    /** Remove a manager from the field-contact list (the grant itself stays). */
+    public function removeManagerContact(string $propertyId, string $managerId): bool
+    {
+        $manager = PropertyManager::on('property')
+            ->where('property_id', $propertyId)
+            ->where('id', $managerId)
+            ->whereNull('revoked_at')
+            ->where('is_field_contact', true)
+            ->first();
+
+        if (! $manager) {
+            return false;
+        }
+
+        $manager->is_field_contact = false;
+        $manager->save();
+
+        return true;
+    }
+
+    /**
+     * Emergency & local contacts (PropertyContact rows) for the editor — includes
+     * the row id so the member portal can update/delete them.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getEditableContacts(string $propertyId): array
+    {
+        return PropertyContact::on('property_read')
+            ->where('property_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->orderBy('sort_order')
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn (PropertyContact $c) => [
+                'id'           => $c->id,
+                'contact_type' => $c->contact_type,
+                'label'        => $c->label,
+                'name'         => $c->name,
+                'organization' => $c->organization,
+                'phone'        => $c->phone,
+                'email'        => $c->email,
+                'address'      => $c->address,
+                'notes'        => $c->notes,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /** Create an emergency/local contact for a property. */
+    public function addContact(string $propertyId, array $data): PropertyContact
+    {
+        $nextSort = (int) PropertyContact::on('property')
+            ->where('property_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->max('sort_order') + 1;
+
+        return PropertyContact::on('property')->create([
+            'property_id'  => $propertyId,
+            'contact_type' => $data['contact_type'],
+            'label'        => $data['label'] ?? null,
+            'name'         => $data['name'] ?? null,
+            'organization' => $data['organization'] ?? null,
+            'phone'        => $this->cleanPhone($data['phone'] ?? null),
+            'email'        => $data['email'] ?? null,
+            'address'      => $data['address'] ?? null,
+            'notes'        => $data['notes'] ?? null,
+            'sort_order'   => $nextSort,
+        ]);
+    }
+
+    /** Update an emergency/local contact, scoped to its property. */
+    public function updateContact(string $propertyId, string $contactId, array $data): bool
+    {
+        $contact = PropertyContact::on('property')
+            ->where('property_id', $propertyId)
+            ->where('id', $contactId)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if (! $contact) {
+            return false;
+        }
+
+        $contact->update([
+            'contact_type' => $data['contact_type'],
+            'label'        => $data['label'] ?? null,
+            'name'         => $data['name'] ?? null,
+            'organization' => $data['organization'] ?? null,
+            'phone'        => $this->cleanPhone($data['phone'] ?? null),
+            'email'        => $data['email'] ?? null,
+            'address'      => $data['address'] ?? null,
+            'notes'        => $data['notes'] ?? null,
+        ]);
+
+        return true;
+    }
+
+    /** Soft-delete an emergency/local contact, scoped to its property. */
+    public function deleteContact(string $propertyId, string $contactId): bool
+    {
+        $contact = PropertyContact::on('property')
+            ->where('property_id', $propertyId)
+            ->where('id', $contactId)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if (! $contact) {
+            return false;
+        }
+
+        // deleted_at is not fillable, so set it directly (mass-assignment no-ops it).
+        $contact->deleted_at = now();
+        $contact->save();
+
+        return true;
+    }
+
+    /** Strip a phone down to its digits for storage; null when empty. */
+    private function cleanPhone(?string $phone): ?string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $phone);
+        return $digits !== '' ? $digits : null;
+    }
+
+    /**
+     * Live photos for the member portal gallery as plain arrays. The caller maps
+     * document_id to a URL — services don't generate routes.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getPhotosForDisplay(string $propertyId): array
+    {
+        return PropertyPhoto::on('property_read')
+            ->where('property_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->orderBy('sort_order')
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn (PropertyPhoto $p) => [
+                'id'          => $p->id,
+                'document_id' => $p->document_id,
+                'caption'     => $p->caption,
+                'tags'        => $p->tags ?? [],
+                'is_primary'  => (bool) $p->is_primary,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Live map images plus their markers for the member portal map editor.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getMapImagesForDisplay(string $propertyId): array
+    {
+        return PropertyMapImage::on('property_read')
+            ->where('property_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->orderByDesc('is_boundary')
+            ->orderBy('sort_order')
+            ->orderBy('created_at')
+            ->with(['markers' => fn ($q) => $q->whereNull('deleted_at')])
+            ->get()
+            ->map(fn (PropertyMapImage $img) => [
+                'id'          => $img->id,
+                'document_id' => $img->document_id,
+                'description' => $img->description,
+                'is_boundary' => (bool) $img->is_boundary,
+                'markers'     => $img->markers->map(fn (PropertyMapMarker $m) => [
+                    'id'          => $m->id,
+                    'label'       => $m->label,
+                    'marker_type' => $m->marker_type,
+                    'type_label'  => PropertyMapMarker::TYPES[$m->marker_type] ?? 'Marker',
+                    'x_percent'   => (float) $m->x_percent,
+                    'y_percent'   => (float) $m->y_percent,
+                    'color'       => $m->displayColor(),
+                    'notes'       => $m->notes,
+                ])->values()->all(),
+            ])
+            ->values()
+            ->all();
     }
 
     // ─── Record a view ────────────────────────────────────────────────────────
