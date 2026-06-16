@@ -42,53 +42,61 @@ Route::middleware('auth.session')->prefix('apply')->name('apply.')->group(functi
     Route::post('/{listing}', [ApplyController::class, 'submit'])->name('submit')->middleware('throttle:5,1');
 });
 
-// Admin print views — protected by Filament web guard
-Route::middleware('auth:web')->get('/admin/applications/{application}/print', [PrintApplicationController::class, 'show'])->name('admin.applications.print');
+// Admin routes that use Laravel's `web` guard (Filament staff auth) but live
+// OUTSIDE the admin panel's middleware. SEC-043: they must run as the trusted
+// ah_system (BYPASSRLS) role. The web guard resolves the staff user via an
+// RLS-protected SELECT on identity.users, which returns 0 rows under ah_runtime
+// (the Laravel guard sets no per-user RLS context). Without db.system the guard
+// finds no user and Authenticate redirects to a `login` route that doesn't exist
+// here (Filament uses filament.admin.auth.login) → 500 / broken images/files.
+// Keep ALL admin web-guard routes in this group so the role can never be omitted.
+// db.system is registered in the middleware priority list before the auth
+// contract (bootstrap/app.php) so it always runs before the guard resolves.
+Route::middleware(['db.system', 'auth:web'])->group(function () {
+    // Admin print views
+    Route::get('/admin/applications/{application}/print', [PrintApplicationController::class, 'show'])->name('admin.applications.print');
 
-// Admin lease-document restore (undo soft-delete)
-Route::middleware('auth:web')->post('/admin/lease-documents/{leaseDocumentId}/restore', function (string $leaseDocumentId) {
-    app(\App\Services\Lease\LeaseDocumentService::class)->restore($leaseDocumentId, auth()->id());
-    return back();
-})->name('admin.lease-documents.restore');
+    // Admin lease-document restore (undo soft-delete)
+    Route::post('/admin/lease-documents/{leaseDocumentId}/restore', function (string $leaseDocumentId) {
+        app(\App\Services\Lease\LeaseDocumentService::class)->restore($leaseDocumentId, auth()->id());
+        return back();
+    })->name('admin.lease-documents.restore');
 
-// Admin lease-document soft-delete
-Route::middleware('auth:web')->post('/admin/lease-documents/{leaseDocumentId}/delete', function (string $leaseDocumentId) {
-    app(\App\Services\Lease\LeaseDocumentService::class)->remove($leaseDocumentId, auth()->id());
-    return back();
-})->name('admin.lease-documents.delete');
+    // Admin lease-document soft-delete
+    Route::post('/admin/lease-documents/{leaseDocumentId}/delete', function (string $leaseDocumentId) {
+        app(\App\Services\Lease\LeaseDocumentService::class)->remove($leaseDocumentId, auth()->id());
+        return back();
+    })->name('admin.lease-documents.delete');
 
-// Admin lease-document download (from lease_documents table, with audit logging)
-// SEC-043: db.system before auth:web — the Filament `web` guard resolves the
-// staff user via an RLS-protected SELECT on identity.users; under ah_runtime
-// (no per-user RLS context for the Laravel guard) that returns 0 rows and the
-// guard 302s to login, so the browser receives an HTML page instead of the file.
-Route::middleware(['db.system', 'auth:web'])->get('/admin/lease-documents/{leaseDocumentId}/download', function (string $leaseDocumentId) {
-    return app(\App\Services\Lease\LeaseDocumentService::class)->adminDownload(
-        $leaseDocumentId,
-        auth()->id(),
-    );
-})->name('admin.lease-documents.download');
+    // Admin lease-document download (from lease_documents table, with audit logging)
+    Route::get('/admin/lease-documents/{leaseDocumentId}/download', function (string $leaseDocumentId) {
+        return app(\App\Services\Lease\LeaseDocumentService::class)->adminDownload(
+            $leaseDocumentId,
+            auth()->id(),
+        );
+    })->name('admin.lease-documents.download');
 
-// Admin document download — protected by Filament web guard (see db.system note above)
-Route::middleware(['db.system', 'auth:web'])->get('/admin/documents/{documentId}/download', function (string $documentId) {
-    $doc = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
-    $disk = config('filesystems.defaults.documents', 'local');
-    return \Illuminate\Support\Facades\Storage::disk($disk)->download(
-        $doc->storage_key,
-        $doc->original_filename ?? 'document.pdf',
-    );
-})->name('admin.documents.download');
+    // Admin document download
+    Route::get('/admin/documents/{documentId}/download', function (string $documentId) {
+        $doc = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
+        $disk = config('filesystems.defaults.documents', 'local');
+        return \Illuminate\Support\Facades\Storage::disk($disk)->download(
+            $doc->storage_key,
+            $doc->original_filename ?? 'document.pdf',
+        );
+    })->name('admin.documents.download');
 
-// Admin inline document view (images in admin galleries) — protected by Filament web guard (see db.system note above)
-Route::middleware(['db.system', 'auth:web'])->get('/admin/documents/{documentId}/view', function (string $documentId) {
-    $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
-    $disk = config('filesystems.defaults.documents', 'local');
-    return \Illuminate\Support\Facades\Storage::disk($disk)->response(
-        $doc->storage_key,
-        $doc->original_filename,
-        ['Content-Type' => $doc->mime_type ?? 'application/octet-stream'],
-    );
-})->name('admin.documents.view');
+    // Admin inline document view (images in admin galleries)
+    Route::get('/admin/documents/{documentId}/view', function (string $documentId) {
+        $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
+        $disk = config('filesystems.defaults.documents', 'local');
+        return \Illuminate\Support\Facades\Storage::disk($disk)->response(
+            $doc->storage_key,
+            $doc->original_filename,
+            ['Content-Type' => $doc->mime_type ?? 'application/octet-stream'],
+        );
+    })->name('admin.documents.view');
+});
 
 // Public property photo — only documents referenced by a live property_photos
 // row are served; everything else in the documents store stays private.
