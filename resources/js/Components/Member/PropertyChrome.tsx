@@ -28,14 +28,21 @@ export function DashedInset() {
   return <div style={{ position: 'absolute', inset: 6, border: `1px dashed ${TAN}`, pointerEvents: 'none', zIndex: 1 }} />
 }
 
-export function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+export function Section({ title, description, action, children }: { title: string; description?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div style={fieldCard}>
       <DashedInset />
       <div style={{ position: 'relative', zIndex: 2, padding: '18px 24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '18px', borderBottom: `1px solid ${DIVIDER}`, paddingBottom: '8px' }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: TAN }}>
-            {title}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', marginBottom: '18px', borderBottom: `1px solid ${DIVIDER}`, paddingBottom: description ? '14px' : '8px' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: description ? '#3d6b54' : TAN }}>
+              {title}
+            </div>
+            {description && (
+              <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', lineHeight: 1.45, color: '#3d6b54', marginTop: '7px', maxWidth: '760px' }}>
+                {description}
+              </div>
+            )}
           </div>
           {action}
         </div>

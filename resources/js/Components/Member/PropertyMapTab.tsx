@@ -257,11 +257,15 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
   }
 
   const uploadAction = (
-    <button type="button" onClick={() => { setUploadError(null); setShowUpload(true) }} style={{ ...inkBtn, fontSize: '9px' }}>Upload Map Images</button>
+    <button type="button" onClick={() => { setUploadError(null); setShowUpload(true) }} style={{ ...ghostBtn, flexShrink: 0 }}>
+      <span aria-hidden style={{ fontSize: '11px' }}>↑</span> Upload Map Images
+    </button>
   )
 
+  const boundaryDescription = 'The boundary map is shown on the public listing (without markers). Add markers for amenities, game locations, stands, and other points of interest — markers are admin/member only.'
+
   return (
-    <Section title="Map" action={uploadAction}>
+    <Section title="Boundary Map" description={boundaryDescription} action={uploadAction}>
       {images.length === 0 && deletedImages.length === 0 ? (
         <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: 0 }}>
           No map images yet. Use <strong>Upload Map Images</strong> above — the first upload becomes the boundary map.
