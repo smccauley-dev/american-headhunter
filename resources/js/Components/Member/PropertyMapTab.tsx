@@ -58,9 +58,14 @@ export default function PropertyMapTab({ propertyId, images, markerTypes }: {
   const [override, setOverride] = useState<Record<string, { x: number; y: number }>>({})
   const drag = useRef<{ id: string; startX: number; startY: number; moved: boolean } | null>(null)
 
-  const upload = useForm<{ images: File[]; description: string; import_exif: boolean }>({
-    images: [], description: '', import_exif: true,
-  })
+  // Upload state — plain FormData + router.post (Inertia's useForm does not reliably
+  // carry File[] through its data clone; the working profile uploader uses this same
+  // pattern).
+  const [files, setFiles] = useState<File[]>([])
+  const [description, setDescription] = useState('')
+  const [importExif, setImportExif] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const markerForm = useForm<{ label: string; marker_type: string; notes: string }>({
@@ -69,10 +74,21 @@ export default function PropertyMapTab({ propertyId, images, markerTypes }: {
 
   function submitUpload(e: React.FormEvent) {
     e.preventDefault()
-    if (upload.data.images.length === 0) return
-    upload.post(`/member/properties/${propertyId}/map-images`, {
+    if (files.length === 0) return
+    const fd = new FormData()
+    files.forEach(f => fd.append('images[]', f))
+    if (description) fd.append('description', description)
+    fd.append('import_exif', importExif ? '1' : '0')
+    setUploading(true)
+    setUploadError(null)
+    router.post(`/member/properties/${propertyId}/map-images`, fd, {
       preserveScroll: true, forceFormData: true,
-      onSuccess: () => { upload.reset(); if (fileRef.current) fileRef.current.value = '' },
+      onSuccess: () => {
+        setFiles([]); setDescription('')
+        if (fileRef.current) fileRef.current.value = ''
+      },
+      onError: errs => setUploadError(errs.images ?? 'Upload failed.'),
+      onFinish: () => setUploading(false),
     })
   }
 
@@ -165,16 +181,16 @@ export default function PropertyMapTab({ propertyId, images, markerTypes }: {
   return (
     <Section title="Map">
       <form onSubmit={submitUpload} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '22px', borderBottom: '1px solid #e5ddd0', paddingBottom: '20px' }}>
-        <input ref={fileRef} type="file" accept="image/*" multiple onChange={e => upload.setData('images', Array.from(e.target.files ?? []))} style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: INK }} />
-        <input type="text" value={upload.data.description} onChange={e => upload.setData('description', e.target.value)} style={input} placeholder="Description for this batch (optional)" maxLength={255} />
+        <input ref={fileRef} type="file" accept="image/*" multiple onChange={e => setFiles(Array.from(e.target.files ?? []))} style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: INK }} />
+        <input type="text" value={description} onChange={e => setDescription(e.target.value)} style={input} placeholder="Description for this batch (optional)" maxLength={255} />
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontFamily: 'var(--body)', fontSize: '14px', color: '#6b5e50' }}>
-          <input type="checkbox" checked={upload.data.import_exif} onChange={e => upload.setData('import_exif', e.target.checked)} />
+          <input type="checkbox" checked={importExif} onChange={e => setImportExif(e.target.checked)} />
           Import location from image metadata (EXIF GPS)
         </label>
-        {upload.errors.images && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{upload.errors.images}</div>}
+        {uploadError && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{uploadError}</div>}
         <div>
-          <button type="submit" disabled={upload.processing || upload.data.images.length === 0} style={{ ...inkBtn, padding: '10px 22px', fontSize: '10px', opacity: upload.processing || upload.data.images.length === 0 ? 0.6 : 1 }}>
-            {upload.processing ? 'Uploading…' : 'Upload Map Images'}
+          <button type="submit" disabled={uploading || files.length === 0} style={{ ...inkBtn, padding: '10px 22px', fontSize: '10px', opacity: uploading || files.length === 0 ? 0.6 : 1 }}>
+            {uploading ? 'Uploading…' : 'Upload Map Images'}
           </button>
           <span style={{ fontFamily: 'var(--body)', fontSize: '13px', color: '#6b5e50', marginLeft: '12px' }}>The first map image becomes the boundary map.</span>
         </div>

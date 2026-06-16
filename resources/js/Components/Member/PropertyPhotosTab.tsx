@@ -1,4 +1,4 @@
-import { useForm, router } from '@inertiajs/react'
+import { router } from '@inertiajs/react'
 import { useState, useRef } from 'react'
 import { Section, INK, ACCENT } from './PropertyChrome'
 
@@ -26,16 +26,32 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
   const [editing, setEditing] = useState<string | null>(null)
   const [caption, setCaption] = useState('')
 
-  const upload = useForm<{ photos: File[]; caption: string; import_exif: boolean }>({
-    photos: [], caption: '', import_exif: true,
-  })
+  // Upload state — plain FormData + router.post (Inertia's useForm does not reliably
+  // carry File[] through its data clone; the working profile uploader uses this same
+  // pattern).
+  const [files, setFiles] = useState<File[]>([])
+  const [batchCaption, setBatchCaption] = useState('')
+  const [importExif, setImportExif] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   function submitUpload(e: React.FormEvent) {
     e.preventDefault()
-    if (upload.data.photos.length === 0) return
-    upload.post(`/member/properties/${propertyId}/photos`, {
+    if (files.length === 0) return
+    const fd = new FormData()
+    files.forEach(f => fd.append('photos[]', f))
+    if (batchCaption) fd.append('caption', batchCaption)
+    fd.append('import_exif', importExif ? '1' : '0')
+    setUploading(true)
+    setUploadError(null)
+    router.post(`/member/properties/${propertyId}/photos`, fd, {
       preserveScroll: true, forceFormData: true,
-      onSuccess: () => { upload.reset(); if (fileRef.current) fileRef.current.value = '' },
+      onSuccess: () => {
+        setFiles([]); setBatchCaption('')
+        if (fileRef.current) fileRef.current.value = ''
+      },
+      onError: errs => setUploadError(errs.photos ?? 'Upload failed.'),
+      onFinish: () => setUploading(false),
     })
   }
 
@@ -64,25 +80,25 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
           type="file"
           accept="image/*"
           multiple
-          onChange={e => upload.setData('photos', Array.from(e.target.files ?? []))}
+          onChange={e => setFiles(Array.from(e.target.files ?? []))}
           style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: INK }}
         />
         <input
           type="text"
-          value={upload.data.caption}
-          onChange={e => upload.setData('caption', e.target.value)}
+          value={batchCaption}
+          onChange={e => setBatchCaption(e.target.value)}
           style={input}
           placeholder="Caption applied to this batch (optional)"
           maxLength={255}
         />
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontFamily: 'var(--body)', fontSize: '14px', color: '#6b5e50' }}>
-          <input type="checkbox" checked={upload.data.import_exif} onChange={e => upload.setData('import_exif', e.target.checked)} />
+          <input type="checkbox" checked={importExif} onChange={e => setImportExif(e.target.checked)} />
           Import location from photo metadata (EXIF GPS)
         </label>
-        {upload.errors.photos && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{upload.errors.photos}</div>}
+        {uploadError && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{uploadError}</div>}
         <div>
-          <button type="submit" disabled={upload.processing || upload.data.photos.length === 0} style={{ fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '10px 22px', background: INK, color: '#F4ECDC', border: 'none', cursor: upload.processing || upload.data.photos.length === 0 ? 'not-allowed' : 'pointer', opacity: upload.processing || upload.data.photos.length === 0 ? 0.6 : 1 }}>
-            {upload.processing ? 'Uploading…' : 'Upload Photos'}
+          <button type="submit" disabled={uploading || files.length === 0} style={{ fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '10px 22px', background: INK, color: '#F4ECDC', border: 'none', cursor: uploading || files.length === 0 ? 'not-allowed' : 'pointer', opacity: uploading || files.length === 0 ? 0.6 : 1 }}>
+            {uploading ? 'Uploading…' : 'Upload Photos'}
           </button>
         </div>
       </form>
