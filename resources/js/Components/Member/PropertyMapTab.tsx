@@ -58,10 +58,9 @@ export default function PropertyMapTab({ propertyId, images, markerTypes }: {
   const [override, setOverride] = useState<Record<string, { x: number; y: number }>>({})
   const drag = useRef<{ id: string; startX: number; startY: number; moved: boolean } | null>(null)
 
-  // Upload state — plain FormData + router.post (Inertia's useForm does not reliably
-  // carry File[] through its data clone; the working profile uploader uses this same
-  // pattern).
-  const [files, setFiles] = useState<File[]>([])
+  // Upload state — a hidden file input triggered by a button that uploads the
+  // selection immediately via plain FormData + router.post. Mirrors the one
+  // uploader proven to work in this app (the profile PhotosTab).
   const [description, setDescription] = useState('')
   const [importExif, setImportExif] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -72,23 +71,23 @@ export default function PropertyMapTab({ propertyId, images, markerTypes }: {
     label: '', marker_type: typeKeys[0], notes: '',
   })
 
-  function submitUpload(e: React.FormEvent) {
-    e.preventDefault()
-    if (files.length === 0) return
+  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files
+    if (!selected?.length) return
     const fd = new FormData()
-    files.forEach(f => fd.append('images[]', f))
+    Array.from(selected).forEach(f => fd.append('images[]', f))
     if (description) fd.append('description', description)
     fd.append('import_exif', importExif ? '1' : '0')
     setUploading(true)
     setUploadError(null)
     router.post(`/member/properties/${propertyId}/map-images`, fd, {
       preserveScroll: true, forceFormData: true,
-      onSuccess: () => {
-        setFiles([]); setDescription('')
+      onSuccess: () => setDescription(''),
+      onError: errs => setUploadError(errs.images ?? 'Upload failed.'),
+      onFinish: () => {
+        setUploading(false)
         if (fileRef.current) fileRef.current.value = ''
       },
-      onError: errs => setUploadError(errs.images ?? 'Upload failed.'),
-      onFinish: () => setUploading(false),
     })
   }
 
@@ -180,8 +179,7 @@ export default function PropertyMapTab({ propertyId, images, markerTypes }: {
 
   return (
     <Section title="Map">
-      <form onSubmit={submitUpload} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '22px', borderBottom: '1px solid #e5ddd0', paddingBottom: '20px' }}>
-        <input ref={fileRef} type="file" accept="image/*" multiple onChange={e => setFiles(Array.from(e.target.files ?? []))} style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: INK }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '22px', borderBottom: '1px solid #e5ddd0', paddingBottom: '20px' }}>
         <input type="text" value={description} onChange={e => setDescription(e.target.value)} style={input} placeholder="Description for this batch (optional)" maxLength={255} />
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontFamily: 'var(--body)', fontSize: '14px', color: '#6b5e50' }}>
           <input type="checkbox" checked={importExif} onChange={e => setImportExif(e.target.checked)} />
@@ -189,12 +187,13 @@ export default function PropertyMapTab({ propertyId, images, markerTypes }: {
         </label>
         {uploadError && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{uploadError}</div>}
         <div>
-          <button type="submit" disabled={uploading || files.length === 0} style={{ ...inkBtn, padding: '10px 22px', fontSize: '10px', opacity: uploading || files.length === 0 ? 0.6 : 1 }}>
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} style={{ ...inkBtn, padding: '10px 22px', fontSize: '10px', opacity: uploading ? 0.6 : 1 }}>
             {uploading ? 'Uploading…' : 'Upload Map Images'}
           </button>
           <span style={{ fontFamily: 'var(--body)', fontSize: '13px', color: '#6b5e50', marginLeft: '12px' }}>The first map image becomes the boundary map.</span>
         </div>
-      </form>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
+      </div>
 
       {images.length === 0 ? (
         <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: 0 }}>

@@ -26,32 +26,32 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
   const [editing, setEditing] = useState<string | null>(null)
   const [caption, setCaption] = useState('')
 
-  // Upload state — plain FormData + router.post (Inertia's useForm does not reliably
-  // carry File[] through its data clone; the working profile uploader uses this same
-  // pattern).
-  const [files, setFiles] = useState<File[]>([])
+  // Upload state — a hidden file input triggered by a button that uploads the
+  // selection immediately via plain FormData + router.post. This mirrors the one
+  // uploader proven to work in this app (the profile PhotosTab); a separate
+  // "select then submit" button is the friction we are removing.
   const [batchCaption, setBatchCaption] = useState('')
   const [importExif, setImportExif] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  function submitUpload(e: React.FormEvent) {
-    e.preventDefault()
-    if (files.length === 0) return
+  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files
+    if (!selected?.length) return
     const fd = new FormData()
-    files.forEach(f => fd.append('photos[]', f))
+    Array.from(selected).forEach(f => fd.append('photos[]', f))
     if (batchCaption) fd.append('caption', batchCaption)
     fd.append('import_exif', importExif ? '1' : '0')
     setUploading(true)
     setUploadError(null)
     router.post(`/member/properties/${propertyId}/photos`, fd, {
       preserveScroll: true, forceFormData: true,
-      onSuccess: () => {
-        setFiles([]); setBatchCaption('')
+      onSuccess: () => setBatchCaption(''),
+      onError: errs => setUploadError(errs.photos ?? 'Upload failed.'),
+      onFinish: () => {
+        setUploading(false)
         if (fileRef.current) fileRef.current.value = ''
       },
-      onError: errs => setUploadError(errs.photos ?? 'Upload failed.'),
-      onFinish: () => setUploading(false),
     })
   }
 
@@ -74,15 +74,7 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
 
   return (
     <Section title="Photos">
-      <form onSubmit={submitUpload} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '22px', borderBottom: '1px solid #e5ddd0', paddingBottom: '20px' }}>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={e => setFiles(Array.from(e.target.files ?? []))}
-          style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: INK }}
-        />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '22px', borderBottom: '1px solid #e5ddd0', paddingBottom: '20px' }}>
         <input
           type="text"
           value={batchCaption}
@@ -97,11 +89,12 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
         </label>
         {uploadError && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{uploadError}</div>}
         <div>
-          <button type="submit" disabled={uploading || files.length === 0} style={{ fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '10px 22px', background: INK, color: '#F4ECDC', border: 'none', cursor: uploading || files.length === 0 ? 'not-allowed' : 'pointer', opacity: uploading || files.length === 0 ? 0.6 : 1 }}>
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} style={{ fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '10px 22px', background: INK, color: '#F4ECDC', border: 'none', cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.6 : 1 }}>
             {uploading ? 'Uploading…' : 'Upload Photos'}
           </button>
         </div>
-      </form>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
+      </div>
 
       {photos.length === 0 ? (
         <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: 0 }}>
