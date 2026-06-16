@@ -204,8 +204,11 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
 
     // Map tab — image-based maps with percent-coordinate markers.
     Route::get('/properties/{property}/map-images/{documentId}',    [MemberPropertyMapController::class, 'serveImage'])->name('properties.map.serve');
+    Route::get('/properties/{property}/map-images/{mapImage}/download', [MemberPropertyMapController::class, 'downloadImage'])->name('properties.map.download');
     Route::post('/properties/{property}/map-images',                [MemberPropertyMapController::class, 'storeImage'])->name('properties.map.store')->middleware('throttle:30,1');
+    Route::put('/properties/{property}/map-images/{mapImage}',      [MemberPropertyMapController::class, 'updateImage'])->name('properties.map.update');
     Route::post('/properties/{property}/map-images/{mapImage}/boundary', [MemberPropertyMapController::class, 'setBoundary'])->name('properties.map.boundary');
+    Route::post('/properties/{property}/map-images/{mapImage}/restore', [MemberPropertyMapController::class, 'restoreImage'])->name('properties.map.restore');
     Route::delete('/properties/{property}/map-images/{mapImage}',   [MemberPropertyMapController::class, 'destroyImage'])->name('properties.map.destroy');
     Route::post('/properties/{property}/map-images/{mapImage}/markers', [MemberPropertyMapController::class, 'addMarker'])->name('properties.map.markers.store');
     Route::put('/properties/{property}/markers/{marker}',           [MemberPropertyMapController::class, 'updateMarker'])->name('properties.map.markers.update');

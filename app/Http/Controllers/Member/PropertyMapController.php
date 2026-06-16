@@ -36,10 +36,11 @@ class PropertyMapController extends Controller
     {
         $this->authorizeManage($property);
 
+        // Deleted images are still served so the recovery gallery can show
+        // thumbnails; scoping to the property is the access boundary.
         $belongs = PropertyMapImage::on('property_read')
             ->where('property_id', $property)
             ->where('document_id', $documentId)
-            ->whereNull('deleted_at')
             ->exists();
         abort_unless($belongs, 404);
 
@@ -96,6 +97,66 @@ class PropertyMapController extends Controller
         return back()->with('success', 'Boundary map updated.');
     }
 
+    /** Edit Details — description, coordinates, public-coords toggle, boundary. */
+    public function updateImage(Request $request, string $property, string $mapImage): RedirectResponse
+    {
+        $this->authorizeOwnsImage($property, $mapImage);
+
+        $data = $request->validate([
+            'description'          => 'nullable|string|max:255',
+            'latitude'             => 'nullable|numeric|min:-90|max:90',
+            'longitude'            => 'nullable|numeric|min:-180|max:180',
+            'show_coords_publicly' => 'boolean',
+            'is_boundary'          => 'boolean',
+        ]);
+
+        $this->maps->updateMapImageDetails(
+            $mapImage,
+            $data['description'] ?? null,
+            isset($data['latitude']) ? (float) $data['latitude'] : null,
+            isset($data['longitude']) ? (float) $data['longitude'] : null,
+            (bool) ($data['show_coords_publicly'] ?? false),
+        );
+
+        if (! empty($data['is_boundary'])) {
+            $this->maps->setBoundaryImage($mapImage);
+        }
+
+        return back()->with('success', 'Map image updated.');
+    }
+
+    /** Download the original map image file for a manager of the property. */
+    public function downloadImage(string $property, string $mapImage)
+    {
+        $this->authorizeOwnsImage($property, $mapImage);
+
+        $image = PropertyMapImage::on('property_read')->findOrFail($mapImage);
+        $doc   = \App\Models\Documents\Document::on('documents')->findOrFail($image->document_id);
+        $disk  = config('filesystems.defaults.documents', 'local');
+
+        return \Illuminate\Support\Facades\Storage::disk($disk)->download(
+            $doc->storage_key,
+            $doc->original_filename,
+        );
+    }
+
+    /** Restore a soft-deleted map image. */
+    public function restoreImage(string $property, string $mapImage): RedirectResponse
+    {
+        $this->authorizeManage($property);
+
+        $belongs = PropertyMapImage::on('property_read')
+            ->where('id', $mapImage)
+            ->where('property_id', $property)
+            ->whereNotNull('deleted_at')
+            ->exists();
+        abort_unless($belongs, 404);
+
+        $this->maps->restoreMapImage($mapImage);
+
+        return back()->with('success', 'Map image restored.');
+    }
+
     public function destroyImage(string $property, string $mapImage): RedirectResponse
     {
         $this->authorizeOwnsImage($property, $mapImage);
@@ -114,6 +175,9 @@ class PropertyMapController extends Controller
             'marker_type' => ['required', Rule::in(array_keys(PropertyMapMarker::TYPES))],
             'x_percent'   => 'required|numeric|min:0|max:100',
             'y_percent'   => 'required|numeric|min:0|max:100',
+            'latitude'    => 'nullable|numeric|min:-90|max:90',
+            'longitude'   => 'nullable|numeric|min:-180|max:180',
+            'color'       => 'nullable|string|regex:/^#[0-9a-fA-F]{6}$/',
             'notes'       => 'nullable|string|max:500',
         ]);
 
@@ -123,7 +187,10 @@ class PropertyMapController extends Controller
             $data['marker_type'],
             (float) $data['x_percent'],
             (float) $data['y_percent'],
-            notes: $data['notes'] ?? null,
+            isset($data['latitude']) ? (float) $data['latitude'] : null,
+            isset($data['longitude']) ? (float) $data['longitude'] : null,
+            $data['notes'] ?? null,
+            $data['color'] ?? null,
         );
 
         return back()->with('success', 'Marker added.');
@@ -136,6 +203,9 @@ class PropertyMapController extends Controller
         $data = $request->validate([
             'label'       => 'required|string|max:120',
             'marker_type' => ['required', Rule::in(array_keys(PropertyMapMarker::TYPES))],
+            'latitude'    => 'nullable|numeric|min:-90|max:90',
+            'longitude'   => 'nullable|numeric|min:-180|max:180',
+            'color'       => 'nullable|string|regex:/^#[0-9a-fA-F]{6}$/',
             'notes'       => 'nullable|string|max:500',
         ]);
 
@@ -143,7 +213,10 @@ class PropertyMapController extends Controller
             $marker,
             $data['label'],
             $data['marker_type'],
-            notes: $data['notes'] ?? null,
+            isset($data['latitude']) ? (float) $data['latitude'] : null,
+            isset($data['longitude']) ? (float) $data['longitude'] : null,
+            $data['notes'] ?? null,
+            $data['color'] ?? null,
         );
 
         return back()->with('success', 'Marker updated.');

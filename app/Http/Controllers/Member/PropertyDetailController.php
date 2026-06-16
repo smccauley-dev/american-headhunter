@@ -58,8 +58,10 @@ class PropertyDetailController extends Controller
             // Photos
             'photos'         => $this->properties->getPhotosForDisplay($property),
             // Map
-            'mapImages'      => $this->properties->getMapImagesForDisplay($property),
-            'markerTypes'    => PropertyMapMarker::TYPES,
+            'mapImages'        => $this->properties->getMapImagesForDisplay($property),
+            'deletedMapImages' => $this->properties->getDeletedMapImagesForDisplay($property),
+            'markerTypes'      => PropertyMapMarker::TYPES,
+            'markerColors'     => PropertyMapMarker::TYPE_COLORS,
             // Check In/Out
             'checkIns'       => $this->presentCheckIns($property),
             // Team (managers)

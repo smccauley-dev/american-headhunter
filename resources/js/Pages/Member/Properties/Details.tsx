@@ -1,7 +1,7 @@
 import { useForm } from '@inertiajs/react'
 import { PortalChrome, PropertyHead, Section, BackLink, TabBar, useTabQuery, INK, ACCENT, type PropertySummary } from '@/Components/Member/PropertyChrome'
 import PropertyPhotosTab, { type Photo } from '@/Components/Member/PropertyPhotosTab'
-import PropertyMapTab, { type MapImage } from '@/Components/Member/PropertyMapTab'
+import PropertyMapTab, { type MapImage, type DeletedMapImage } from '@/Components/Member/PropertyMapTab'
 import PropertyTeamTab, { type Manager } from '@/Components/Member/PropertyTeamTab'
 import PropertyContactsTab, { type ContactDirectory, type EligibleManager, type EditableContact } from '@/Components/Member/PropertyContactsTab'
 
@@ -36,7 +36,9 @@ interface Props {
   amenityCatalog: AmenityGroup[]
   photos: Photo[]
   mapImages: MapImage[]
+  deletedMapImages: DeletedMapImage[]
   markerTypes: Record<string, string>
+  markerColors: Record<string, string>
   checkIns: CheckIn[]
   managers: Manager[]
   roles: Record<string, string>
@@ -88,7 +90,7 @@ const addBtn: React.CSSProperties = {
 export default function PropertyDetails(props: Props) {
   const {
     property, species, rules, amenityIds, speciesOptions, amenityCatalog,
-    photos, mapImages, markerTypes, checkIns, managers, roles,
+    photos, mapImages, deletedMapImages, markerTypes, markerColors, checkIns, managers, roles,
     contactDirectory, eligibleManagers, editableContacts, contactTypes,
   } = props
 
@@ -258,7 +260,7 @@ export default function PropertyDetails(props: Props) {
       {tab === 'photos' && <PropertyPhotosTab propertyId={property.id} photos={photos} />}
 
       {/* Map */}
-      {tab === 'map' && <PropertyMapTab propertyId={property.id} images={mapImages} markerTypes={markerTypes} />}
+      {tab === 'map' && <PropertyMapTab propertyId={property.id} images={mapImages} deletedImages={deletedMapImages} markerTypes={markerTypes} markerColors={markerColors} />}
 
       {/* Check In/Out */}
       {tab === 'checkin' && (

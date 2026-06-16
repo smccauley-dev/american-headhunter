@@ -1099,11 +1099,14 @@ class PropertyService extends BaseService
             ->with(['markers' => fn ($q) => $q->whereNull('deleted_at')])
             ->get()
             ->map(fn (PropertyMapImage $img) => [
-                'id'          => $img->id,
-                'document_id' => $img->document_id,
-                'description' => $img->description,
-                'is_boundary' => (bool) $img->is_boundary,
-                'markers'     => $img->markers->map(fn (PropertyMapMarker $m) => [
+                'id'                   => $img->id,
+                'document_id'          => $img->document_id,
+                'description'          => $img->description,
+                'is_boundary'          => (bool) $img->is_boundary,
+                'latitude'             => $img->latitude !== null ? (float) $img->latitude : null,
+                'longitude'            => $img->longitude !== null ? (float) $img->longitude : null,
+                'show_coords_publicly' => (bool) $img->show_coords_publicly,
+                'markers'              => $img->markers->map(fn (PropertyMapMarker $m) => [
                     'id'          => $m->id,
                     'label'       => $m->label,
                     'marker_type' => $m->marker_type,
@@ -1112,7 +1115,33 @@ class PropertyService extends BaseService
                     'y_percent'   => (float) $m->y_percent,
                     'color'       => $m->displayColor(),
                     'notes'       => $m->notes,
+                    'latitude'    => $m->latitude !== null ? (float) $m->latitude : null,
+                    'longitude'   => $m->longitude !== null ? (float) $m->longitude : null,
                 ])->values()->all(),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Soft-deleted map images for the member Map tab recovery section. Mirrors
+     * the admin map editor's deleted gallery: id, document id, description and a
+     * formatted deletion date.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getDeletedMapImagesForDisplay(string $propertyId): array
+    {
+        return PropertyMapImage::on('property_read')
+            ->where('property_id', $propertyId)
+            ->whereNotNull('deleted_at')
+            ->orderByDesc('deleted_at')
+            ->get()
+            ->map(fn (PropertyMapImage $img) => [
+                'id'          => $img->id,
+                'document_id' => $img->document_id,
+                'description' => $img->description,
+                'deleted_at'  => $img->deleted_at?->format('M j, Y'),
             ])
             ->values()
             ->all();
