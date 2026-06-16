@@ -58,11 +58,19 @@ class ApplyController extends Controller
             ->values();
         $certDoc = $this->legalService->getActiveCertification();
 
+        // Day-hunt applicants pick their own dates and need to see what is taken;
+        // fixed-term (annual/seasonal) leases use the whole season, so the lookup
+        // is wasted there.
+        $unavailableRanges = $listing->listing_type === 'day_hunt'
+            ? $this->propertyService->getUnavailableRanges($listing->id)
+            : [];
+
         return inertia('Apply/Index', [
-            'listing'          => $this->serializeListing($listing),
-            'property'         => $this->serializeProperty($listing->property),
-            'primaryHunter'    => $primaryHunter,
-            'savedGuests'      => $savedGuests,
+            'listing'           => $this->serializeListing($listing),
+            'property'          => $this->serializeProperty($listing->property),
+            'unavailableRanges' => $unavailableRanges,
+            'primaryHunter'     => $primaryHunter,
+            'savedGuests'       => $savedGuests,
             'certificationDoc' => $certDoc ? [
                 'key'     => $certDoc->document_key,
                 'version' => $certDoc->version,
@@ -289,8 +297,11 @@ class ApplyController extends Controller
             'id'               => $listing->id,
             'listing_type'     => $listing->listing_type,
             'status'           => $listing->status,
-            'season_start'     => $listing->season_start,
-            'season_end'       => $listing->season_end,
+            // Date-only strings — the apply form binds these to <input type="date">
+            // and compares them against YYYY-MM-DD, so a Carbon ISO timestamp would
+            // break both.
+            'season_start'     => $listing->season_start?->toDateString(),
+            'season_end'       => $listing->season_end?->toDateString(),
             'min_hunters'      => $listing->min_hunters,
             'max_hunters'      => $listing->max_hunters,
             'price_per_hunter' => $listing->price_per_hunter,

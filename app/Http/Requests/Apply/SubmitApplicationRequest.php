@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Apply;
 
+use App\Services\Property\PropertyService;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 
 class SubmitApplicationRequest extends FormRequest
@@ -50,6 +52,71 @@ class SubmitApplicationRequest extends FormRequest
 
             'certification_accepted' => ['required', 'accepted'],
         ];
+    }
+
+    /**
+     * Listing-type-aware checks that the static rules above cannot express:
+     * the proposed term must respect the listing's nature, and every hunter's
+     * hunting license must be issued by the state the property sits in. These
+     * mirror the front-end gates so a hand-crafted POST can't bypass them.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $listing = app(PropertyService::class)->findListing((string) $this->route('listing'));
+            if (! $listing) {
+                return;
+            }
+
+            $propertyState = $listing->property?->state_code;
+            $seasonStart   = $listing->season_start?->toDateString();
+            $seasonEnd     = $listing->season_end?->toDateString();
+            $today         = now()->toDateString();
+            $start         = (string) $this->input('proposed_start');
+            $end           = (string) $this->input('proposed_end');
+
+            // 1. Hunting license state must match the property's state.
+            if ($propertyState) {
+                foreach ((array) $this->input('hunters', []) as $i => $hunter) {
+                    if (($hunter['hunting_license_state'] ?? null) !== $propertyState) {
+                        $validator->errors()->add(
+                            "hunters.{$i}.hunting_license_state",
+                            "Hunting license must be issued by {$propertyState} — the state this property is in.",
+                        );
+                    }
+                }
+            }
+
+            // 2. Term must respect the listing type.
+            if (in_array($listing->listing_type, ['annual_lease', 'seasonal_lease'], true)) {
+                // Fixed-term: the season is the term. Reject an ended season and
+                // any attempt to propose dates other than the listing's season.
+                if ($seasonEnd && $seasonEnd < $today) {
+                    $validator->errors()->add('proposed_start', 'This listing\'s season has ended and is no longer accepting applications.');
+                } elseif (($seasonStart && $start !== $seasonStart) || ($seasonEnd && $end !== $seasonEnd)) {
+                    $validator->errors()->add('proposed_start', 'The lease term is fixed to this listing\'s season and cannot be changed.');
+                }
+            } elseif ($listing->listing_type === 'day_hunt') {
+                // Day hunt: the chosen range must sit inside the season window and
+                // must not overlap any booked / blocked / maintenance range.
+                if ($seasonStart && $start && $start < $seasonStart) {
+                    $validator->errors()->add('proposed_start', 'The start date must fall within the listing\'s available season.');
+                }
+                if ($seasonEnd && $end && $end > $seasonEnd) {
+                    $validator->errors()->add('proposed_end', 'The end date must fall within the listing\'s available season.');
+                }
+
+                if ($start && $end) {
+                    foreach (app(PropertyService::class)->getUnavailableRanges($listing->id) as $range) {
+                        // Inclusive ranges overlap when each starts on/before the other ends.
+                        if ($start <= $range['end'] && $end >= $range['start']) {
+                            $validator->errors()->add('proposed_start', 'Those dates are not available — part of the range is already booked or blocked. Please pick open dates.');
+                            break;
+                        }
+                    }
+                }
+            }
+        });
     }
 
     public function messages(): array

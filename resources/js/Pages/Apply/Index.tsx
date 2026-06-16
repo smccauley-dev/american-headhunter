@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link, useForm } from '@inertiajs/react';
 import { US_STATES } from '@/lib/usStates';
+import { formatPhoneInput } from '@/lib/phone';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -96,9 +97,16 @@ interface CertificationDoc {
     content: string;
 }
 
+interface UnavailableRange {
+    start: string;
+    end: string;
+    reason: string;
+}
+
 interface ApplyIndexProps {
     listing: Listing;
     property: Property;
+    unavailableRanges: UnavailableRange[];
     primaryHunter: HunterData;
     savedGuests: SavedGuest[];
     certificationDoc: CertificationDoc | null;
@@ -129,6 +137,24 @@ function isMinorDob(dob: string): boolean {
     if (!dob) return false;
     const age = (Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000);
     return age < 18;
+}
+
+// ── Date helpers (calendar / availability) ──────────────────────────────────────
+// All dates are handled as YYYY-MM-DD strings to dodge timezone drift.
+
+function isoDate(year: number, month: number, day: number): string {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** True if the inclusive [start, end] range touches any unavailable range. */
+function rangeOverlapsUnavailable(start: string, end: string, ranges: UnavailableRange[]): boolean {
+    if (!start || !end) return false;
+    return ranges.some(r => start <= r.end && end >= r.start);
+}
+
+/** True if a single day falls inside any unavailable range. */
+function dayIsUnavailable(day: string, ranges: UnavailableRange[]): boolean {
+    return ranges.some(r => day >= r.start && day <= r.end);
 }
 
 function blankGuest(): HunterData {
@@ -290,16 +316,26 @@ interface HunterCardProps {
     onUpdate: (field: keyof HunterData, value: unknown) => void;
     onRemove?: () => void;
     errors: Record<string, string>;
+    propertyState: string;
 }
 
 const errStyle: React.CSSProperties = {
     color: 'var(--blaze)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4,
 };
 
-function HunterCard({ index, hunter, isPrimary, isExpanded, onToggle, onUpdate, onRemove, errors }: HunterCardProps) {
+function HunterCard({ index, hunter, isPrimary, isExpanded, onToggle, onUpdate, onRemove, errors, propertyState }: HunterCardProps) {
     const minor = isMinorDob(hunter.date_of_birth);
     const prefix = `hunters.${index}`;
     const e = (field: string): string => errors[`${prefix}.${field}`] ?? '';
+
+    // The hunting license must be issued by the property's state, so the field is
+    // locked to it — keep the underlying form value in sync (prefilled credentials
+    // or saved guests may carry a different state).
+    useEffect(() => {
+        if (propertyState && hunter.hunting_license_state !== propertyState) {
+            onUpdate('hunting_license_state', propertyState);
+        }
+    }, [propertyState, hunter.hunting_license_state]);
 
     const errorCount = Object.keys(errors).filter(k => k.startsWith(`${prefix}.`)).length;
 
@@ -391,12 +427,12 @@ function HunterCard({ index, hunter, isPrimary, isExpanded, onToggle, onUpdate, 
                         </div>
                         <div>
                             <label style={labelStyle}>Home Phone</label>
-                            <input type="tel" value={hunter.home_phone} onChange={e => onUpdate('home_phone', e.target.value)} style={inputStyle(!!e('home_phone'))} />
+                            <input type="tel" value={hunter.home_phone} onChange={e => onUpdate('home_phone', formatPhoneInput(e.target.value))} style={inputStyle(!!e('home_phone'))} placeholder="(555) 123-4567" />
                             {e('home_phone') && <div style={errStyle}>{e('home_phone')}</div>}
                         </div>
                         <div>
                             <label style={labelStyle}>Cell Phone *</label>
-                            <input type="tel" value={hunter.cell_phone} onChange={e => onUpdate('cell_phone', e.target.value)} style={inputStyle(!!e('cell_phone'))} />
+                            <input type="tel" value={hunter.cell_phone} onChange={e => onUpdate('cell_phone', formatPhoneInput(e.target.value))} style={inputStyle(!!e('cell_phone'))} placeholder="(555) 123-4567" />
                             {e('cell_phone') && <div style={errStyle}>{e('cell_phone')}</div>}
                         </div>
                     </div>
@@ -456,7 +492,7 @@ function HunterCard({ index, hunter, isPrimary, isExpanded, onToggle, onUpdate, 
                         </div>
                         <div style={{ gridColumn: '1 / -1' }}>
                             <label style={labelStyle}>Contact Phone *</label>
-                            <input type="tel" value={hunter.emergency_contact_phone} onChange={e => onUpdate('emergency_contact_phone', e.target.value)} style={inputStyle(!!e('emergency_contact_phone'))} />
+                            <input type="tel" value={hunter.emergency_contact_phone} onChange={e => onUpdate('emergency_contact_phone', formatPhoneInput(e.target.value))} style={inputStyle(!!e('emergency_contact_phone'))} placeholder="(555) 123-4567" />
                             {e('emergency_contact_phone') && <div style={errStyle}>{e('emergency_contact_phone')}</div>}
                         </div>
                     </div>
@@ -545,10 +581,16 @@ function HunterCard({ index, hunter, isPrimary, isExpanded, onToggle, onUpdate, 
                         </div>
                         <div>
                             <label style={labelStyle}>Issuing State *</label>
-                            <select value={hunter.hunting_license_state} onChange={e => onUpdate('hunting_license_state', e.target.value)} style={{ ...inputStyle(!!e('hunting_license_state')), appearance: 'none' }}>
-                                <option value="">—</option>
-                                {US_STATES.map(([code, name]) => <option key={code} value={code}>{code} — {name}</option>)}
-                            </select>
+                            <input
+                                type="text"
+                                value={propertyState || hunter.hunting_license_state}
+                                readOnly
+                                disabled
+                                style={{ ...inputStyle(!!e('hunting_license_state')), background: '#f2efe9', color: 'var(--ink-lift)', cursor: 'not-allowed' }}
+                            />
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sage-dim)', marginTop: 4 }}>
+                                Must match the property's state ({propertyState})
+                            </div>
                             {e('hunting_license_state') && <div style={errStyle}>{e('hunting_license_state')}</div>}
                         </div>
                         <div>
@@ -610,6 +652,133 @@ function HunterCard({ index, hunter, isPrimary, isExpanded, onToggle, onUpdate, 
     );
 }
 
+// ── Availability calendar (day hunt date picker) ────────────────────────────────
+
+interface AvailabilityCalendarProps {
+    seasonStart: string;        // YYYY-MM-DD
+    seasonEnd: string;          // YYYY-MM-DD
+    today: string;              // YYYY-MM-DD
+    unavailable: UnavailableRange[];
+    start: string;
+    end: string;
+    onChange: (start: string, end: string) => void;
+}
+
+const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+function AvailabilityCalendar({ seasonStart, seasonEnd, today, unavailable, start, end, onChange }: AvailabilityCalendarProps) {
+    // Navigation is clamped to the months the season spans (and never before now).
+    const minMonthAnchor = seasonStart < today ? today : seasonStart;
+    const [view, setView] = useState(() => {
+        const base = start || minMonthAnchor;
+        return { year: Number(base.slice(0, 4)), month: Number(base.slice(5, 7)) - 1 };
+    });
+
+    const minYM = `${minMonthAnchor.slice(0, 4)}-${minMonthAnchor.slice(5, 7)}`;
+    const maxYM = `${seasonEnd.slice(0, 4)}-${seasonEnd.slice(5, 7)}`;
+    const viewYM = `${view.year}-${String(view.month + 1).padStart(2, '0')}`;
+    const canPrev = viewYM > minYM;
+    const canNext = viewYM < maxYM;
+
+    function shiftMonth(delta: number) {
+        setView(v => {
+            const d = new Date(v.year, v.month + delta, 1);
+            return { year: d.getFullYear(), month: d.getMonth() };
+        });
+    }
+
+    function dayState(iso: string): 'disabled' | 'available' | 'selected' | 'in-range' {
+        const outOfSeason = iso < seasonStart || iso > seasonEnd || iso < today;
+        if (outOfSeason || dayIsUnavailable(iso, unavailable)) return 'disabled';
+        if (iso === start || iso === end) return 'selected';
+        if (start && end && iso > start && iso < end) return 'in-range';
+        return 'available';
+    }
+
+    function pick(iso: string) {
+        // First click (or restart) sets the start and clears the end. Second click
+        // sets the end — unless the span would cross a taken date, in which case we
+        // treat it as a fresh start so the user can't book over blocked dates.
+        if (!start || (start && end)) {
+            onChange(iso, '');
+            return;
+        }
+        if (iso <= start) {
+            onChange(iso, '');
+            return;
+        }
+        if (rangeOverlapsUnavailable(start, iso, unavailable)) {
+            onChange(iso, '');
+            return;
+        }
+        onChange(start, iso);
+    }
+
+    const firstWeekday = new Date(view.year, view.month, 1).getDay();
+    const daysInMonth = new Date(view.year, view.month + 1, 0).getDate();
+    const monthLabel = new Date(view.year, view.month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const cells: (string | null)[] = [
+        ...Array(firstWeekday).fill(null),
+        ...Array.from({ length: daysInMonth }, (_, i) => isoDate(view.year, view.month, i + 1)),
+    ];
+
+    const navBtn = (enabled: boolean): React.CSSProperties => ({
+        fontFamily: 'var(--mono)', fontSize: 16, lineHeight: 1, width: 32, height: 32,
+        border: '1px solid var(--parch-deep)', background: 'transparent',
+        color: enabled ? 'var(--ink)' : '#c8c3ba', cursor: enabled ? 'pointer' : 'not-allowed',
+    });
+
+    return (
+        <div style={{ border: '1px solid var(--parch-deep)', padding: 20, maxWidth: 360 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <button type="button" onClick={() => canPrev && shiftMonth(-1)} disabled={!canPrev} style={navBtn(canPrev)}>‹</button>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink)' }}>
+                    {monthLabel}
+                </span>
+                <button type="button" onClick={() => canNext && shiftMonth(1)} disabled={!canNext} style={navBtn(canNext)}>›</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+                {WEEKDAYS.map(d => (
+                    <div key={d} style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.08em', color: 'var(--sage-dim)', textAlign: 'center', padding: '4px 0' }}>
+                        {d}
+                    </div>
+                ))}
+                {cells.map((iso, i) => {
+                    if (!iso) return <div key={`e${i}`} />;
+                    const s = dayState(iso);
+                    const dayNum = Number(iso.slice(8, 10));
+                    const bg = s === 'selected' ? 'var(--blaze)' : s === 'in-range' ? '#f6dccb' : 'transparent';
+                    const color = s === 'disabled' ? '#c8c3ba' : s === 'selected' ? 'white' : 'var(--ink)';
+                    return (
+                        <button
+                            key={iso}
+                            type="button"
+                            disabled={s === 'disabled'}
+                            onClick={() => pick(iso)}
+                            style={{
+                                fontFamily: 'var(--mono)', fontSize: 12, height: 36,
+                                border: 'none', background: bg, color,
+                                cursor: s === 'disabled' ? 'not-allowed' : 'pointer',
+                                textDecoration: s === 'disabled' ? 'line-through' : 'none',
+                            }}
+                        >
+                            {dayNum}
+                        </button>
+                    );
+                })}
+            </div>
+
+            <div style={{ display: 'flex', gap: 16, marginTop: 14, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sage-dim)' }}>
+                <span><span style={{ display: 'inline-block', width: 10, height: 10, background: 'var(--blaze)', marginRight: 5, verticalAlign: 'middle' }} />Selected</span>
+                <span><span style={{ display: 'inline-block', width: 10, height: 10, background: '#f6dccb', marginRight: 5, verticalAlign: 'middle' }} />In range</span>
+                <span style={{ textDecoration: 'line-through' }}>Unavailable</span>
+            </div>
+        </div>
+    );
+}
+
 // ── Step indicator ────────────────────────────────────────────────────────────
 
 function StepIndicator({ step }: { step: 1 | 2 }) {
@@ -640,13 +809,23 @@ function StepIndicator({ step }: { step: 1 | 2 }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function ApplyIndex({ listing, property, primaryHunter, savedGuests, certificationDoc }: ApplyIndexProps) {
+export default function ApplyIndex({ listing, property, unavailableRanges, primaryHunter, savedGuests, certificationDoc }: ApplyIndexProps) {
     const [step, setStep] = useState<1 | 2>(1);
     const [expandedIndex, setExpandedIndex] = useState<number>(0);
     const [showGuestPicker, setShowGuestPicker] = useState(false);
     const [showCertModal, setShowCertModal] = useState(false);
 
     const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local tz
+
+    // Listing type drives the whole date experience: annual/seasonal leases run
+    // the entire fixed season (applicant can't change the term); a day hunt lets
+    // the applicant pick an available range inside the season.
+    const isFixedTerm = listing.listing_type === 'annual_lease' || listing.listing_type === 'seasonal_lease';
+    const isDayHunt   = listing.listing_type === 'day_hunt';
+    const seasonEnded = !!listing.season_end && listing.season_end < today;
+    // A fixed-term listing whose season has ended can no longer be applied to.
+    const blockedPastSeason = isFixedTerm && seasonEnded;
+
     // Only prefill the proposed term from the listing's season when it is still a
     // valid forward-looking range. A past season (e.g. a stale active listing)
     // would otherwise pre-load dates that always fail server validation
@@ -654,6 +833,12 @@ export default function ApplyIndex({ listing, property, primaryHunter, savedGues
     // nothing.
     const seasonUsable = !!listing.season_start && !!listing.season_end
         && listing.season_start >= today && listing.season_end > listing.season_start;
+
+    // Fixed-term: always show the season dates (even an ended one — they stay
+    // visible but locked and the submit is blocked). Day hunt: applicant picks,
+    // so start empty. Otherwise fall back to the forward-looking prefill.
+    const defaultStart = isFixedTerm ? (listing.season_start ?? '') : (!isDayHunt && seasonUsable ? listing.season_start! : '');
+    const defaultEnd   = isFixedTerm ? (listing.season_end ?? '')   : (!isDayHunt && seasonUsable ? listing.season_end!   : '');
 
     const { data, setData, post, processing, errors } = useForm<{
         application_type: 'individual' | 'club';
@@ -664,8 +849,8 @@ export default function ApplyIndex({ listing, property, primaryHunter, savedGues
         certification_accepted: boolean;
     }>({
         application_type: 'individual',
-        proposed_start:   seasonUsable ? listing.season_start! : '',
-        proposed_end:     seasonUsable ? listing.season_end!   : '',
+        proposed_start:   defaultStart,
+        proposed_end:     defaultEnd,
         message:                  '',
         hunters:                  [{ ...primaryHunter, dl_photo: null, dl_photo_back: null, hunting_license_photo: null, hunting_license_photo_back: null }],
         certification_accepted:   false,
@@ -700,9 +885,17 @@ export default function ApplyIndex({ listing, property, primaryHunter, savedGues
     function validateStep1(): boolean {
         // Mirror the server rules so the step gate matches: start today-or-later,
         // end after start. (Inertia still runs full server-side validation.)
+        if (blockedPastSeason) return false;
         if (!data.proposed_start || !data.proposed_end) return false;
         if (data.proposed_start < today) return false;
         if (data.proposed_end <= data.proposed_start) return false;
+
+        // Day hunt: the range must sit inside the season and avoid taken dates.
+        if (isDayHunt) {
+            if (listing.season_start && data.proposed_start < listing.season_start) return false;
+            if (listing.season_end && data.proposed_end > listing.season_end) return false;
+            if (rangeOverlapsUnavailable(data.proposed_start, data.proposed_end, unavailableRanges)) return false;
+        }
         return true;
     }
 
@@ -906,20 +1099,78 @@ export default function ApplyIndex({ listing, property, primaryHunter, savedGues
                             <div style={{ marginBottom: 44 }}>
                                 <div style={sectionLabel()}>
                                     <span style={{ width: 20, height: 1, background: 'var(--blaze)', display: 'block' }} />
-                                    Proposed Season
+                                    {isDayHunt ? 'Select Your Dates' : 'Proposed Season'}
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                                    <div>
-                                        <label style={labelStyle}>Start Date *</label>
-                                        <input type="date" min={today} value={data.proposed_start} onChange={e => setData('proposed_start', e.target.value)} style={inputStyle(!!errors.proposed_start)} />
-                                        {errors.proposed_start && <div style={{ color: 'var(--blaze)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4 }}>{errors.proposed_start}</div>}
+
+                                {blockedPastSeason && (
+                                    <div style={{ background: '#fff0f0', border: '1px solid var(--blaze)', padding: '14px 18px', marginBottom: 16, fontFamily: 'var(--body)', fontSize: 14, color: 'var(--ink)' }}>
+                                        This listing's season ended on {formatDate(listing.season_end)} and is no longer accepting applications.
                                     </div>
-                                    <div>
-                                        <label style={labelStyle}>End Date *</label>
-                                        <input type="date" min={data.proposed_start || today} value={data.proposed_end} onChange={e => setData('proposed_end', e.target.value)} style={inputStyle(!!errors.proposed_end)} />
-                                        {errors.proposed_end && <div style={{ color: 'var(--blaze)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4 }}>{errors.proposed_end}</div>}
+                                )}
+
+                                {isFixedTerm ? (
+                                    // Annual / seasonal: the term is the listing's whole season and the
+                                    // applicant cannot change it — show it locked.
+                                    <>
+                                        <p style={{ fontFamily: 'var(--body)', fontSize: 13, color: 'var(--ink-lift)', margin: '0 0 14px', lineHeight: 1.6 }}>
+                                            This is a {formatType(listing.listing_type).toLowerCase()} — the term covers the full season and is set by the landowner.
+                                        </p>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                            <div>
+                                                <label style={labelStyle}>Season Start</label>
+                                                <input type="date" value={data.proposed_start} readOnly disabled style={{ ...inputStyle(!!errors.proposed_start), background: '#f2efe9', color: 'var(--ink-lift)', cursor: 'not-allowed' }} />
+                                                {errors.proposed_start && <div style={{ color: 'var(--blaze)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4 }}>{errors.proposed_start}</div>}
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Season End</label>
+                                                <input type="date" value={data.proposed_end} readOnly disabled style={{ ...inputStyle(!!errors.proposed_end), background: '#f2efe9', color: 'var(--ink-lift)', cursor: 'not-allowed' }} />
+                                                {errors.proposed_end && <div style={{ color: 'var(--blaze)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4 }}>{errors.proposed_end}</div>}
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : isDayHunt && listing.season_start && listing.season_end ? (
+                                    // Day hunt: applicant picks an available range inside the season.
+                                    <>
+                                        <p style={{ fontFamily: 'var(--body)', fontSize: 13, color: 'var(--ink-lift)', margin: '0 0 14px', lineHeight: 1.6 }}>
+                                            Pick your arrival and departure dates. Dates that are crossed out are already booked or unavailable.
+                                        </p>
+                                        <AvailabilityCalendar
+                                            seasonStart={listing.season_start}
+                                            seasonEnd={listing.season_end}
+                                            today={today}
+                                            unavailable={unavailableRanges}
+                                            start={data.proposed_start}
+                                            end={data.proposed_end}
+                                            onChange={(s, en) => setData(d => ({ ...d, proposed_start: s, proposed_end: en }))}
+                                        />
+                                        <div style={{ marginTop: 14, fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink)' }}>
+                                            {data.proposed_start && data.proposed_end
+                                                ? `${formatDate(data.proposed_start)} → ${formatDate(data.proposed_end)}`
+                                                : data.proposed_start
+                                                    ? `${formatDate(data.proposed_start)} → select an end date`
+                                                    : 'No dates selected yet'}
+                                        </div>
+                                        {(errors.proposed_start || errors.proposed_end) && (
+                                            <div style={{ color: 'var(--blaze)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 6 }}>
+                                                {errors.proposed_start || errors.proposed_end}
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    // Fallback (e.g. auction, or a listing missing season dates): editable range.
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                        <div>
+                                            <label style={labelStyle}>Start Date *</label>
+                                            <input type="date" min={today} value={data.proposed_start} onChange={e => setData('proposed_start', e.target.value)} style={inputStyle(!!errors.proposed_start)} />
+                                            {errors.proposed_start && <div style={{ color: 'var(--blaze)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4 }}>{errors.proposed_start}</div>}
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>End Date *</label>
+                                            <input type="date" min={data.proposed_start || today} value={data.proposed_end} onChange={e => setData('proposed_end', e.target.value)} style={inputStyle(!!errors.proposed_end)} />
+                                            {errors.proposed_end && <div style={{ color: 'var(--blaze)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4 }}>{errors.proposed_end}</div>}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
 
                             {/* Message */}
@@ -983,6 +1234,7 @@ export default function ApplyIndex({ listing, property, primaryHunter, savedGues
                                     onUpdate={(field, value) => updateHunter(i, field, value)}
                                     onRemove={i > 0 ? () => removeHunter(i) : undefined}
                                     errors={errors as Record<string, string>}
+                                    propertyState={property.state_code}
                                 />
                             ))}
 
@@ -1062,9 +1314,9 @@ export default function ApplyIndex({ listing, property, primaryHunter, savedGues
                             <div style={{ display: 'flex', gap: 16, alignItems: 'center', borderTop: '1px solid #e0dbd2', paddingTop: 32 }}>
                                 <button
                                     type="submit"
-                                    disabled={processing || !data.certification_accepted}
+                                    disabled={processing || !data.certification_accepted || blockedPastSeason}
                                     className="btn-solid"
-                                    style={{ opacity: (processing || !data.certification_accepted) ? 0.5 : 1, cursor: (processing || !data.certification_accepted) ? 'not-allowed' : 'pointer' }}
+                                    style={{ opacity: (processing || !data.certification_accepted || blockedPastSeason) ? 0.5 : 1, cursor: (processing || !data.certification_accepted || blockedPastSeason) ? 'not-allowed' : 'pointer' }}
                                 >
                                     {processing ? 'Submitting…' : 'Submit Application →'}
                                 </button>

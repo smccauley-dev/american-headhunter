@@ -7,6 +7,7 @@ use App\Models\Property\PropertyListing;
 use App\Models\Property\PropertyManager;
 use App\Models\Property\PropertyContact;
 use App\Models\Property\PropertyAccessInfo;
+use App\Models\Property\PropertyAvailability;
 use App\Models\Property\PropertyPhoto;
 use App\Services\BaseService;
 use App\Services\Documents\DocumentService;
@@ -128,6 +129,26 @@ class PropertyService extends BaseService
         return PropertyListing::on('property_read')
             ->with(['property', 'amenities'])
             ->find($listingId);
+    }
+
+    /**
+     * Booked / blocked / maintenance date ranges for a listing — the dates a
+     * day-hunt applicant cannot select. Returns inclusive ISO date ranges.
+     *
+     * @return list<array{start: string, end: string, reason: string}>
+     */
+    public function getUnavailableRanges(string $listingId): array
+    {
+        return PropertyAvailability::on('property_read')
+            ->where('listing_id', $listingId)
+            ->orderBy('date_start')
+            ->get(['date_start', 'date_end', 'reason'])
+            ->map(fn (PropertyAvailability $r) => [
+                'start'  => $r->date_start->toDateString(),
+                'end'    => $r->date_end->toDateString(),
+                'reason' => $r->reason,
+            ])
+            ->all();
     }
 
     /**

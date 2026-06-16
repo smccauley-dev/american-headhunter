@@ -27,11 +27,19 @@ class SubmitApplicationTest extends TestCase
     private string $propertyId;
     private string $listingId;
 
+    /** @var list<string> Extra listing ids created per-test, removed in tearDown. */
+    private array $extraListingIds = [];
+
     private const TX_CONNECTIONS = ['identity', 'lease', 'documents', 'platform'];
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        // The submit route is rate-limited (throttle:5,1); this suite issues more
+        // than five POSTs, which would otherwise return 429 instead of exercising
+        // the controller. Throttling isn't under test here.
+        $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
 
         foreach (self::TX_CONNECTIONS as $conn) {
             DB::connection($conn)->beginTransaction();
@@ -115,6 +123,12 @@ class SubmitApplicationTest extends TestCase
         }
 
         // Clean up committed property fixtures
+        foreach ($this->extraListingIds as $extraId) {
+            DB::connection('property')->table('property_availability')
+                ->where('listing_id', $extraId)->delete();
+            DB::connection('property')->table('property_listings')
+                ->where('id', $extraId)->delete();
+        }
         DB::connection('property')->table('property_listings')
             ->where('id', $this->listingId)->delete();
         DB::connection('property')->table('properties')
@@ -385,15 +399,185 @@ class SubmitApplicationTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Test 5 — Fixed-term term lock: proposed dates must equal the season
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_fixed_term_application_rejects_dates_other_than_the_season(): void
+    {
+        $response = $this->withSession(['auth.user_id' => $this->userId])
+            ->post("/apply/{$this->listingId}", $this->validPayload([
+                'proposed_start' => '2026-10-15',  // inside the season but not its start
+                'proposed_end'   => '2026-11-15',
+            ]));
+
+        $response->assertSessionHasErrors(['proposed_start']);
+        $this->assertDatabaseMissing('lease_applications', [
+            'applicant_user_id' => $this->userId,
+        ], 'lease');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test 6 — A fixed-term listing whose season has ended is blocked
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_fixed_term_application_blocked_when_season_has_ended(): void
+    {
+        $endedListingId = $this->createListing([
+            'listing_type' => 'seasonal_lease',
+            'season_start' => '2024-10-01',
+            'season_end'   => '2024-11-30',
+        ]);
+
+        $response = $this->withSession(['auth.user_id' => $this->userId])
+            ->post("/apply/{$endedListingId}", $this->validPayload([
+                'proposed_start' => '2024-10-01',
+                'proposed_end'   => '2024-11-30',
+            ]));
+
+        $response->assertSessionHasErrors(['proposed_start']);
+        $this->assertDatabaseMissing('lease_applications', [
+            'applicant_user_id' => $this->userId,
+        ], 'lease');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test 7 — Hunting license state must match the property's state
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_application_rejected_when_hunting_license_state_mismatches_property(): void
+    {
+        // Property is in TX (setUp); a license issued by OK must be rejected.
+        $response = $this->withSession(['auth.user_id' => $this->userId])
+            ->post("/apply/{$this->listingId}", $this->validPayload([
+                'hunters' => [$this->primaryHunterData([
+                    'hunting_license_state' => 'OK',
+                ])],
+            ]));
+
+        $response->assertSessionHasErrors(['hunters.0.hunting_license_state']);
+        $this->assertDatabaseMissing('lease_applications', [
+            'applicant_user_id' => $this->userId,
+        ], 'lease');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test 8 — Day hunt: open dates inside the season are accepted
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_day_hunt_accepts_open_dates_within_season(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+
+        $dayHuntId = $this->createListing([
+            'listing_type' => 'day_hunt',
+            'season_start' => '2026-10-01',
+            'season_end'   => '2026-12-31',
+        ]);
+
+        $response = $this->withSession(['auth.user_id' => $this->userId])
+            ->post("/apply/{$dayHuntId}", $this->validPayload([
+                'proposed_start' => '2026-10-10',
+                'proposed_end'   => '2026-10-12',
+            ]));
+
+        $application = LeaseApplication::on('lease')
+            ->where('applicant_user_id', $this->userId)
+            ->first();
+        $this->assertNotNull($application, 'A valid day-hunt application should be created');
+        $response->assertRedirect(route('apply.status', $application->id));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test 9 — Day hunt: dates overlapping a booked range are rejected
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_day_hunt_rejects_dates_overlapping_unavailable_range(): void
+    {
+        $dayHuntId = $this->createListing([
+            'listing_type' => 'day_hunt',
+            'season_start' => '2026-10-01',
+            'season_end'   => '2026-12-31',
+        ]);
+
+        DB::connection('property')->table('property_availability')->insert([
+            'id'         => (string) Str::uuid(),
+            'listing_id' => $dayHuntId,
+            'date_start' => '2026-10-10',
+            'date_end'   => '2026-10-14',
+            'reason'     => 'booked',
+        ]);
+
+        $response = $this->withSession(['auth.user_id' => $this->userId])
+            ->post("/apply/{$dayHuntId}", $this->validPayload([
+                'proposed_start' => '2026-10-12',  // lands inside the booked range
+                'proposed_end'   => '2026-10-16',
+            ]));
+
+        $response->assertSessionHasErrors(['proposed_start']);
+        $this->assertDatabaseMissing('lease_applications', [
+            'applicant_user_id' => $this->userId,
+        ], 'lease');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test 10 — Day hunt: dates outside the season window are rejected
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_day_hunt_rejects_dates_outside_season_window(): void
+    {
+        $dayHuntId = $this->createListing([
+            'listing_type' => 'day_hunt',
+            'season_start' => '2026-10-01',
+            'season_end'   => '2026-10-31',
+        ]);
+
+        $response = $this->withSession(['auth.user_id' => $this->userId])
+            ->post("/apply/{$dayHuntId}", $this->validPayload([
+                'proposed_start' => '2026-11-05',  // after the season ends
+                'proposed_end'   => '2026-11-07',
+            ]));
+
+        $response->assertSessionHasErrors(['proposed_end']);
+        $this->assertDatabaseMissing('lease_applications', [
+            'applicant_user_id' => $this->userId,
+        ], 'lease');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    /** Create an extra active listing on the test property; cleaned up in tearDown. */
+    private function createListing(array $attributes): string
+    {
+        $id = (string) Str::uuid();
+        DB::connection('property')->table('property_listings')->insert(array_merge([
+            'id'               => $id,
+            'property_id'      => $this->propertyId,
+            'listing_type'     => 'day_hunt',
+            'status'           => 'active',
+            'season_start'     => '2026-10-01',
+            'season_end'       => '2026-11-30',
+            'max_hunters'      => 4,
+            'price_per_hunter' => '500.00',
+            'deposit_percent'  => 25,
+            'auto_renew'       => false,
+            'visibility'       => 'public',
+        ], $attributes));
+        $this->extraListingIds[] = $id;
+
+        return $id;
+    }
 
     private function validPayload(array $overrides = []): array
     {
         return array_merge([
             'application_type'       => 'individual',
-            'proposed_start'         => now()->addMonth()->toDateString(),
-            'proposed_end'           => now()->addMonths(2)->toDateString(),
+            // The fixture is an annual_lease — the term is locked to the listing's
+            // season, so a valid submission must propose exactly those dates.
+            'proposed_start'         => '2026-10-01',
+            'proposed_end'           => '2026-11-30',
             'message'                => 'Looking forward to hunting on your property.',
             'certification_accepted' => true,
             'hunters'                => [$this->primaryHunterData()],
