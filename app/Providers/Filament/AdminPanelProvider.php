@@ -231,6 +231,14 @@ class AdminPanelProvider extends PanelProvider
                 'System',
             ])
             ->middleware([
+                // SEC-043: trusted staff CRUD spans all users and cannot run
+                // under per-user RLS, so the admin panel uses the ah_system role.
+                // This MUST run first — before AuthenticateSession resolves the
+                // guard user. The panel never sets an RLS context, so resolving
+                // the user as the non-owner ah_runtime would return zero rows
+                // (RLS deny), leaving the guard unable to confirm the logged-in
+                // staff member and bouncing /admin <-> /admin/login forever.
+                \App\Http\Middleware\UseSystemDatabaseRole::class,
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
@@ -241,9 +249,6 @@ class AdminPanelProvider extends PanelProvider
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
                 \App\Http\Middleware\EnsureAdminIpAllowed::class,
-                // SEC-043: trusted staff CRUD spans all users and cannot run
-                // under per-user RLS, so the admin panel uses the ah_system role.
-                \App\Http\Middleware\UseSystemDatabaseRole::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
