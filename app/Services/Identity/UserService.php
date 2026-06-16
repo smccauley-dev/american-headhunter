@@ -134,11 +134,20 @@ class UserService extends BaseService
 
     /**
      * Admin-enable a single MFA factor. The factor is marked verified so it
-     * is immediately active; for TOTP the user must still scan a QR code on
-     * next login before codes will validate.
+     * is immediately active. TOTP can only be enabled if the user has already
+     * enrolled an authenticator secret (self-service) — admins cannot enroll a
+     * secret on the user's behalf, and enabling TOTP without one would lock the
+     * user out at login with a code that can never validate.
      */
     public function enableMfaFactor(User $user, string $method, ?string $adminUserId = null): void
     {
+        if ($method === 'totp' && ! $this->hasTotpSecret($user)) {
+            throw new \RuntimeException(
+                'This user has not enrolled an authenticator app yet. Ask them to set it up '
+                . 'from their Security settings; TOTP cannot be enabled without an enrolled secret.'
+            );
+        }
+
         $cfg = MfaConfiguration::firstOrNew([
             'user_id' => $user->id,
             'method'  => $method,
@@ -157,6 +166,19 @@ class UserService extends BaseService
             userId:         $adminUserId,
             actionSummary:  "MFA factor enabled: {$method} (admin-initiated)",
         );
+    }
+
+    /**
+     * Whether the user has an enrolled TOTP secret on file.
+     */
+    private function hasTotpSecret(User $user): bool
+    {
+        return DB::connection('identity')
+            ->table('mfa_configurations')
+            ->where('user_id', $user->id)
+            ->where('method', 'totp')
+            ->whereNotNull('secret_encrypted')
+            ->exists();
     }
 
     /**

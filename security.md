@@ -1102,6 +1102,30 @@ This retains recent unused challenges for the full 7-day window (useful if inves
 
 ---
 
+## SEC-042 [Track B] — Web (Session/Inertia) MFA Flow Non-Functional: MFA Users Logged In Unchallenged + Lockout Risk (HIGH) — Fixed 2026-06-16
+
+**Area:** `routes/auth.php`, `app/Http/Controllers/Auth/AuthController.php`, `app/Http/Controllers/Auth/MfaController.php`, `app/Services/Auth/MfaService.php`, `resources/js/Pages/Auth/MfaVerify.tsx`; member self-enrollment in `app/Http/Controllers/Member/SecurityController.php`, `resources/js/Pages/Member/Profile/Hunter.tsx`, `app/Services/Mfa/TotpMfaMethod.php`, `app/Services/Identity/UserService.php`, `app/Filament/Admin/Resources/Users/Pages/EditCustomerUser.php`.
+
+**Risk:** A user with MFA enabled who logged in through the **web portal** (custom session/Inertia auth — distinct from the already-correct API/SPA flow) was **never challenged for a second factor**. Reported live: enabling email + TOTP on a user did not prompt for a code on next login — username + password landed the user (or silently failed). The web MFA path was a stub with four independent defects, two of which are directly security-relevant (second factor not enforced) and two of which created a hard-lockout hazard:
+
+1. **Route bounce (auth bypass / DoS for MFA users).** `/mfa/verify` (GET + POST) lived inside the `auth.session` middleware group. That middleware redirects to `auth.login` whenever `auth.user_id` is absent — but during MFA the session is intentionally *not yet authenticated* (state held in Valkey `mfa_pending:{sessionId}`). So the verify page bounced straight back to login: an MFA user could never reach the challenge, and the practical outcome was either no challenge or an unusable login.
+2. **No challenge dispatched at login.** `AuthController::login()` set the MFA-pending marker but never called any method's `triggerChallenge()`. Email/SMS codes were therefore never generated or sent, so even a reachable verify page had no code to accept.
+3. **Wrong verify path + call to a non-existent method.** `MfaController::verify()` called `verifyChallenge('totp')` (which does not validate a stored TOTP secret) and `verifyBackupCode()`, **which does not exist** on `MfaService` (the real method is `verifyAndConsumeRecoveryCode()`). Verification would fatal/never succeed.
+4. **No TOTP enrollment (lockout trap).** Neither the member Security page nor the admin user editor ever generated a TOTP secret. Admins (and the member toggle) could flip `mfa_configurations.method='totp'` to enabled with `secret_encrypted = NULL`. Once defects 1–3 were fixed, such a user would be prompted at login for an authenticator code that **can never validate** → permanent self-lockout. Confirmed on live data: the reported user had `totp` enabled with `has_secret = NULL` and 0 recovery codes.
+
+**Root Cause:** The web/session MFA flow was scaffolded but never wired end-to-end — it duplicated the API flow's intent without reusing its `MfaMethodRegistry` dispatch, and the self-service TOTP enrollment half (secret generation, QR, confirm, recovery codes) was never built for the Inertia portal, leaving only an enable toggle with no secret behind it.
+
+**Fix:**
+- **Routing.** Moved `GET/POST /mfa/verify` *out* of `auth.session` (they must run after password but before the session is authenticated); added `POST /mfa/resend` (throttled). All remain inside the `db.system` group (pre-context, `ah_system` role).
+- **Challenge dispatch.** `AuthController::login()` now, when `MfaService::isEnabled()`, marks pending and loops `MfaService::getEnabledMethods($user)` (new) through `MfaMethodRegistry->get($method)->triggerChallenge()` so email/SMS codes are actually sent, then redirects to `auth.mfa.verify`.
+- **Verification.** `MfaController::verify()` now validates the submitted code against each enabled method via the registry (`->verify()`), then falls back to `verifyAndConsumeRecoveryCode()`. Added `show()` (passes enabled `methods` + `canResendCode` to Inertia) and `resend()`. Removed the bogus `verifyChallenge('totp')` / `verifyBackupCode()` calls.
+- **Self-service TOTP enrollment (parity with API).** `SecurityController::enrollTotp()` (generates + stores secret, returns secret + SVG-data-URI QR via new `TotpMfaMethod::qrCodeSvgDataUri()`) and `confirmTotp()` (verifies the code, enables the factor, issues recovery codes on first enrollment only). `Hunter.tsx` SecurityTab gained the QR/secret/confirm panel and one-time recovery-code display.
+- **Lockout prevention.** `SecurityController::enableMfa()` now rejects `totp` (must go through enroll/confirm); `UserService::enableMfaFactor()` throws if `totp` is enabled without an on-file secret (`hasTotpSecret()`); the admin editor's TOTP enable action surfaces that message and its description warns admins cannot enroll a secret on a user's behalf.
+
+**Verification:** End-to-end via a live cookie-jar curl session (PHPUnit was unsuitable — the test harness churns the session ID across requests, and MFA-pending is keyed by session ID in Valkey). Confirmed: login → `302 /mfa/verify`; `GET /mfa/verify` → `200` (no bounce — defect 1 fixed); email challenge counter incremented at login (defect 2 fixed); `POST /mfa/verify` with a valid TOTP → `302 /member/profile` and authenticated `GET /member/profile` → `200` (defect 3 fixed); `enrollTotp` returns secret + ~25 KB SVG QR data-URI (defect 4 fixed). Live remediation: the reported user's secretless `totp` row was disabled (email factor left enabled); scratch test user and files removed. `npm run build` clean (no TS errors); all routes registered; PHP lints clean.
+
+---
+
 ## [Track B] Architectural Security Decisions Added — Phase 3 MFA
 
 | Decision | Rationale |

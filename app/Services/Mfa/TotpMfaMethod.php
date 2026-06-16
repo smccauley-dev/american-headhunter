@@ -4,6 +4,8 @@ namespace App\Services\Mfa;
 
 use App\Contracts\Mfa\MfaMethodContract;
 use App\Models\Identity\User;
+use Endroid\QrCode\Builder\Builder;
+use Endroid\QrCode\Writer\SvgWriter;
 use Illuminate\Support\Facades\DB;
 use PragmaRX\Google2FA\Google2FA;
 
@@ -40,6 +42,21 @@ class TotpMfaMethod implements MfaMethodContract
             holder:  $email,
             secret:  $secret,
         );
+    }
+
+    /**
+     * Render the otpauth:// provisioning URI as a scannable SVG QR code,
+     * base64-encoded as a data URI for direct use in an <img src>. Used by
+     * the web (Inertia) enrollment flow, which has no client-side QR library.
+     */
+    public function qrCodeSvgDataUri(string $email, string $secret): string
+    {
+        return (new Builder(
+            writer: new SvgWriter(),
+            data:   $this->qrCodeUrl($email, $secret),
+            size:   220,
+            margin: 8,
+        ))->build()->getDataUri();
     }
 
     public function storeSecret(User $user, string $secret): void

@@ -1024,7 +1024,7 @@ class EditCustomerUser extends EditRecord
                 'modalName'   => 'Authenticator App MFA',
                 'enableIcon'  => 'heroicon-o-device-phone-mobile',
                 'disableIcon' => 'heroicon-o-shield-check',
-                'enableDesc'  => 'Admin-activates TOTP. The user must still scan the QR code on their next login to complete enrollment.',
+                'enableDesc'  => 'Re-activates TOTP for this account. Only works if the user has already enrolled an authenticator app from their Security settings — admins cannot enroll a secret on their behalf.',
                 'disableDesc' => 'Removes TOTP two-factor authentication. The user will need to re-scan the QR code to re-enroll.',
             ],
             'sms' => [

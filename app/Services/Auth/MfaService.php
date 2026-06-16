@@ -30,6 +30,17 @@ class MfaService extends BaseService
         return MfaConfiguration::where('user_id', $user->id)->get();
     }
 
+    /**
+     * Names of the MFA methods the user currently has enabled (e.g. ['totp','email']).
+     */
+    public function getEnabledMethods(User $user): array
+    {
+        return MfaConfiguration::where('user_id', $user->id)
+            ->where('is_enabled', true)
+            ->pluck('method')
+            ->all();
+    }
+
     public function hasRecoveryCodes(User $user): bool
     {
         return DB::connection('identity')

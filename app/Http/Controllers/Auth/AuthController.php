@@ -11,6 +11,7 @@ use App\Services\Auth\MfaService;
 use App\Services\Auth\SessionService;
 use App\Services\Identity\OfacService;
 use App\Services\Identity\UserService;
+use App\Services\Mfa\MfaMethodRegistry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -24,6 +25,7 @@ class AuthController extends Controller
         private readonly SessionService $session,
         private readonly UserService    $users,
         private readonly OfacService    $ofac,
+        private readonly MfaMethodRegistry $mfaRegistry,
     ) {}
 
     public function getStarted(): Response
@@ -127,6 +129,13 @@ class AuthController extends Controller
         // MFA required?
         if ($this->mfa->isEnabled($user)) {
             $this->session->markMfaPending($request->session()->getId(), $user->id);
+
+            // Push-style factors (email/SMS) need a code dispatched now; TOTP
+            // codes come from the authenticator app (triggerChallenge no-ops).
+            foreach ($this->mfa->getEnabledMethods($user) as $method) {
+                $this->mfaRegistry->get($method)->triggerChallenge($user, $request->ip());
+            }
+
             return redirect()->route('auth.mfa.verify');
         }
 

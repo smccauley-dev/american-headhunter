@@ -2411,6 +2411,69 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
     router.post(`/member/security/mfa/${method}/enable`, {}, { preserveState: true })
   }
 
+  // ── TOTP enrollment flow (secret + QR + confirm) ──────────────────────────
+  const [totpEnroll, setTotpEnroll] = useState<{ secret: string; qr: string } | null>(null)
+  const [totpStarting, setTotpStarting] = useState(false)
+  const [totpCode, setTotpCode] = useState('')
+  const [totpConfirming, setTotpConfirming] = useState(false)
+  const [totpError, setTotpError] = useState<string | null>(null)
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
+
+  function csrfHeader(): Record<string, string> {
+    const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/)
+    return m ? { 'X-XSRF-TOKEN': decodeURIComponent(m[1]) } : {}
+  }
+
+  async function startTotpEnroll() {
+    setTotpStarting(true)
+    setTotpError(null)
+    try {
+      const res = await fetch('/member/security/mfa/totp/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...csrfHeader() },
+      })
+      const body = await res.json()
+      if (!res.ok) { setTotpError(body.message ?? 'Could not start setup.'); return }
+      setTotpEnroll({ secret: body.secret, qr: body.qr_code_uri })
+      setTotpCode('')
+    } catch {
+      setTotpError('Could not start setup. Please try again.')
+    } finally {
+      setTotpStarting(false)
+    }
+  }
+
+  async function confirmTotpEnroll() {
+    if (!totpCode) return
+    setTotpConfirming(true)
+    setTotpError(null)
+    try {
+      const res = await fetch('/member/security/mfa/totp/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...csrfHeader() },
+        body: JSON.stringify({ code: totpCode }),
+      })
+      const body = await res.json()
+      if (!res.ok) { setTotpError(body.message ?? 'That code is incorrect.'); return }
+      setTotpEnroll(null)
+      setTotpCode('')
+      if (body.recovery_codes?.length) {
+        setRecoveryCodes(body.recovery_codes)
+      } else {
+        router.reload({ only: ['security'] })
+      }
+    } catch {
+      setTotpError('Verification failed. Please try again.')
+    } finally {
+      setTotpConfirming(false)
+    }
+  }
+
+  function dismissRecoveryCodes() {
+    setRecoveryCodes(null)
+    router.reload({ only: ['security'] })
+  }
+
   const cardStyle: React.CSSProperties = {
     background: 'var(--ah-paper)',
     border: '1px solid #e5ddd0',
@@ -2725,6 +2788,33 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
           Add an extra layer of security. You'll be asked for a verification code when signing in.
         </p>
 
+        {recoveryCodes && (
+          <div style={{ background: '#fff8f0', border: '1px solid #d4a574', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#9a6b2f' }}>
+              Save your recovery codes
+            </div>
+            <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', color: '#6b5436', margin: 0 }}>
+              Store these somewhere safe. Each code works once if you lose access to your authenticator. They won't be shown again.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px 16px' }}>
+              {recoveryCodes.map(c => (
+                <div key={c} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '13px', color: 'var(--ah-ink)', letterSpacing: '.08em' }}>{c}</div>
+              ))}
+            </div>
+            <button
+              onClick={dismissRecoveryCodes}
+              style={{
+                alignSelf: 'flex-start',
+                fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
+                letterSpacing: '.1em', textTransform: 'uppercase',
+                padding: '6px 14px', background: 'var(--ah-ink)', color: '#F4ECDC', border: 'none', cursor: 'pointer',
+              }}
+            >
+              I've Saved These
+            </button>
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
           {MFA_METHODS.map(m => {
             const status = mfa[m.key]
@@ -2769,7 +2859,8 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                       </>
                     ) : (
                       <button
-                        onClick={() => submitEnable(m.key)}
+                        onClick={() => m.key === 'totp' ? startTotpEnroll() : submitEnable(m.key)}
+                        disabled={m.key === 'totp' && totpStarting}
                         style={{
                           display: 'inline-flex', alignItems: 'center', gap: '6px',
                           fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
@@ -2779,7 +2870,7 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                         }}
                       >
                         <ShieldCheckIcon style={{ width: '13px', height: '13px', flexShrink: 0 }} />
-                        Enable
+                        {m.key === 'totp' ? (totpStarting ? 'Starting…' : 'Set Up') : 'Enable'}
                       </button>
                     )}
                   </div>
@@ -2788,6 +2879,74 @@ function SecurityTab({ mfa, loginHistory, enabledMethods, isProfilePublic, usern
                 {status.enabled && status.verified_at && (
                   <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#bbb', letterSpacing: '.06em' }}>
                     Verified {status.verified_at}
+                  </div>
+                )}
+
+                {m.key === 'totp' && totpEnroll && (
+                  <div style={{ background: '#faf7f0', border: '1px solid #e5ddd0', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '420px' }}>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#a89874' }}>
+                      Scan with your authenticator app
+                    </div>
+                    <img src={totpEnroll.qr} alt="Authenticator QR code" width={200} height={200} style={{ alignSelf: 'center', border: '1px solid #e5ddd0', background: '#fff' }} />
+                    <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', color: '#666' }}>
+                      Can't scan? Enter this key manually:
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'var(--ah-ink)', wordBreak: 'break-all', marginTop: '4px', letterSpacing: '.08em' }}>
+                        {totpEnroll.secret}
+                      </div>
+                    </div>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#a89874', marginTop: '4px' }}>
+                      Enter the 6-digit code to confirm
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={totpCode}
+                      onChange={e => setTotpCode(e.target.value.trim())}
+                      placeholder="000000"
+                      autoFocus
+                      style={{ ...input, fontSize: '14px', letterSpacing: '.2em', maxWidth: '160px' }}
+                    />
+                    {totpError && (
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--ah-accent)' }}>
+                        {totpError}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={confirmTotpEnroll}
+                        disabled={totpConfirming || !totpCode}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '6px',
+                          fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700,
+                          letterSpacing: '.1em', textTransform: 'uppercase',
+                          padding: '6px 14px', background: totpConfirming ? '#d4c9b0' : 'var(--ah-ink)',
+                          color: '#F4ECDC', border: 'none', cursor: totpConfirming ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        <ShieldCheckIcon style={{ width: '13px', height: '13px', flexShrink: 0 }} />
+                        {totpConfirming ? 'Verifying…' : 'Verify & Enable'}
+                      </button>
+                      <button
+                        onClick={() => { setTotpEnroll(null); setTotpCode(''); setTotpError(null) }}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '6px',
+                          fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600,
+                          letterSpacing: '.1em', textTransform: 'uppercase',
+                          padding: '6px 14px', background: 'transparent',
+                          color: '#a89874', border: '1px solid #d4c9b0', cursor: 'pointer',
+                        }}
+                      >
+                        <XMarkIcon style={{ width: '13px', height: '13px', flexShrink: 0 }} />
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {m.key === 'totp' && !totpEnroll && totpError && (
+                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--ah-accent)' }}>
+                    {totpError}
                   </div>
                 )}
 

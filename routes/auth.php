@@ -22,12 +22,18 @@ Route::middleware('guest')->group(function () {
 // Email verification works with or without a session (user may click link from different device)
 Route::get('/email/verify/{token}', [AuthController::class, 'verifyEmail'])->name('auth.verify-email');
 
+// MFA verification runs AFTER password but BEFORE the session is authenticated
+// (auth.user_id is only set once a code is verified — pending state lives in
+// Valkey). It must NOT be inside the auth.session group, or RequireSessionAuth
+// bounces every pending user straight back to /login. The controller enforces
+// the mfa-pending check instead.
+Route::get('/mfa/verify', [MfaController::class, 'show'])->name('auth.mfa.verify');
+Route::post('/mfa/verify', [MfaController::class, 'verify'])->name('auth.mfa.verify.submit')->middleware('throttle:10,1');
+Route::post('/mfa/resend', [MfaController::class, 'resend'])->name('auth.mfa.resend')->middleware('throttle:3,1');
+
 Route::middleware('auth.session')->group(function () {
     Route::get('/email/verify', [AuthController::class, 'showVerifyEmailNotice'])->name('auth.verify-email.notice');
     Route::post('/email/verify/resend', [AuthController::class, 'resendVerification'])->name('auth.verify-email.resend');
-
-    Route::get('/mfa/verify', [MfaController::class, 'show'])->name('auth.mfa.verify');
-    Route::post('/mfa/verify', [MfaController::class, 'verify'])->name('auth.mfa.verify.submit');
 
     Route::post('/logout', [AuthController::class, 'logout'])->name('auth.logout');
 });

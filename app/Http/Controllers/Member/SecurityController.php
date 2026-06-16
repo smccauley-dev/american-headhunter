@@ -6,13 +6,22 @@ use App\Http\Controllers\Controller;
 use App\Models\Identity\MfaConfiguration;
 use App\Models\Identity\User;
 use App\Services\Audit\AuditService;
+use App\Services\Auth\MfaService;
+use App\Services\Mfa\TotpMfaMethod;
+use App\Services\Platform\MfaFactorService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class SecurityController extends Controller
 {
-    public function __construct(private readonly AuditService $audit) {}
+    public function __construct(
+        private readonly AuditService      $audit,
+        private readonly MfaService        $mfa,
+        private readonly TotpMfaMethod     $totp,
+        private readonly MfaFactorService  $factors,
+    ) {}
 
     public function changePassword(Request $request)
     {
@@ -40,7 +49,10 @@ class SecurityController extends Controller
 
     public function enableMfa(Request $request, string $method)
     {
-        if (! in_array($method, ['totp', 'sms', 'email'])) {
+        // TOTP cannot be flag-flipped on — it requires a real enrolled secret,
+        // or the user is locked out at login with a code that can never validate.
+        // Use the enroll/confirm flow (enrollTotp + confirmTotp) instead.
+        if (! in_array($method, ['sms', 'email'])) {
             abort(422);
         }
 
@@ -156,5 +168,82 @@ class SecurityController extends Controller
         } catch (\Throwable) {}
 
         return redirect()->route('member.profile')->with('success', 'Two-factor authentication disabled.');
+    }
+
+    /**
+     * Begin TOTP enrollment: generate a secret, store it (disabled until
+     * confirmed), and return the secret + a scannable QR code for the user's
+     * authenticator app. JSON — driven by the security page, not Inertia.
+     */
+    public function enrollTotp(Request $request): JsonResponse
+    {
+        if (! $this->factors->isFactorEnabled('totp')) {
+            return response()->json(['message' => 'Authenticator app MFA is not currently available.'], 422);
+        }
+
+        $userId = session('auth.user_id');
+        $user   = User::findOrFail($userId);
+
+        $secret = $this->totp->generateSecret();
+        $this->totp->storeSecret($user, $secret);
+
+        return response()->json([
+            'secret'      => $secret,
+            'qr_code_uri' => $this->totp->qrCodeSvgDataUri($user->email, $secret),
+        ]);
+    }
+
+    /**
+     * Confirm TOTP enrollment: verify a code against the freshly stored secret,
+     * enable the factor, and (on first-ever enrollment) issue recovery codes.
+     */
+    public function confirmTotp(Request $request): JsonResponse
+    {
+        $data = $request->validate(['code' => ['required', 'string']]);
+
+        $userId = session('auth.user_id');
+        $user   = User::findOrFail($userId);
+
+        if (! $this->totp->verify($user, $data['code'])) {
+            return response()->json(['message' => 'That code is incorrect. Try again.'], 422);
+        }
+
+        // Recovery codes are generated once per account (keyed on presence in
+        // user_recovery_codes), so re-enrolling does not regenerate them.
+        $isFirstEnrollment = ! $this->mfa->hasRecoveryCodes($user);
+
+        MfaConfiguration::where('user_id', $user->id)
+            ->where('method', 'totp')
+            ->update(['is_enabled' => true, 'verified_at' => now()]);
+
+        try {
+            $this->audit->log(
+                eventType:      'mfa_enabled',
+                sourceDatabase: 'ah_identity',
+                tableName:      'mfa_configurations',
+                recordId:       $user->id,
+                userId:         $user->id,
+                ipAddress:      $request->ip(),
+                actionSummary:  'TOTP enrolled (self-service)',
+            );
+        } catch (\Throwable) {}
+
+        $response = ['verified' => true];
+
+        if ($isFirstEnrollment) {
+            $response['recovery_codes'] = $this->mfa->generateBackupCodes($user);
+            try {
+                $this->audit->log(
+                    eventType:      'recovery_codes_generated',
+                    sourceDatabase: 'ah_identity',
+                    tableName:      'user_recovery_codes',
+                    recordId:       $user->id,
+                    userId:         $user->id,
+                    ipAddress:      $request->ip(),
+                );
+            } catch (\Throwable) {}
+        }
+
+        return response()->json($response);
     }
 }

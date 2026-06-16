@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Services\Auth\MfaService;
 use App\Services\Auth\SessionService;
 use App\Services\Audit\AuditService;
+use App\Services\Identity\UserService;
+use App\Services\Mfa\MfaMethodRegistry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,9 +16,11 @@ use Inertia\Response;
 class MfaController extends Controller
 {
     public function __construct(
-        private readonly MfaService     $mfa,
-        private readonly SessionService $session,
-        private readonly AuditService   $audit,
+        private readonly MfaService        $mfa,
+        private readonly SessionService    $session,
+        private readonly AuditService      $audit,
+        private readonly UserService       $users,
+        private readonly MfaMethodRegistry $registry,
     ) {}
 
     public function show(Request $request): Response|RedirectResponse
@@ -27,7 +31,18 @@ class MfaController extends Controller
             return redirect()->route('auth.login');
         }
 
-        return Inertia::render('Auth/MfaVerify');
+        $user = $this->users->findById($userId);
+
+        if (! $user) {
+            return redirect()->route('auth.login');
+        }
+
+        return Inertia::render('Auth/MfaVerify', [
+            // Which factors the user has enabled — lets the page label the input
+            // and offer a "resend code" action for the push-style factors.
+            'methods'        => $this->mfa->getEnabledMethods($user),
+            'canResendCode'  => count(array_intersect($this->mfa->getEnabledMethods($user), ['email', 'sms'])) > 0,
+        ]);
     }
 
     public function verify(Request $request): RedirectResponse
@@ -41,7 +56,7 @@ class MfaController extends Controller
             return redirect()->route('auth.login');
         }
 
-        $user = app(\App\Services\Identity\UserService::class)->findById($userId);
+        $user = $this->users->findById($userId);
 
         if (! $user) {
             return redirect()->route('auth.login');
@@ -49,11 +64,17 @@ class MfaController extends Controller
 
         $code = $request->input('code');
 
-        // Try TOTP challenge first, then backup code
-        $valid = $this->mfa->verifyChallenge($user, 'totp', $code)
-            || $this->mfa->verifyChallenge($user, 'sms', $code)
-            || $this->mfa->verifyChallenge($user, 'email', $code)
-            || $this->mfa->verifyBackupCode($user, $code);
+        // Try each enabled factor through its own verifier (TOTP checks the
+        // google2fa secret; email/SMS check the stored challenge), then fall
+        // back to a single-use recovery code.
+        $valid = false;
+        foreach ($this->mfa->getEnabledMethods($user) as $method) {
+            if ($this->registry->get($method)->verify($user, $code)) {
+                $valid = true;
+                break;
+            }
+        }
+        $valid = $valid || $this->mfa->verifyAndConsumeRecoveryCode($user, $code);
 
         if (! $valid) {
             $this->audit->log(
@@ -86,5 +107,27 @@ class MfaController extends Controller
         return redirect()->intended(
             app(\App\Services\Platform\TenantService::class)->getSetting('nav.login_redirect', '/member/profile')
         );
+    }
+
+    public function resend(Request $request): RedirectResponse
+    {
+        $userId = $this->session->getMfaPendingUserId($request->session()->getId());
+
+        if (! $userId) {
+            return redirect()->route('auth.login');
+        }
+
+        $user = $this->users->findById($userId);
+
+        if (! $user) {
+            return redirect()->route('auth.login');
+        }
+
+        // Only the push-style factors have a code to (re)send.
+        foreach (array_intersect($this->mfa->getEnabledMethods($user), ['email', 'sms']) as $method) {
+            $this->registry->get($method)->triggerChallenge($user, $request->ip());
+        }
+
+        return back()->with('success', 'A new verification code has been sent.');
     }
 }

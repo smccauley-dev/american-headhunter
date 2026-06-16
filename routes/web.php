@@ -167,6 +167,8 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::delete('/profile/photos/{documentId}', [ProfileController::class, 'deletePhoto'])->name('profile.photos.delete');
 
     Route::post('/security/password',                [SecurityController::class, 'changePassword'])->name('security.password')->middleware('throttle:5,1');
+    Route::post('/security/mfa/totp/enroll',         [SecurityController::class, 'enrollTotp'])->name('security.mfa.totp.enroll')->middleware('throttle:10,1');
+    Route::post('/security/mfa/totp/confirm',        [SecurityController::class, 'confirmTotp'])->name('security.mfa.totp.confirm')->middleware('throttle:10,1');
     Route::post('/security/mfa/{method}/enable',     [SecurityController::class, 'enableMfa'])->name('security.mfa.enable');
     Route::post('/security/mfa/{method}/disable',    [SecurityController::class, 'disableMfa'])->name('security.mfa.disable');
     Route::post('/security/profile-visibility',      [SecurityController::class, 'setProfileVisibility'])->name('security.profile.visibility');
