@@ -696,22 +696,33 @@ function AvailabilityCalendar({ seasonStart, seasonEnd, today, unavailable, star
     }
 
     function pick(iso: string) {
-        // First click (or restart) sets the start and clears the end. Second click
-        // sets the end — unless the span would cross a taken date, in which case we
-        // treat it as a fresh start so the user can't book over blocked dates.
-        if (!start || (start && end)) {
+        // No anchor yet → begin a new selection at the clicked day.
+        if (!start) {
             onChange(iso, '');
             return;
         }
-        if (iso <= start) {
+        // Anchor set but no end yet → set the other end of the range. Clicking
+        // before the anchor is allowed (we order the pair). A span that crosses a
+        // taken date can't be booked, so we restart at the clicked day instead.
+        if (!end) {
+            if (iso === start) return;
+            const [s, e] = iso < start ? [iso, start] : [start, iso];
+            if (rangeOverlapsUnavailable(s, e, unavailable)) {
+                onChange(iso, '');
+                return;
+            }
+            onChange(s, e);
+            return;
+        }
+        // A complete range already exists → grow it to include the clicked day
+        // rather than starting over. Clicking inside the range leaves it unchanged.
+        const s = iso < start ? iso : start;
+        const e = iso > end ? iso : end;
+        if (rangeOverlapsUnavailable(s, e, unavailable)) {
             onChange(iso, '');
             return;
         }
-        if (rangeOverlapsUnavailable(start, iso, unavailable)) {
-            onChange(iso, '');
-            return;
-        }
-        onChange(start, iso);
+        onChange(s, e);
     }
 
     const firstWeekday = new Date(view.year, view.month, 1).getDay();
@@ -770,10 +781,21 @@ function AvailabilityCalendar({ seasonStart, seasonEnd, today, unavailable, star
                 })}
             </div>
 
-            <div style={{ display: 'flex', gap: 16, marginTop: 14, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sage-dim)' }}>
-                <span><span style={{ display: 'inline-block', width: 10, height: 10, background: 'var(--blaze)', marginRight: 5, verticalAlign: 'middle' }} />Selected</span>
-                <span><span style={{ display: 'inline-block', width: 10, height: 10, background: '#f6dccb', marginRight: 5, verticalAlign: 'middle' }} />In range</span>
-                <span style={{ textDecoration: 'line-through' }}>Unavailable</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 14 }}>
+                <div style={{ display: 'flex', gap: 16, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sage-dim)' }}>
+                    <span><span style={{ display: 'inline-block', width: 10, height: 10, background: 'var(--blaze)', marginRight: 5, verticalAlign: 'middle' }} />Selected</span>
+                    <span><span style={{ display: 'inline-block', width: 10, height: 10, background: '#f6dccb', marginRight: 5, verticalAlign: 'middle' }} />In range</span>
+                    <span style={{ textDecoration: 'line-through' }}>Unavailable</span>
+                </div>
+                {start && (
+                    <button
+                        type="button"
+                        onClick={() => onChange('', '')}
+                        style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', background: 'transparent', border: 'none', color: 'var(--blaze)', cursor: 'pointer', padding: 0 }}
+                    >
+                        Clear
+                    </button>
+                )}
             </div>
         </div>
     );
@@ -1132,7 +1154,7 @@ export default function ApplyIndex({ listing, property, unavailableRanges, prima
                                     // Day hunt: applicant picks an available range inside the season.
                                     <>
                                         <p style={{ fontFamily: 'var(--body)', fontSize: 13, color: 'var(--ink-lift)', margin: '0 0 14px', lineHeight: 1.6 }}>
-                                            Pick your arrival and departure dates. Dates that are crossed out are already booked or unavailable.
+                                            Click your arrival date, then your departure date. Click another day to extend the range, or Clear to start over. Crossed-out dates are already booked or unavailable.
                                         </p>
                                         <AvailabilityCalendar
                                             seasonStart={listing.season_start}
