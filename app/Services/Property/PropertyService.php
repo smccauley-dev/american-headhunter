@@ -408,6 +408,53 @@ class PropertyService extends BaseService
         return $listing->fresh();
     }
 
+    /**
+     * Update a listing's attributes.
+     */
+    public function updateListing(string $listingId, array $attributes): PropertyListing
+    {
+        $listing = PropertyListing::on('property')->findOrFail($listingId);
+        $listing->update($attributes);
+        $this->invalidate("listing:{$listingId}", "property:{$listing->property_id}");
+
+        return $listing->fresh();
+    }
+
+    /**
+     * Soft-delete a listing.
+     */
+    public function deleteListing(string $listingId): void
+    {
+        $listing = PropertyListing::on('property')->findOrFail($listingId);
+        $listing->delete();
+        $this->invalidate("listing:{$listingId}", "property:{$listing->property_id}");
+    }
+
+    /**
+     * All non-deleted listings for a property, newest first. Read replica.
+     */
+    public function getListingsForProperty(string $propertyId): \Illuminate\Database\Eloquent\Collection
+    {
+        return PropertyListing::on('property_read')
+            ->where('property_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')
+            ->get();
+    }
+
+    /**
+     * A listing scoped to its property — guards that {listing} actually belongs to
+     * {property} before any member-portal edit/delete. Read replica.
+     */
+    public function findListingForProperty(string $propertyId, string $listingId): ?PropertyListing
+    {
+        return PropertyListing::on('property_read')
+            ->where('id', $listingId)
+            ->where('property_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->first();
+    }
+
     // ─── Access Info (encrypted) ──────────────────────────────────────────────
 
     /**

@@ -207,10 +207,18 @@ export default function PropertyForm({ property, states, statuses }: Props) {
             </div>
           </form>
 
-          {isEdit && (
-            <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', color: '#6b5e50', marginTop: '20px', lineHeight: 1.5 }}>
-              Listings, game types, photos, maps, rules, and contacts for this property are managed from the admin tools — coming to this page next.
-            </p>
+          {isEdit && property && (
+            <div style={{ marginTop: '24px', borderTop: '1px solid #e5ddd0', paddingTop: '22px' }}>
+              <a
+                href={`/member/properties/${property.id}/listings`}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: ACCENT, color: '#fff', textDecoration: 'none' }}
+              >
+                Manage Listings →
+              </a>
+              <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', color: '#6b5e50', marginTop: '14px', lineHeight: 1.5 }}>
+                Game types, photos, maps, rules, and contacts for this property are coming to this page next.
+              </p>
+            </div>
           )}
 
         </div>

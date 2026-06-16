@@ -153,4 +153,30 @@ class ManagedPropertiesTest extends TestCase
     {
         $this->assertSame([], $this->service()->getManagedPropertySummaries($this->strangerId));
     }
+
+    public function test_find_listing_for_property_resolves_a_listing_under_its_property(): void
+    {
+        $listing = $this->service()->findListingForProperty($this->ownedPropertyId, $this->listingId);
+
+        $this->assertNotNull($listing);
+        $this->assertSame($this->listingId, $listing->id);
+    }
+
+    public function test_find_listing_for_property_rejects_a_listing_from_another_property(): void
+    {
+        // The listing exists, but not under the managed property — this is the
+        // cross-property guard that turns a foreign {listing} id into a 404.
+        $this->assertNull(
+            $this->service()->findListingForProperty($this->managedPropertyId, $this->listingId),
+        );
+    }
+
+    public function test_get_listings_for_property_returns_only_that_propertys_listings(): void
+    {
+        $owned = $this->service()->getListingsForProperty($this->ownedPropertyId);
+        $this->assertCount(1, $owned);
+        $this->assertSame($this->listingId, $owned->first()->id);
+
+        $this->assertCount(0, $this->service()->getListingsForProperty($this->managedPropertyId));
+    }
 }
