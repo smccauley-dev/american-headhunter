@@ -766,12 +766,43 @@ The pgcrypto approach requires the plaintext and key to travel to the database o
 
 ---
 
+## SEC-045 — `check_ins` Missing Write-Side RLS Policy: Member Check-In/Out Default-Denied Under `ah_runtime` (MEDIUM) — Fixed 2026-06-16
+
+| Field | Detail |
+|---|---|
+| **Severity** | Medium |
+| **Status** | FIXED (2026-06-16) |
+| **File** | `database/migrations/lease/2026_06_16_000003_add_check_ins_runtime_write_policy.php` |
+| **Lineage** | Fallout of SEC-043 (runtime role flip) |
+
+**Description:**
+After SEC-043 moved user-facing requests off the table owner (`ah_app`, which bypasses RLS) onto the non-owner `ah_runtime` role, every `check_ins` write started failing. A PostgreSQL `FOR SELECT` policy only supplies a `USING` clause for row visibility — it grants no INSERT and no UPDATE. With RLS enabled and **no permissive write policy**, the default-deny rule rejects the statement (`new row violates row-level security policy`). `check_ins` had only `check_ins_own_or_lessor FOR SELECT`, so member field check-in (`CheckInService::checkIn` → INSERT, [routes/web.php:156](routes/web.php#L156)) and check-out (`CheckInService::checkOut` → UPDATE, [routes/web.php:157](routes/web.php#L157)) — both on the `auth.session` (`ah_runtime`) path — silently broke. The bug was invisible before SEC-043 because the owner bypasses RLS.
+
+A platform-wide catalog sweep (`pg_policies` + `pg_class.relrowsecurity` across all 12 writer DBs) confirmed the blast radius is bounded: 15 RLS-enabled tables exist (in identity/property/lease/billing only); 10 are SELECT-only, but of those, `check_ins` was the **only** one written on a live `ah_runtime` path. The others are written exclusively on `ah_system` (BYPASSRLS) paths — Filament admin (`property_access_info`, `leases`, `lease_hunters`), Checkr/OFAC webhook+queue (`background_check_results`) — or have no writer yet (`lease_notes`), or are not live (billing `invoices`/`payments`/`payouts`/`w9_records`, Phase 5).
+
+**Root Cause:**
+RLS write enforcement (`WITH CHECK`) is separate from read enforcement (`USING`). The original lease policies were authored as SELECT-only and never exercised for writes because the app connected as the owner. SEC-043's role flip surfaced the gap.
+
+**Fix:**
+Added two self-service, additive policies on `check_ins` for `ah_runtime`:
+- `check_ins_insert_self` — `FOR INSERT WITH CHECK (user_id = current_user OR role IN (staff, super_admin))`
+- `check_ins_update_self` — `FOR UPDATE USING (...) WITH CHECK (...)` with the same predicate
+
+A hunter may write only their own rows; staff/super_admin retain write access for support corrections (mirroring the existing SELECT policy); the lessor can still *see* check-ins on their lease but cannot author them. Purely additive — no existing policy modified, so reads and all `ah_system` paths are unaffected.
+
+**Deferred (tracked):** the latent billing tables (`invoices`, `payments`, `payouts`, `w9_records`) must gain equivalent `WITH CHECK` write policies **before** any of them is exposed on an `ah_runtime` HTTP path in Phase 5 — today they are written only by webhooks/jobs (`ah_system`), so they are not yet broken.
+
+**Verification:** `tests/Feature/Security/CheckInRlsWriteTest` — connects explicitly as `ah_runtime` and proves own-INSERT and own-UPDATE succeed, cross-user INSERT is rejected (`WITH CHECK`), cross-user UPDATE matches zero rows (`USING`), and staff INSERT-on-behalf succeeds. Full Security suite: 12 passed.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
 |---|---|---|---|---|
 | SEC-043 | RLS bypassed platform-wide — app role owns tables, `FORCE ROW LEVEL SECURITY` unset; missing write-side `WITH CHECK` policies on billing tables | High | **FIXED (2026-06-16)** — app runs as non-owner `ah_runtime`; trusted paths via `ah_system` (BYPASSRLS); regression test green | — |
 | SEC-044 | Encrypted-field plaintext + key pass through query bindings (log-exposure if query logging enabled) | Low | OPEN | Pre-launch hardening |
+| SEC-045 | `check_ins` write default-denied under `ah_runtime` (SELECT-only RLS policy); billing tables need equivalent `WITH CHECK` before Phase 5 `ah_runtime` exposure | Medium | **FIXED (2026-06-16)** — self-service write policies added; regression test green; billing deferred | Billing: Phase 5 |
 
 ---
 
