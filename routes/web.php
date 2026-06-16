@@ -58,15 +58,19 @@ Route::middleware('auth:web')->post('/admin/lease-documents/{leaseDocumentId}/de
 })->name('admin.lease-documents.delete');
 
 // Admin lease-document download (from lease_documents table, with audit logging)
-Route::middleware('auth:web')->get('/admin/lease-documents/{leaseDocumentId}/download', function (string $leaseDocumentId) {
+// SEC-043: db.system before auth:web — the Filament `web` guard resolves the
+// staff user via an RLS-protected SELECT on identity.users; under ah_runtime
+// (no per-user RLS context for the Laravel guard) that returns 0 rows and the
+// guard 302s to login, so the browser receives an HTML page instead of the file.
+Route::middleware(['db.system', 'auth:web'])->get('/admin/lease-documents/{leaseDocumentId}/download', function (string $leaseDocumentId) {
     return app(\App\Services\Lease\LeaseDocumentService::class)->adminDownload(
         $leaseDocumentId,
         auth()->id(),
     );
 })->name('admin.lease-documents.download');
 
-// Admin document download — protected by Filament web guard
-Route::middleware('auth:web')->get('/admin/documents/{documentId}/download', function (string $documentId) {
+// Admin document download — protected by Filament web guard (see db.system note above)
+Route::middleware(['db.system', 'auth:web'])->get('/admin/documents/{documentId}/download', function (string $documentId) {
     $doc = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
     $disk = config('filesystems.defaults.documents', 'local');
     return \Illuminate\Support\Facades\Storage::disk($disk)->download(
@@ -75,8 +79,8 @@ Route::middleware('auth:web')->get('/admin/documents/{documentId}/download', fun
     );
 })->name('admin.documents.download');
 
-// Admin inline document view (images in admin galleries) — protected by Filament web guard
-Route::middleware('auth:web')->get('/admin/documents/{documentId}/view', function (string $documentId) {
+// Admin inline document view (images in admin galleries) — protected by Filament web guard (see db.system note above)
+Route::middleware(['db.system', 'auth:web'])->get('/admin/documents/{documentId}/view', function (string $documentId) {
     $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
     $disk = config('filesystems.defaults.documents', 'local');
     return \Illuminate\Support\Facades\Storage::disk($disk)->response(
