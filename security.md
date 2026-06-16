@@ -790,9 +790,12 @@ Added two self-service, additive policies on `check_ins` for `ah_runtime`:
 
 A hunter may write only their own rows; staff/super_admin retain write access for support corrections (mirroring the existing SELECT policy); the lessor can still *see* check-ins on their lease but cannot author them. Purely additive — no existing policy modified, so reads and all `ah_system` paths are unaffected.
 
-**Deferred (tracked):** the latent billing tables (`invoices`, `payments`, `payouts`, `w9_records`) must gain equivalent `WITH CHECK` write policies **before** any of them is exposed on an `ah_runtime` HTTP path in Phase 5 — today they are written only by webhooks/jobs (`ah_system`), so they are not yet broken.
+**Billing tables — resolved 2026-06-16 (`database/migrations/billing/2026_06_16_000003_add_w9_records_runtime_write_policy.php`):** Examining the actual write authorship (rather than assuming all four needed write policies) split the latent billing tables into two cases:
 
-**Verification:** `tests/Feature/Security/CheckInRlsWriteTest` — connects explicitly as `ah_runtime` and proves own-INSERT and own-UPDATE succeed, cross-user INSERT is rejected (`WITH CHECK`), cross-user UPDATE matches zero rows (`USING`), and staff INSERT-on-behalf succeeds. Full Security suite: 12 passed.
+- **`w9_records` — needs a runtime write policy (added).** A payee (landowner/outfitter/seller) legitimately submits and certifies their *own* W-9 from the member portal on an `ah_runtime` request. Added additive `w9_records_insert_self` (`FOR INSERT WITH CHECK`) and `w9_records_update_self` (`FOR UPDATE USING … WITH CHECK …`), predicate `user_id = current_user OR role IN (staff, super_admin)`, mirroring the existing SELECT policy.
+- **`invoices`, `payments`, `payouts` — deliberately left SELECT-only for `ah_runtime` (no write policy, by design).** These are *system-authored financial-integrity records* — created by Stripe webhooks, queue jobs, and Filament admin, all of which run under `ah_system` (BYPASSRLS). Granting `ah_runtime` an INSERT/UPDATE policy would let an authenticated user *forge* invoices, payments, or payouts. Default-deny on the runtime role is the correct, fail-safe control: any Phase 5 service that authors these must run under `db.system` (exactly as webhooks already do), not on a user-facing `ah_runtime` connection. (`payment_methods` is already `FOR ALL` with a `WITH CHECK` — user-managed cards — and needs nothing.)
+
+**Verification:** `tests/Feature/Security/CheckInRlsWriteTest` (check_ins) and `tests/Feature/Security/W9RecordRlsWriteTest` (w9_records) — each connects explicitly as `ah_runtime` and proves own-INSERT and own-UPDATE succeed, cross-user INSERT is rejected (`WITH CHECK`), cross-user UPDATE matches zero rows (`USING`), and staff INSERT-on-behalf succeeds. Full Security suite: 18 passed.
 
 ---
 
@@ -802,7 +805,7 @@ A hunter may write only their own rows; staff/super_admin retain write access fo
 |---|---|---|---|---|
 | SEC-043 | RLS bypassed platform-wide — app role owns tables, `FORCE ROW LEVEL SECURITY` unset; missing write-side `WITH CHECK` policies on billing tables | High | **FIXED (2026-06-16)** — app runs as non-owner `ah_runtime`; trusted paths via `ah_system` (BYPASSRLS); regression test green | — |
 | SEC-044 | Encrypted-field plaintext + key pass through query bindings (log-exposure if query logging enabled) | Low | OPEN | Pre-launch hardening |
-| SEC-045 | `check_ins` write default-denied under `ah_runtime` (SELECT-only RLS policy); billing tables need equivalent `WITH CHECK` before Phase 5 `ah_runtime` exposure | Medium | **FIXED (2026-06-16)** — self-service write policies added; regression test green; billing deferred | Billing: Phase 5 |
+| SEC-045 | `check_ins` (and payee `w9_records`) write default-denied under `ah_runtime` (SELECT-only RLS policy) | Medium | **FIXED (2026-06-16)** — self-service write policies added to `check_ins` + `w9_records`; `invoices`/`payments`/`payouts` intentionally left runtime-read-only (system-authored via `ah_system`); regression tests green (18 passed) | — |
 
 ---
 
