@@ -7,7 +7,7 @@
     page actions on EditPropertyV2.
 --}}
 @php
-    $btn = 'display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;background:#fff;'
+    $btn = 'display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:0;background:#FAFAFA;'
          . 'border:1px solid #e5e7eb;font-size:12px;font-weight:500;color:#374151;cursor:pointer;white-space:nowrap;text-decoration:none;';
 @endphp
 
@@ -61,7 +61,7 @@
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px;">
             <button type="button"
                 x-on:click="addMode = ! addMode"
-                x-bind:style="addMode ? 'display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:1px solid #0a1512;background:#0a1512;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;' : '{{ $btn }}'">
+                x-bind:style="addMode ? 'display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:0;border:1px solid #0a1512;background:#0a1512;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;' : '{{ $btn }}'">
                 <span x-bind:style="addMode ? 'color:#fff !important;' : ''" x-text="addMode ? '✛ Click the map to place — or cancel' : '✛ Add Marker'"></span>
             </button>
             <button type="button" style="{{ $btn }}"
