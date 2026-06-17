@@ -74,10 +74,21 @@ Muted variants of `--ink` (`#0a1512`) use opacity rather than separate tokens.
 | Display heading | Fraunces | variable | 400–600 | — | -0.02em |
 | Display italic accent | Fraunces italic | — | 400–500 | — | — |
 | Body / lede text | Crimson Pro | 16–18px | 300–400 | — | — |
-| UI labels / mono text | Instrument Mono | 9–11px | 400 | uppercase | 0.12–0.25em |
-| Coordinates / metadata | Instrument Mono | 10px | 400 | uppercase | 0.15–0.20em |
+| UI labels / mono text | JetBrains Mono | 9–11px | 400–600 | uppercase | 0.12–0.25em |
+| Coordinates / metadata | JetBrains Mono | 10px | 400 | uppercase | 0.15–0.20em |
 
-Both systems load Fraunces, Crimson Pro, and Instrument Mono from Google Fonts.
+Both systems load Fraunces, Crimson Pro, and JetBrains Mono from Google Fonts.
+
+> **Mono standard — non-negotiable.** JetBrains Mono is the *only* monospace
+> typeface permitted anywhere on the site — admin, member, public, and email.
+> No other mono face (Instrument Mono, Roboto Mono, Source Code Pro, Courier,
+> Consolas, SF Mono, etc.) may be introduced. The canonical stack is
+> `'JetBrains Mono', Menlo, monospace` (the trailing entries are fallbacks
+> only, never a primary choice). JetBrains is required because the design
+> system leans on mono weight for hierarchy (400/500/600) and JetBrains ships
+> the full 300–800 range; single-weight faces cannot express it. When this
+> value changes, update both `resources/css/app.css` and
+> `app/Providers/Filament/AdminPanelProvider.php`.
 
 ---
 
@@ -104,12 +115,12 @@ The core UI primitive. Used for property listings, admin section panels, modals,
 | Danger | `--blaze` | `--bone` | none | `--blaze-dim` |
 | CTA (nav / search) | `--ink` | `--bone` | `--ink` | `--blaze` |
 
-All buttons: `border-radius: 0` · `font-family: Instrument Mono` · `font-size: 11px` · `letter-spacing: 0.12–0.15em` · `text-transform: uppercase`.
+All buttons: `border-radius: 0` · `font-family: JetBrains Mono` · `font-size: 11px` · `letter-spacing: 0.12–0.15em` · `text-transform: uppercase`.
 
 ### Section / Field Labels (admin)
 
 ```
-font-family:    Instrument Mono
+font-family:    JetBrains Mono
 font-size:      10px
 letter-spacing: 0.2em
 text-transform: uppercase
@@ -122,7 +133,7 @@ color:          --ink @ 45–50% opacity
 |---|---|
 | Outer container (`.fi-sc-tabs`) | transparent, no radius, no shadow, no border |
 | Nav (`.fi-tabs`) | transparent; `border-bottom: 1px solid --parch-deep` |
-| Tab item (`.fi-tabs-item`) | Instrument Mono 10px uppercase; `border-bottom: 2px solid transparent` |
+| Tab item (`.fi-tabs-item`) | JetBrains Mono 10px uppercase; `border-bottom: 2px solid transparent` |
 | Active tab | `color: --ink`; `border-bottom-color: --blaze` |
 
 ### Sidebar (admin only)
@@ -131,7 +142,7 @@ color:          --ink @ 45–50% opacity
 |---|---|
 | Background | `--ink` |
 | Right border | `1px solid --brass @ 20% opacity` |
-| Group label | `--brass` · Instrument Mono 10px uppercase |
+| Group label | `--brass` · JetBrains Mono 10px uppercase |
 | Nav item text | `--bone` (`#f4ecdc`) |
 | Nav item icon | `--blaze` |
 | Active item | bg `--bone @ 8% opacity` · `border-left: 2px solid --blaze` |

@@ -245,7 +245,7 @@ All tables use a sandwich layout: **[PREVIOUS]** page numbers **[NEXT]**, per-pa
 This is controlled entirely by CSS in `AdminPanelProvider`. Do not set pagination options per-table unless the table has a special per-page requirement.
 
 - PREVIOUS and NEXT are text buttons (from Filament's simple pagination template)
-- Page numbers are `fi-pagination-item-btn` buttons, styled to 36px height, Instrument Mono 11px
+- Page numbers are `fi-pagination-item-btn` buttons, styled to 36px height, JetBrains Mono 11px
 - The icon-only `<` and `>` chevrons inside `fi-pagination-items` are hidden — the text buttons handle navigation
 - Active page gets ink fill (`#0a1512` background, parchment text)
 - Per-page select is pushed to the far right via `margin-left: auto`
@@ -271,7 +271,7 @@ Global button styles live in `AdminPanelProvider` inside the `renderHook` CSS bl
 | `.fi-sc-actions .fi-btn` | Form footer buttons: min-width 80px |
 | `.fi-simple-main .fi-btn.fi-color-primary` | Login page submit: 44px, full-width |
 | `.fi-pagination` | Flex row, sandwich layout |
-| `.fi-pagination-item-btn` | Page number buttons: 36px height, Instrument Mono |
+| `.fi-pagination-item-btn` | Page number buttons: 36px height, JetBrains Mono |
 | `.fi-pagination-item.fi-active .fi-pagination-item-btn` | Active page: terracotta fill (#c84c21) |
 
 To override a button in a specific resource only, add an inline CSS block via
