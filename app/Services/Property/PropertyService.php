@@ -654,6 +654,21 @@ class PropertyService extends BaseService
             'granted_at'         => now(),
         ]);
 
+        // An "owner" grant on a property whose owner_user_id is still the dev
+        // placeholder (or unset) promotes that user to the real owner of record,
+        // so a landowner added after creation can't be left as a ghost.
+        if ($role === 'owner') {
+            $property = Property::on('property')->find($propertyId);
+
+            if ($property && (
+                $property->owner_user_id === null
+                || $property->owner_user_id === Property::PLACEHOLDER_OWNER_ID
+            )) {
+                $property->owner_user_id = $user->id;
+                $property->save();
+            }
+        }
+
         $this->invalidate(
             "property:user:{$user->id}:manager_grants",
             "property:user:{$user->id}:owned_summaries",

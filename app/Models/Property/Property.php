@@ -9,6 +9,12 @@ class Property extends BaseModelWithSoftDeletes
     protected $connection = 'property';
     protected $table      = 'properties';
 
+    /**
+     * Placeholder owner used by older dev seed data before a real landowner
+     * existed. Has no identity row. Treated as "unset" for owner-sync purposes.
+     */
+    public const PLACEHOLDER_OWNER_ID = '00000000-0000-4000-8000-000000000001';
+
     protected $fillable = [
         'owner_user_id',
         'title',

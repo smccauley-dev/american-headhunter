@@ -6,12 +6,19 @@ use App\Models\Property\Property;
 use App\Models\Property\PropertyListing;
 use App\Models\Property\PropertySpecies;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class SamplePropertySeeder extends Seeder
 {
     public function run(): void
     {
-        $devOwnerId = '00000000-0000-4000-8000-000000000001';
+        // Own the sample properties with the real seeded test landowner rather
+        // than the ghost placeholder, which has no identity row. TestUserSeeder
+        // assigns this account a random UUID, so resolve it by email at runtime.
+        $devOwnerId = DB::connection('identity')->table('users')
+            ->where('email', 'landowner@test.local')
+            ->value('id')
+            ?? Property::PLACEHOLDER_OWNER_ID;
 
         $samples = [
             [
