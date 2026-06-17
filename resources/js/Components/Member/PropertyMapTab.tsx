@@ -61,6 +61,18 @@ const restoreBtn: React.CSSProperties = { ...ghostBtn, color: '#065f46', borderC
 
 const meta: React.CSSProperties = { fontFamily: 'monospace', fontSize: '11px', color: '#9ca3af' }
 
+// The Upload Map Images button is the admin's Filament ghost `fi-btn`, which is
+// styled very differently from the inline toolbar buttons: square corners, 36px
+// tall, monospace, 11px, 0.12em letter-spacing, UPPERCASE, #fafafa face with a
+// muted-ink border. Mirrored 1:1 from AdminPanelProvider's injected .fi-btn CSS.
+const uploadBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+  height: '36px', padding: '0 0.875rem', borderRadius: 0, boxShadow: 'none',
+  background: '#fafafa', color: 'rgba(10,21,18,0.65)', border: '1px solid rgba(10,21,18,0.2)',
+  fontFamily: 'var(--mono), monospace', fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase',
+  lineHeight: 1, whiteSpace: 'nowrap', cursor: 'pointer', flexShrink: 0,
+}
+
 const DRAG_THRESHOLD = 1.2 // percent of image moved before a press counts as a drag
 
 // ── Modal shell ───────────────────────────────────────────────────────────────
@@ -263,7 +275,7 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
   }
 
   const uploadAction = (
-    <button type="button" onClick={() => { setUploadError(null); setShowUpload(true) }} style={{ ...ghostBtn, flexShrink: 0 }}>
+    <button type="button" onClick={() => { setUploadError(null); setShowUpload(true) }} style={uploadBtn}>
       <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
       </svg>
