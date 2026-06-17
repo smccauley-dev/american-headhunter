@@ -49,12 +49,12 @@ const label: React.CSSProperties = {
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
 const ghostBtn: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: '5px',
-  padding: '6px 12px', borderRadius: '6px',
+  padding: '6px 12px', borderRadius: 0,
   background: '#FAFAFA', border: '1px solid #e5e7eb',
   fontFamily: SANS, fontSize: '12px', fontWeight: 500,
   color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none',
 }
-const activeBtn: React.CSSProperties = { ...ghostBtn, background: '#E7DFD0', borderColor: '#0a1512', color: '#0a1512', fontWeight: 600 }
+const activeBtn: React.CSSProperties = { ...ghostBtn, background: '#FAFAFA', borderColor: '#0a1512', color: '#0a1512', fontWeight: 600 }
 const inkBtn: React.CSSProperties = { ...ghostBtn, background: INK, color: '#F4ECDC', borderColor: INK }
 const dangerBtn: React.CSSProperties = { ...ghostBtn, color: '#b91c1c', borderColor: '#fca5a5' }
 const restoreBtn: React.CSSProperties = { ...ghostBtn, color: '#065f46', borderColor: '#6ee7b7' }
