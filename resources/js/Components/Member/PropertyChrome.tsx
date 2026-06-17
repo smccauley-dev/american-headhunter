@@ -1,5 +1,5 @@
 import { Head, router } from '@inertiajs/react'
-import { useState as useReactState, useRef as useReactRef } from 'react'
+import { useState as useReactState } from 'react'
 
 /**
  * Shared chrome for the member-portal property management pages (Form, Listings,
@@ -257,43 +257,6 @@ export function PillToggle({ on, onChange, label, disabled }: { on: boolean; onC
         <span style={{ position: 'absolute', top: '2px', left: on ? '20px' : '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
       </button>
       <span style={{ ...fieldLabel, marginBottom: 0 }}>{label}</span>
-    </div>
-  )
-}
-
-/** Drag & drop / Browse file zone (matches the admin filepond dropzone). */
-export function DropZone({ onFiles }: { onFiles: (files: FileList | null) => void }) {
-  const [over, setOver] = useReactState(false)
-  const ref = useReactRef<HTMLInputElement>(null)
-  return (
-    <>
-      <div
-        onClick={() => ref.current?.click()}
-        onDragOver={e => { e.preventDefault(); setOver(true) }}
-        onDragLeave={() => setOver(false)}
-        onDrop={e => { e.preventDefault(); setOver(false); onFiles(e.dataTransfer.files) }}
-        style={{ border: `1px dashed ${over ? INK : TAN}`, background: over ? 'rgba(10,21,18,0.03)' : '#faf7f2', padding: '28px 16px', textAlign: 'center', cursor: 'pointer' }}
-      >
-        <div style={{ fontFamily: SANS, fontSize: '13px', color: '#6b5e50' }}>
-          Drag &amp; Drop your files or <span style={{ color: ACCENT, textDecoration: 'underline' }}>Browse</span>
-        </div>
-      </div>
-      <input ref={ref} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={e => { onFiles(e.target.files); if (ref.current) ref.current.value = '' }} />
-    </>
-  )
-}
-
-/** Selected-file list with per-file remove (shown under a DropZone). */
-export function SelectedFiles({ files, onRemove }: { files: File[]; onRemove: (i: number) => void }) {
-  if (files.length === 0) return null
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px' }}>
-      {files.map((f, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontFamily: 'var(--mono)', fontSize: '11px', color: INK }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-          <button type="button" onClick={() => onRemove(i)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '15px', lineHeight: 1, flexShrink: 0 }}>×</button>
-        </div>
-      ))}
     </div>
   )
 }
