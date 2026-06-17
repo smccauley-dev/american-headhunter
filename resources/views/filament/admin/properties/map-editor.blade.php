@@ -63,9 +63,8 @@
             <button type="button"
                 x-on:click="addMode = ! addMode"
                 style="{{ $btn }}"
-                x-bind:style="addMode ? { borderColor: '#0a1512', background: '#0a1512', color: '#ffffff' } : {}">
-                <span x-text="addMode ? '+ Click the map to place — or cancel' : '+ Add Marker'"></span>
-            </button>
+                x-bind:style="addMode ? { borderColor: '#0a1512', background: '#0a1512', color: '#ffffff' } : {}"
+                x-text="addMode ? '+ Click the map to place — or cancel' : '+ Add Marker'"></button>
             <button type="button" style="{{ $btn }}"
                 wire:click="mountAction('editMapImage', { mapImageId: '{{ $selected->id }}' })">Edit Details</button>
             <a href="{{ route('admin.documents.download', $selected->document_id) }}" style="{{ $btn }}">Download</a>
