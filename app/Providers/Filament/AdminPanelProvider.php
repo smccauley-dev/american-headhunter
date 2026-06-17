@@ -894,23 +894,53 @@ class AdminPanelProvider extends PanelProvider
             color: #0a1512 !important;
         }
 
-        /* File upload drop zone — squared in main content AND in modals (the photo
-           and map uploaders open in action modals, which the .fi-main scope misses). */
+        /* File upload — match the member frontend's branded parchment FilePond skin.
+           Filament's own FilePond draws a white .filepond--panel-root *inside* the
+           .fi-fo-file-upload-input-ctn wrapper, so styling the wrapper alone leaves
+           a white box. Neutralise the wrapper and skin the panel itself, mirroring
+           resources/css/app.css exactly, so the admin and member uploaders are
+           pixel-identical: squared, paper drop zone, dashed parch border, mono
+           labels, blaze "Browse". */
         .fi-main .fi-fo-file-upload-input-ctn,
         .fi-modal .fi-fo-file-upload-input-ctn {
             border-radius: 0 !important;
-            border: 1px dashed #a89874 !important;
-            background-color: #faf7f2 !important;
+            border: none !important;
+            background-color: transparent !important;
         }
-        .fi-main .fi-fo-file-upload-input-ctn:hover,
-        .fi-modal .fi-fo-file-upload-input-ctn:hover {
+        .filepond--root { font-family: 'JetBrains Mono', Menlo, monospace !important; margin-bottom: 0 !important; }
+        .filepond--root .filepond--panel-root {
+            border-radius: 0 !important;
+            background-color: #faf7f2 !important;
+            border: 1px dashed #a89874 !important;
+        }
+        .filepond--root:hover .filepond--panel-root {
             border-color: #0a1512 !important;
             background-color: rgba(10, 21, 18, 0.03) !important;
         }
+        .filepond--root .filepond--drop-label {
+            color: rgba(10, 21, 18, 0.55) !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
+            font-size: 11px !important;
+            letter-spacing: 0.04em !important;
+        }
+        .filepond--root .filepond--label-action {
+            color: #c84c21 !important;
+            text-decoration-color: #c84c21 !important;
+            text-underline-offset: 2px !important;
+        }
+        .filepond--root .filepond--item-panel { border-radius: 0 !important; background-color: #1c302a !important; }
+        .filepond--root .filepond--image-preview,
+        .filepond--root .filepond--image-preview-wrapper,
+        .filepond--root .filepond--image-preview-overlay { border-radius: 0 !important; }
+        .filepond--root .filepond--file-info-main { font-family: 'JetBrains Mono', Menlo, monospace !important; font-size: 11px !important; }
+        .filepond--root .filepond--file-info-sub { font-family: 'JetBrains Mono', Menlo, monospace !important; font-size: 9px !important; }
+        .filepond--root .filepond--drip-blob { background-color: #a89874 !important; }
 
-        /* Toggle — sage when on */
+        /* Toggle — sage when on (modal scope too, for the upload modals' EXIF toggle) */
         .fi-main .fi-toggle:checked,
-        .fi-main input[type="checkbox"]:checked ~ .fi-toggle {
+        .fi-modal .fi-toggle:checked,
+        .fi-main input[type="checkbox"]:checked ~ .fi-toggle,
+        .fi-modal input[type="checkbox"]:checked ~ .fi-toggle {
             background-color: #6b7856 !important;
         }
 

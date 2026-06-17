@@ -81,13 +81,14 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
   const pondRef = useRef<any>(null)
   const [showUpload, setShowUpload] = useState(false)
   const [batchCaption, setBatchCaption] = useState('')
+  const [batchTags, setBatchTags] = useState<string[]>([])
   const [importExif, setImportExif] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
   function resetUpload() {
     pondRef.current?.removeFiles()
-    setBatchCaption(''); setImportExif(true); setUploadError(null)
+    setBatchCaption(''); setBatchTags([]); setImportExif(true); setUploadError(null)
   }
 
   function submitUpload() {
@@ -100,6 +101,7 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
     router.post(`/member/properties/${propertyId}/photos`, {
       tmp_files: ids,
       caption: batchCaption.trim() || null,
+      tags: batchTags,
       import_exif: importExif,
     }, {
       preserveScroll: true,
@@ -307,12 +309,12 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
                 maxFileSize="10MB"
                 acceptedFileTypes={['image/jpeg', 'image/png', 'image/webp']}
                 name="photo"
-                labelIdle='Drag &amp; Drop your photos or <span class="filepond--label-action">Browse</span>'
+                labelIdle='Drag &amp; Drop your files or <span class="filepond--label-action">Browse</span>'
                 onupdatefiles={() => setUploadError(null)}
                 processUrl={`/member/properties/${propertyId}/photos/temp`}
                 revertUrl={`/member/properties/${propertyId}/photos/temp`}
               />
-              <div style={mHelper}>JPG, PNG, or WebP — max 10 MB each, up to 20 per batch. The first photo becomes the cover photo.</div>
+              <div style={mHelper}>JPG, PNG, or WebP — max 10 MB each, up to 20 per batch.</div>
             </div>
 
             {/* Caption */}
@@ -320,6 +322,13 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
               <label style={label}>Caption</label>
               <input type="text" value={batchCaption} onChange={e => setBatchCaption(e.target.value)} style={input} maxLength={255} />
               <div style={mHelper}>Optional — applied to every photo in this batch. Edit photos individually afterwards.</div>
+            </div>
+
+            {/* Tags — applied to every photo in this batch (parity with the admin uploader) */}
+            <div>
+              <label style={label}>Tags</label>
+              <TagsField tags={batchTags} onChange={setBatchTags} />
+              <div style={mHelper}>Optional — applied to every photo in this batch. Press Enter after each tag.</div>
             </div>
 
             {/* Import EXIF toggle */}

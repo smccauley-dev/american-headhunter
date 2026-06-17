@@ -64,6 +64,8 @@ class PropertyPhotoController extends Controller
             'tmp_files'   => 'required|array|max:20',
             'tmp_files.*' => 'string',
             'caption'     => 'nullable|string|max:255',
+            'tags'        => 'array',
+            'tags.*'      => 'string|max:40',
             'import_exif' => 'boolean',
         ]);
 
@@ -85,7 +87,7 @@ class PropertyPhotoController extends Controller
                     $property,
                     $file,
                     $data['caption'] ?? null,
-                    [],
+                    $data['tags'] ?? [],
                     (bool) ($data['import_exif'] ?? true),
                 );
                 $uploaded++;

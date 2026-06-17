@@ -353,6 +353,10 @@ html {
   background-color: var(--paper);
   border: 1px dashed var(--parch-deep);
 }
+.filepond--root:hover .filepond--panel-root {
+  border-color: var(--ink);
+  background-color: rgba(10, 21, 18, 0.03);
+}
 .filepond--root .filepond--drop-label {
   color: rgba(10, 21, 18, 0.55);
   font-family: var(--mono);
