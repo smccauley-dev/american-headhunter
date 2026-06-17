@@ -6,7 +6,7 @@ import {
   fieldLabel as label, fieldInput as input, modalHelper as mHelper,
   toolbarBtn as ghostBtn, toolbarDangerBtn as dangerBtn,
   fiGhostBtn as uploadBtn, fiPrimaryBtn as fiPrimary,
-} from './PropertyChromeV2'
+} from './PropertyChrome'
 
 export interface Photo {
   id: string

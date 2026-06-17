@@ -1,6 +1,6 @@
 import { useForm, router } from '@inertiajs/react'
 import { useState } from 'react'
-import { Section, INK, ACCENT } from './PropertyChromeV2'
+import { Section, INK, ACCENT } from './PropertyChrome'
 
 export interface Manager {
   id: string

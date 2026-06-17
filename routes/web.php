@@ -186,7 +186,6 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
 
     // Property details (game types, rules, amenities) nested under a property.
     Route::get('/properties/{property}/details', [MemberPropertyDetailController::class, 'edit'])->name('properties.details.edit');
-    Route::get('/properties/{property}/details/v2', [MemberPropertyDetailController::class, 'editV2'])->name('properties.details.edit.v2');
     Route::put('/properties/{property}/details', [MemberPropertyDetailController::class, 'update'])->name('properties.details.update');
 
     // Listings nested under a property.
