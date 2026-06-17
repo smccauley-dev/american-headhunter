@@ -45,9 +45,10 @@ class PropertyMapController extends Controller
         abort_unless($belongs, 404);
 
         $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
-        $disk = config('filesystems.defaults.documents', 'local');
+        $disk = \Illuminate\Support\Facades\Storage::disk(config('filesystems.defaults.documents', 'local'));
+        abort_unless($disk->exists($doc->storage_key), 404);
 
-        return \Illuminate\Support\Facades\Storage::disk($disk)->response(
+        return $disk->response(
             $doc->storage_key,
             $doc->original_filename,
             ['Content-Type' => $doc->mime_type ?? 'image/jpeg', 'Cache-Control' => 'private, max-age=3600'],

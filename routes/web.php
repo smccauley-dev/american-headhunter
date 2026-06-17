@@ -116,8 +116,10 @@ Route::get('/property-photos/{documentId}', function (string $documentId) {
     abort_unless($isPropertyPhoto, 404);
 
     $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
-    $disk = config('filesystems.defaults.documents', 'local');
-    return \Illuminate\Support\Facades\Storage::disk($disk)->response(
+    $disk = \Illuminate\Support\Facades\Storage::disk(config('filesystems.defaults.documents', 'local'));
+    abort_unless($disk->exists($doc->storage_key), 404);
+
+    return $disk->response(
         $doc->storage_key,
         $doc->original_filename,
         ['Content-Type' => $doc->mime_type ?? 'image/jpeg', 'Cache-Control' => 'public, max-age=86400'],
@@ -141,8 +143,10 @@ Route::get('/property-maps/{documentId}', function (string $documentId) {
     abort_unless($isBoundaryMap, 404);
 
     $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
-    $disk = config('filesystems.defaults.documents', 'local');
-    return \Illuminate\Support\Facades\Storage::disk($disk)->response(
+    $disk = \Illuminate\Support\Facades\Storage::disk(config('filesystems.defaults.documents', 'local'));
+    abort_unless($disk->exists($doc->storage_key), 404);
+
+    return $disk->response(
         $doc->storage_key,
         $doc->original_filename,
         ['Content-Type' => $doc->mime_type ?? 'image/jpeg', 'Cache-Control' => 'public, max-age=3600'],
