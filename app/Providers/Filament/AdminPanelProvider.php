@@ -299,7 +299,7 @@ class AdminPanelProvider extends PanelProvider
         return <<<'HTML'
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=Instrument+Mono&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=JetBrains+Mono:wght@300;400;500;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet">
         <style>
         /* ── American Headhunter Admin Theme ─────────────────────────────── */
 
@@ -380,7 +380,7 @@ class AdminPanelProvider extends PanelProvider
 
         /* ── Nav groups & items ──────────────────────────────────────── */
         .fi-sidebar-group-label {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
             letter-spacing: 0.18em !important;
             text-transform: uppercase !important;
@@ -490,7 +490,7 @@ class AdminPanelProvider extends PanelProvider
             font-weight: 500 !important;
         }
         .fi-breadcrumbs-item-label {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
             letter-spacing: 0.1em !important;
             text-transform: uppercase !important;
@@ -553,7 +553,7 @@ class AdminPanelProvider extends PanelProvider
         }
         /* Section heading — "FIELD RECORD" label style (mono, small, uppercase) */
         .fi-section-header-heading {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 13px !important;
             font-weight: 400 !important;
             letter-spacing: 0.15em !important;
@@ -561,7 +561,7 @@ class AdminPanelProvider extends PanelProvider
             color: rgba(10, 21, 18, 0.7) !important;
         }
         .fi-section-header-description {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
             letter-spacing: 0.08em !important;
             color: rgba(10, 21, 18, 0.4) !important;
@@ -595,7 +595,7 @@ class AdminPanelProvider extends PanelProvider
 
         /* ── Infolist entries ────────────────────────────────────────── */
         .fi-in-entry-label {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 13px !important;
             letter-spacing: 0.12em !important;
             text-transform: uppercase !important;
@@ -801,7 +801,7 @@ class AdminPanelProvider extends PanelProvider
             align-items: center !important;
             justify-content: center !important;
             padding: 0 0.5rem !important;
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 11px !important;
             letter-spacing: 0.12em !important;
             color: rgba(10, 21, 18, 0.55) !important;
@@ -826,7 +826,7 @@ class AdminPanelProvider extends PanelProvider
             border: none !important;
             background-color: transparent !important;
             color: #0a1512 !important;
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 11px !important;
             box-shadow: none !important;
         }
@@ -842,7 +842,7 @@ class AdminPanelProvider extends PanelProvider
 
         /* Field labels */
         .fi-main .fi-fo-field-label-content {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 13px !important;
             letter-spacing: 0.12em !important;
             text-transform: uppercase !important;
@@ -850,14 +850,14 @@ class AdminPanelProvider extends PanelProvider
             font-weight: 400 !important;
         }
         .fi-main .fi-fo-field-wrp-error-message {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
         }
         /* Helper / hint text */
         .fi-main .fi-fo-field-wrp > p,
         .fi-main [class*="fi-fo-"][class*="helper"],
         .fi-main .fi-hint {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
             color: rgba(10, 21, 18, 0.4) !important;
             letter-spacing: 0.05em !important;
@@ -920,7 +920,7 @@ class AdminPanelProvider extends PanelProvider
             border-bottom: 1px solid #a89874 !important;
         }
         .fi-main .fi-fo-repeater-item-header-label {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
             letter-spacing: 0.12em !important;
             color: rgba(10, 21, 18, 0.6) !important;
@@ -962,7 +962,7 @@ class AdminPanelProvider extends PanelProvider
         }
         /* Modal form labels */
         .fi-modal .fi-fo-field-label-content {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
             letter-spacing: 0.12em !important;
             text-transform: uppercase !important;
@@ -1005,7 +1005,7 @@ class AdminPanelProvider extends PanelProvider
             background-color: transparent !important;
             border-radius: 0 !important;
             color: rgba(10, 21, 18, 0.45) !important;
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
             letter-spacing: 0.12em !important;
             text-transform: uppercase !important;
@@ -1062,7 +1062,7 @@ class AdminPanelProvider extends PanelProvider
         }
         .fi-ta-col-manager-heading,
         .fi-ta-filters-heading {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
             letter-spacing: 0.15em !important;
             text-transform: uppercase !important;
@@ -1073,7 +1073,7 @@ class AdminPanelProvider extends PanelProvider
             background-color: transparent !important;
         }
         .fi-ta-col-manager-label {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 11px !important;
             color: #0a1512 !important;
         }
@@ -1086,7 +1086,7 @@ class AdminPanelProvider extends PanelProvider
             box-shadow: 8px 8px 0 #0a1512 !important;
         }
         .fi-dropdown-list-item-label {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 11px !important;
             color: #0a1512 !important;
         }
@@ -1106,7 +1106,7 @@ class AdminPanelProvider extends PanelProvider
             gap: 0.5rem !important;
             white-space: nowrap !important;
             line-height: 1 !important;
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 11px !important;
             letter-spacing: 0.12em !important;
             text-transform: uppercase !important;
@@ -1156,7 +1156,7 @@ class AdminPanelProvider extends PanelProvider
             border-radius: 0 !important;
             border: none !important;
             box-shadow: none !important;
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 11px !important;
             letter-spacing: 0.12em !important;
             text-transform: uppercase !important;
@@ -1281,7 +1281,7 @@ class AdminPanelProvider extends PanelProvider
             line-height: 1;
         }
         .ah-admin-brand-sub {
-            font-family: 'Instrument Mono', monospace;
+            font-family: 'JetBrains Mono', Menlo, monospace;
             font-size: 9px;
             letter-spacing: 0.22em;
             text-transform: uppercase;
@@ -1312,7 +1312,7 @@ class AdminPanelProvider extends PanelProvider
             line-height: 1 !important;
         }
         .fi-simple-main .ah-admin-brand-sub {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 9px !important;
             letter-spacing: 0.22em !important;
             color: #6b7856 !important;
@@ -1323,7 +1323,7 @@ class AdminPanelProvider extends PanelProvider
 
         /* FORM LABELS — Filament uses .fi-fo-field-label-content for the text node */
         .fi-simple-main .fi-fo-field-label-content {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 13px !important;
             letter-spacing: 0.12em !important;
             text-transform: uppercase !important;
@@ -1409,7 +1409,7 @@ class AdminPanelProvider extends PanelProvider
             background-color: #0a1512 !important;
             color: #faf7f2 !important;
             border-radius: 0 !important;
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 11px !important;
             letter-spacing: 0.15em !important;
             text-transform: uppercase !important;
@@ -1466,7 +1466,7 @@ class AdminPanelProvider extends PanelProvider
 
         /* VALIDATION ERRORS */
         .fi-simple-main .fi-fo-field-wrp-error-message {
-            font-family: 'Instrument Mono', monospace !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 11px !important;
         }
 
@@ -1477,7 +1477,7 @@ class AdminPanelProvider extends PanelProvider
             border-top: 1px solid rgba(10, 21, 18, 0.1);
         }
         .ah-login-notice-text {
-            font-family: 'Instrument Mono', monospace;
+            font-family: 'JetBrains Mono', Menlo, monospace;
             font-size: 10px;
             line-height: 1.6;
             color: rgba(10, 21, 18, 0.45);
@@ -1491,7 +1491,7 @@ class AdminPanelProvider extends PanelProvider
             gap: 20px;
         }
         .ah-login-notice-link {
-            font-family: 'Instrument Mono', monospace;
+            font-family: 'JetBrains Mono', Menlo, monospace;
             font-size: 10px;
             letter-spacing: 0.1em;
             text-transform: uppercase;
@@ -1525,7 +1525,7 @@ class AdminPanelProvider extends PanelProvider
         .ah-login-footer {
             text-align: center;
             padding: 20px 0 0;
-            font-family: 'Instrument Mono', monospace;
+            font-family: 'JetBrains Mono', Menlo, monospace;
             font-size: 10px;
             letter-spacing: 0.2em;
             color: rgba(250, 247, 242, 0.2);

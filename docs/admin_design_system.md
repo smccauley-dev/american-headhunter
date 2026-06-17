@@ -39,8 +39,9 @@ form, and an all-monospace label system in small-caps.
 > **Note on the member/public side:** the member portal (`/member/...`) and public
 > pages use **React 19 + Inertia.js + TypeScript**, a different (but visually
 > parallel) component kit (`resources/js/Components/Member/PropertyChrome.tsx`).
-> That mirror uses **JetBrains Mono** where the admin uses **Instrument Mono**.
-> This document covers the **admin** (Filament/Blade) side only.
+> Both the admin and the member mirror use **JetBrains Mono** — the brand-standard
+> mono (see `docs/design_system.md`). This document covers the **admin**
+> (Filament/Blade) side only.
 
 ### Filament panel configuration (`panel()` in AdminPanelProvider)
 
@@ -147,40 +148,40 @@ CREAM      #e8dcc4  ███  button text on ink
 ### 3.1 Font families (loaded via Google Fonts)
 
 ```html
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=Instrument+Mono&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=JetBrains+Mono:wght@300;400;500;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet">
 ```
 
 | Family | Stack | Role |
 |---|---|---|
-| **Instrument Mono** | `'Instrument Mono', monospace` | All UI chrome: labels, buttons, tabs, breadcrumbs, nav groups, badges, helper text, pagination |
+| **JetBrains Mono** | `'JetBrains Mono', Menlo, monospace` | All UI chrome: labels, buttons, tabs, breadcrumbs, nav groups, badges, helper text, pagination |
 | **Fraunces** (serif display) | `'Fraunces', Georgia, serif` | Display headings: page header, section card title (`fi-header-heading`), modal heading, brand name, AH mark |
 | **Crimson Pro** (serif body) | `'Crimson Pro', Georgia, serif` | Long-form body / description text (`.ah-description-entry`) |
 
-Weights loaded: Fraunces 500 + 600 (+ italic 500); Instrument Mono 400; Crimson
-Pro 300 + 400 (+ italics).
+Weights loaded: Fraunces 500 + 600 (+ italic 500); JetBrains Mono 300/400/500/600;
+Crimson Pro 300 + 400 (+ italics).
 
 ### 3.2 Type scale & usage
 
 | Element | Font | Size | Weight | Letter-spacing | Transform | Color |
 |---|---|---|---|---|---|---|
 | Page header (`fi-header-heading`) | Fraunces | (Filament default ~1.875rem) | 500 | — | — | `#0a1512` |
-| Section card title (`fi-section-header-heading`) | Instrument Mono | 13px | 400 | 0.15em | uppercase | `rgba(10,21,18,.7)` |
-| Section description | Instrument Mono | 10px | — | 0.08em | — | `rgba(10,21,18,.4)` |
-| Field label (`fi-fo-field-label-content`) | Instrument Mono | 13px | 400 | 0.12em | uppercase | `rgba(10,21,18,.7)` |
-| **Modal** field label | Instrument Mono | 10px | — | 0.12em | uppercase | `rgba(10,21,18,.5)` |
-| Helper / hint text | Instrument Mono | 10px | — | 0.05em | — | `rgba(10,21,18,.4)` |
-| Field error message | Instrument Mono | 10px | — | — | — | (danger) |
+| Section card title (`fi-section-header-heading`) | JetBrains Mono | 13px | 400 | 0.15em | uppercase | `rgba(10,21,18,.7)` |
+| Section description | JetBrains Mono | 10px | — | 0.08em | — | `rgba(10,21,18,.4)` |
+| Field label (`fi-fo-field-label-content`) | JetBrains Mono | 13px | 400 | 0.12em | uppercase | `rgba(10,21,18,.7)` |
+| **Modal** field label | JetBrains Mono | 10px | — | 0.12em | uppercase | `rgba(10,21,18,.5)` |
+| Helper / hint text | JetBrains Mono | 10px | — | 0.05em | — | `rgba(10,21,18,.4)` |
+| Field error message | JetBrains Mono | 10px | — | — | — | (danger) |
 | Input / textarea text | (system) | 14px | — | — | — | `#0a1512` |
-| Button label (`fi-btn`) | Instrument Mono | 11px | — | 0.12em | uppercase | per-variant |
-| Tab item | Instrument Mono | 10px | — | 0.12em | uppercase | per-state |
-| Breadcrumb | Instrument Mono | 10px | — | 0.1em | uppercase | `rgba(10,21,18,.5)` |
-| Nav group label | Instrument Mono | 10px | 400 | 0.18em | uppercase | `#b8934a` |
+| Button label (`fi-btn`) | JetBrains Mono | 11px | — | 0.12em | uppercase | per-variant |
+| Tab item | JetBrains Mono | 10px | — | 0.12em | uppercase | per-state |
+| Breadcrumb | JetBrains Mono | 10px | — | 0.1em | uppercase | `rgba(10,21,18,.5)` |
+| Nav group label | JetBrains Mono | 10px | 400 | 0.18em | uppercase | `#b8934a` |
 | Sidebar item | (Filament default) | — | — | — | — | `#f4ecdc` |
-| Pagination number | Instrument Mono | 11px | — | 0.12em | — | `rgba(10,21,18,.55)` |
+| Pagination number | JetBrains Mono | 11px | — | 0.12em | — | `rgba(10,21,18,.55)` |
 | Modal heading | Fraunces | (Filament default) | 500 | — | — | `#0a1512` |
 | Description body (`.ah-description-entry`) | Crimson Pro | 16px | 300 | — | line-height 1.65 | `#6b7856` |
 | Brand name | Fraunces | 22px | 500 | -0.02em | — | per-context |
-| Brand sub | Instrument Mono | 9px | — | 0.22em | uppercase | muted |
+| Brand sub | JetBrains Mono | 9px | — | 0.22em | uppercase | muted |
 | AH mark letters | Fraunces | 20px | 600 | -0.02em | — | per-context |
 
 **Photo-grid blade (card) typography** (inline styles, monospace = browser default mono):
@@ -370,14 +371,14 @@ gradient so it stops 24px short of each edge (aligning to content padding):
 
 ### 6.2 Buttons
 
-All buttons: `border-radius: 0`, `height: 36px`, Instrument Mono 11px, 0.12em
+All buttons: `border-radius: 0`, `height: 36px`, JetBrains Mono 11px, 0.12em
 tracking, uppercase, no shadow, icon SVG forced to 14×14.
 
 ```css
 .fi-btn {
     border-radius: 0; box-shadow: none; height: 36px;
     padding: 0 0.875rem;
-    font-family: 'Instrument Mono', monospace;
+    font-family: 'JetBrains Mono', Menlo, monospace;
     font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
     display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
 }
@@ -431,7 +432,7 @@ input.fi-input::placeholder { color: rgba(10,21,18,.3); }
 - **Toggle:** when on → `background-color: #6b7856` (sage).
 - **Repeater item:** `#faf7f2` bg, `1px solid #c9b896`, square; header has
   `1px solid #a89874` bottom border + mono 10px label.
-- **Error message:** Instrument Mono 10px.
+- **Error message:** JetBrains Mono 10px.
 
 ### 6.4 Tabs
 
@@ -443,7 +444,7 @@ nav.fi-tabs {
 }
 .fi-tabs-item {
     background: transparent;
-    font-family: 'Instrument Mono', monospace;
+    font-family: 'JetBrains Mono', Menlo, monospace;
     font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
     color: rgba(10,21,18,.45);
     border-bottom: 2px solid transparent;
@@ -576,7 +577,7 @@ Touch targets meet the 36px button / 44px login-submit minimums.
 | **Folder structure (admin)** | `app/Filament/Admin/Resources/<Model>/` → `Schemas/` (form definitions), `Pages/` (Edit/List/Create + custom actions), `Tables/`. Blade partials in `resources/views/filament/admin/...`. |
 | **Action pattern** | Reusable form/table actions are `Action::make('camelName')` methods on the Page class, mounted from Blade via `wire:click="mountAction('camelName', {...})"`. |
 | **Naming** | Filament actions camelCase (`editPropertyPhoto`); section/tab labels Title Case; helper texts are full sentences. |
-| **Member mirror** | When changing this admin UI, the member React mirror (`resources/js/Components/Member/PropertyChrome.tsx` + `PropertyPhotosTab.tsx` / `PropertyMapTab.tsx`) is intentionally kept pixel-parallel — update both, swapping Instrument Mono ↔ JetBrains Mono. |
+| **Member mirror** | When changing this admin UI, the member React mirror (`resources/js/Components/Member/PropertyChrome.tsx` + `PropertyPhotosTab.tsx` / `PropertyMapTab.tsx`) is intentionally kept pixel-parallel — both use JetBrains Mono, so update both together. |
 | **IDE** | No JetBrains-specific plugin config is part of the rendered page; project is editor-agnostic. |
 
 ---
