@@ -16,6 +16,21 @@ export interface Photo {
   is_primary: boolean
 }
 
+/** Photo thumbnail that degrades to a clean placeholder if the file is missing
+ * (e.g. seeded rows with no backing file) instead of the browser's broken glyph. */
+function Thumb({ documentId, alt }: { documentId: string; alt: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '7px', color: '#a89874' }}>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round"><path d="M2.25 15.75 7.41 10.59a2.25 2.25 0 0 1 3.18 0l4.16 4.16m0 0 1.66-1.66a2.25 2.25 0 0 1 3.18 0L21.75 15M3.75 19.5h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Z" /></svg>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.1em', textTransform: 'uppercase' }}>Image unavailable</span>
+      </div>
+    )
+  }
+  return <img src={`/property-photos/${documentId}`} alt={alt} onError={() => setFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+}
+
 export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: string; photos: Photo[] }) {
   // Inline caption editing
   const [editing, setEditing] = useState<string | null>(null)
@@ -95,7 +110,7 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
           {photos.map((p, i) => (
             <div key={p.id} style={{ border: '1px solid #d4c9b0', background: '#fff' }}>
               <div style={{ position: 'relative', aspectRatio: '4 / 3', overflow: 'hidden', background: '#ece4d4' }}>
-                <img src={`/property-photos/${p.document_id}`} alt={p.caption ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <Thumb documentId={p.document_id} alt={p.caption ?? ''} />
                 {p.is_primary && (
                   <span style={{ position: 'absolute', top: '8px', left: '8px', fontFamily: 'var(--mono)', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '3px 8px', background: INK, color: '#F4ECDC' }}>
                     Cover
