@@ -76,7 +76,10 @@ const uploadBtn: React.CSSProperties = {
 const DRAG_THRESHOLD = 1.2 // percent of image moved before a press counts as a drag
 
 // ── Modal shell ───────────────────────────────────────────────────────────────
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+// Mirrors the admin Filament modal exactly: parchment window (#f4ecdc) with a 1px
+// ink border + hard 8px offset shadow, a Fraunces serif heading (title case), a
+// tan header rule, and an optional footer (tan top rule) holding the action buttons.
+function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
   return (
     <div
       onClick={onClose}
@@ -84,17 +87,27 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
     >
       <div
         onClick={e => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: '480px', background: '#F8F4EB', border: `1px solid ${TAN}`, boxShadow: '0 18px 50px rgba(10,21,18,0.35)' }}
+        style={{ width: '100%', maxWidth: '480px', background: '#f4ecdc', border: `1px solid ${INK}`, boxShadow: `8px 8px 0 ${INK}` }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #e5ddd0' }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: INK }}>{title}</div>
-          <button type="button" onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '20px', lineHeight: 1, color: '#9ca3af' }}>×</button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${TAN}` }}>
+          <div style={{ fontFamily: 'var(--display), Georgia, serif', fontSize: '18px', fontWeight: 500, color: INK }}>{title}</div>
+          <button type="button" onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '20px', lineHeight: 1, color: 'rgba(10,21,18,0.4)' }}>×</button>
         </div>
         <div style={{ padding: '18px' }}>{children}</div>
+        {footer && (
+          <div style={{ padding: '12px 18px', borderTop: `1px solid ${TAN}`, display: 'flex', gap: '10px' }}>{footer}</div>
+        )}
       </div>
     </div>
   )
 }
+
+// Footer action buttons — the admin's Filament fi-btn pair: SUBMIT is the dark
+// primary (#0a1512 / #e8dcc4), CANCEL is the ghost (re-using uploadBtn's spec).
+const fiPrimary: React.CSSProperties = { ...uploadBtn, background: INK, color: '#e8dcc4', border: 'none' }
+
+// Modal helper text — Crimson Pro serif, muted, matching the admin form helper copy.
+const mHelper: React.CSSProperties = { fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', lineHeight: 1.45, color: '#6b5e50', marginTop: '6px' }
 
 type MarkerFields = { label: string; marker_type: string; color: string; use_color: boolean; latitude: string; longitude: string; notes: string }
 type DetailFields = { description: string; latitude: string; longitude: string; show_coords_publicly: boolean; is_boundary: boolean }
@@ -122,26 +135,42 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
   const [showDetails, setShowDetails] = useState(false)
 
   // ── Upload ──────────────────────────────────────────────────────────────────
+  // Select-then-submit (mirrors the admin modal): files are collected by drag/drop
+  // or Browse into state, then SUBMIT posts the batch. SUBMIT is never disabled
+  // until a selection exists — clicking with no files shows a validation error
+  // instead of being a dead, greyed-out button.
   const [description, setDescription] = useState('')
   const [importExif, setImportExif] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadFiles, setUploadFiles] = useState<File[]>([])
+  const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files
-    if (!files?.length) return
+  function addFiles(list: FileList | null) {
+    if (!list?.length) return
+    setUploadError(null)
+    setUploadFiles(prev => [...prev, ...Array.from(list)].slice(0, 10))
+  }
+
+  function resetUpload() {
+    setUploadFiles([]); setDescription(''); setImportExif(true); setUploadError(null)
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  function submitUpload() {
+    if (uploadFiles.length === 0) { setUploadError('Please add at least one map image.'); return }
     const fd = new FormData()
-    Array.from(files).forEach(f => fd.append('images[]', f))
+    uploadFiles.forEach(f => fd.append('images[]', f))
     if (description) fd.append('description', description)
     fd.append('import_exif', importExif ? '1' : '0')
     setUploading(true)
     setUploadError(null)
     router.post(`/member/properties/${propertyId}/map-images`, fd, {
       preserveScroll: true, forceFormData: true,
-      onSuccess: () => { setDescription(''); setShowUpload(false) },
-      onError: errs => setUploadError(errs.images ?? 'Upload failed.'),
-      onFinish: () => { setUploading(false); if (fileRef.current) fileRef.current.value = '' },
+      onSuccess: () => { resetUpload(); setShowUpload(false) },
+      onError: errs => setUploadError((errs as Record<string, string>).images ?? 'Upload failed.'),
+      onFinish: () => setUploading(false),
     })
   }
 
@@ -275,7 +304,7 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
   }
 
   const uploadAction = (
-    <button type="button" onClick={() => { setUploadError(null); setShowUpload(true) }} style={uploadBtn}>
+    <button type="button" onClick={() => { resetUpload(); setShowUpload(true) }} style={uploadBtn}>
       <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
       </svg>
@@ -401,24 +430,78 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
 
       {/* ── Upload modal ───────────────────────────────────────────────────────── */}
       {showUpload && (
-        <Modal title="Upload Map Images" onClose={() => setShowUpload(false)}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div>
-              <label style={label}>Description (optional)</label>
-              <input type="text" value={description} onChange={e => setDescription(e.target.value)} style={input} maxLength={255} placeholder="Aerial, plat, hand-drawn…" />
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontFamily: 'var(--body)', fontSize: '14px', color: '#6b5e50' }}>
-              <input type="checkbox" checked={importExif} onChange={e => setImportExif(e.target.checked)} />
-              Import location from image metadata (EXIF GPS)
-            </label>
-            {uploadError && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{uploadError}</div>}
-            <div>
-              <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} style={{ ...inkBtn, padding: '10px 22px', fontSize: '10px', opacity: uploading ? 0.6 : 1 }}>
-                {uploading ? 'Uploading…' : 'Choose Images'}
+        <Modal
+          title="Upload Map Images"
+          onClose={() => setShowUpload(false)}
+          footer={(
+            <>
+              <button type="button" onClick={submitUpload} disabled={uploading} style={{ ...fiPrimary, opacity: uploading ? 0.6 : 1 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                {uploading ? 'Uploading…' : 'Submit'}
               </button>
-              <span style={{ fontFamily: 'var(--body)', fontSize: '13px', color: '#6b5e50', marginLeft: '12px' }}>The first map image becomes the boundary map.</span>
+              <button type="button" onClick={() => setShowUpload(false)} style={uploadBtn}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18 18 6M6 6l12 12" /></svg>
+                Cancel
+              </button>
+            </>
+          )}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            {/* Map Images — drag & drop / browse */}
+            <div>
+              <label style={label}>Map Images <span style={{ color: ACCENT }}>*</span></label>
+              <div
+                onClick={() => fileRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
+                style={{
+                  border: `1px dashed ${dragOver ? INK : TAN}`,
+                  background: dragOver ? 'rgba(10,21,18,0.03)' : '#faf7f2',
+                  padding: '28px 16px', textAlign: 'center', cursor: 'pointer',
+                }}
+              >
+                <div style={{ fontFamily: SANS, fontSize: '13px', color: '#6b5e50' }}>
+                  Drag &amp; Drop your files or <span style={{ color: ACCENT, textDecoration: 'underline' }}>Browse</span>
+                </div>
+              </div>
+              {uploadFiles.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px' }}>
+                  {uploadFiles.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontFamily: 'var(--mono)', fontSize: '11px', color: INK }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                      <button type="button" onClick={() => setUploadFiles(prev => prev.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '15px', lineHeight: 1, flexShrink: 0 }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={mHelper}>JPG, PNG, or WebP — max 15 MB each. The first map image on a property becomes the boundary map.</div>
             </div>
-            <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
+
+            {/* Description */}
+            <div>
+              <label style={label}>Description</label>
+              <input type="text" value={description} onChange={e => setDescription(e.target.value)} style={input} maxLength={255} />
+              <div style={mHelper}>Optional — applied to every image in this batch. Edit individually afterwards.</div>
+            </div>
+
+            {/* Import EXIF toggle */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button" role="switch" aria-checked={importExif} onClick={() => setImportExif(v => !v)}
+                  style={{ position: 'relative', width: '40px', height: '22px', borderRadius: '999px', border: 'none', cursor: 'pointer', flexShrink: 0, background: importExif ? '#6b7856' : '#c9bfa9', transition: 'background .15s' }}
+                >
+                  <span style={{ position: 'absolute', top: '2px', left: importExif ? '20px' : '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
+                </button>
+                <span style={{ ...label, marginBottom: 0 }}>Import image metadata (EXIF)</span>
+              </div>
+              <div style={mHelper}>When on, we read the metadata each camera or phone embeds in a photo — including any GPS coordinates recorded when the picture was taken — and use it to auto-fill the photo's location. Turn it off to ignore that metadata and leave the location blank. Imported coordinates stay private to staff and lessees; they are never shown publicly unless you separately enable that.</div>
+            </div>
+
+            {uploadError && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{uploadError}</div>}
+
+            <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={e => { addFiles(e.target.files); if (fileRef.current) fileRef.current.value = '' }} />
           </div>
         </Modal>
       )}
