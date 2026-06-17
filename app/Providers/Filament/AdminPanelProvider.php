@@ -382,7 +382,9 @@ class AdminPanelProvider extends PanelProvider
         .fi-sidebar-group-label {
             font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
-            letter-spacing: 0.18em !important;
+            /* 0.14em (trimmed from 0.18em) to keep group labels on one line in
+               the fixed-width sidebar now that JetBrains Mono is wider. */
+            letter-spacing: 0.14em !important;
             text-transform: uppercase !important;
             color: #b8934a !important;
             font-weight: 400 !important;
@@ -1007,7 +1009,10 @@ class AdminPanelProvider extends PanelProvider
             color: rgba(10, 21, 18, 0.45) !important;
             font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 10px !important;
-            letter-spacing: 0.12em !important;
+            /* 0.08em (trimmed from 0.12em): JetBrains Mono is wider than the
+               former Instrument Mono; the .fi-tabs nav is overflow:visible so
+               tabs wrap rather than scroll. Tighter tracking recovers width. */
+            letter-spacing: 0.08em !important;
             text-transform: uppercase !important;
             border-bottom: 2px solid transparent !important;
             padding-bottom: 10px !important;
