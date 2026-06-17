@@ -61,7 +61,7 @@ export function TabBar({ tabs, active, onChange }: {
   onChange: (key: string) => void
 }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0', marginBottom: '24px', borderBottom: `1px solid ${DIVIDER}` }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0', marginBottom: '24px', borderBottom: `1px solid ${TAN}` }}>
       {tabs.map(t => {
         const on = t.key === active
         return (
