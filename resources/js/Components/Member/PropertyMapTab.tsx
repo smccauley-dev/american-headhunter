@@ -43,17 +43,23 @@ const label: React.CSSProperties = {
   letterSpacing: '.12em', textTransform: 'uppercase', color: '#a89874', marginBottom: '5px',
 }
 
+// Buttons mirror the admin Filament map editor toolbar exactly: a light
+// gray (#FAFAFA) face, gray border, 6px radius, 12px sans label. The
+// selected/active state swaps the face to #E7DFD0 (per the admin theme).
+const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
 const ghostBtn: React.CSSProperties = {
-  fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em',
-  textTransform: 'uppercase', padding: '7px 13px', background: 'transparent',
-  color: INK, border: '1px solid #d4c9b0', cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none',
   display: 'inline-flex', alignItems: 'center', gap: '5px',
+  padding: '6px 12px', borderRadius: '6px',
+  background: '#FAFAFA', border: '1px solid #e5e7eb',
+  fontFamily: SANS, fontSize: '12px', fontWeight: 500,
+  color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none',
 }
+const activeBtn: React.CSSProperties = { ...ghostBtn, background: '#E7DFD0', borderColor: '#0a1512', color: '#0a1512', fontWeight: 600 }
 const inkBtn: React.CSSProperties = { ...ghostBtn, background: INK, color: '#F4ECDC', borderColor: INK }
-const dangerBtn: React.CSSProperties = { ...ghostBtn, color: ACCENT, borderColor: 'rgba(200,76,33,0.4)' }
+const dangerBtn: React.CSSProperties = { ...ghostBtn, color: '#b91c1c', borderColor: '#fca5a5' }
 const restoreBtn: React.CSSProperties = { ...ghostBtn, color: '#065f46', borderColor: '#6ee7b7' }
 
-const meta: React.CSSProperties = { fontFamily: 'var(--mono)', fontSize: '10px', color: '#9ca3af', letterSpacing: '.04em' }
+const meta: React.CSSProperties = { fontFamily: 'monospace', fontSize: '11px', color: '#9ca3af' }
 
 const DRAG_THRESHOLD = 1.2 // percent of image moved before a press counts as a drag
 
@@ -279,7 +285,7 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
         <>
           {/* Toolbar */}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-            <button type="button" onClick={() => setAddMode(a => !a)} style={addMode ? inkBtn : ghostBtn}>
+            <button type="button" onClick={() => setAddMode(a => !a)} style={addMode ? activeBtn : ghostBtn}>
               {addMode ? '✛ Click the map to place — or cancel' : '✛ Add Marker'}
             </button>
             <button type="button" onClick={openDetails} style={ghostBtn}>Edit Details</button>
