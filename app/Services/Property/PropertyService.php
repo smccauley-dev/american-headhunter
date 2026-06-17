@@ -1078,6 +1078,8 @@ class PropertyService extends BaseService
                 'caption'     => $p->caption,
                 'tags'        => $p->tags ?? [],
                 'is_primary'  => (bool) $p->is_primary,
+                'latitude'    => $p->latitude !== null ? (float) $p->latitude : null,
+                'longitude'   => $p->longitude !== null ? (float) $p->longitude : null,
             ])
             ->values()
             ->all();

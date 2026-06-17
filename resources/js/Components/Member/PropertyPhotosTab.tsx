@@ -1,10 +1,10 @@
 import { router } from '@inertiajs/react'
 import { useState } from 'react'
 import {
-  Section, INK, ACCENT,
+  Section, INK, ACCENT, TAN,
   Modal, DropZone, SelectedFiles, PillToggle, UploadIcon, CheckIcon, XIcon,
   fieldLabel as label, fieldInput as input, modalHelper as mHelper,
-  toolbarBtn as ghostBtn, toolbarInkBtn as inkBtn, toolbarDangerBtn as dangerBtn,
+  toolbarBtn as ghostBtn, toolbarDangerBtn as dangerBtn,
   fiGhostBtn as uploadBtn, fiPrimaryBtn as fiPrimary,
 } from './PropertyChrome'
 
@@ -14,7 +14,12 @@ export interface Photo {
   caption: string | null
   tags: string[]
   is_primary: boolean
+  latitude: number | null
+  longitude: number | null
 }
+
+/** Mirrors the admin photo tag suggestions (PropertyFormV2::photoTagSuggestions). */
+const TAG_SUGGESTIONS = ['aerial', 'habitat', 'food plot', 'stand', 'blind', 'trail camera', 'water', 'creek', 'pond', 'access', 'road', 'gate', 'cabin', 'lodging', 'harvest', 'wildlife', 'boundary', 'terrain']
 
 /** Photo thumbnail that degrades to a clean placeholder if the file is missing
  * (e.g. seeded rows with no backing file) instead of the browser's broken glyph. */
@@ -31,11 +36,42 @@ function Thumb({ documentId, alt }: { documentId: string; alt: string }) {
   return <img src={`/property-photos/${documentId}`} alt={alt} onError={() => setFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
 }
 
-export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: string; photos: Photo[] }) {
-  // Inline caption editing
-  const [editing, setEditing] = useState<string | null>(null)
-  const [caption, setCaption] = useState('')
+/** Tag editor — type a tag, Enter to add, × to remove (mirrors Filament TagsInput). */
+function TagsField({ tags, onChange }: { tags: string[]; onChange: (t: string[]) => void }) {
+  const [draft, setDraft] = useState('')
+  function add() {
+    const t = draft.trim()
+    if (t && !tags.includes(t)) onChange([...tags, t])
+    setDraft('')
+  }
+  return (
+    <div style={{ border: `1px solid ${TAN}`, background: '#fff' }}>
+      <input
+        type="text" value={draft} list="photo-tag-suggestions"
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+        onBlur={add}
+        placeholder="New tag"
+        style={{ ...input, border: 'none', background: 'transparent' }}
+      />
+      <datalist id="photo-tag-suggestions">
+        {TAG_SUGGESTIONS.map(s => <option key={s} value={s} />)}
+      </datalist>
+      {tags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '8px', borderTop: `1px solid ${TAN}` }}>
+          {tags.map(t => (
+            <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.04em', textTransform: 'uppercase', color: '#6b5d40', background: '#f5f1eb', border: '1px solid #e5e0d8', borderRadius: '999px', padding: '2px 7px' }}>
+              {t}
+              <button type="button" onClick={() => onChange(tags.filter(x => x !== t))} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9a8c6a', fontSize: '12px', lineHeight: 1, padding: 0 }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
+export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: string; photos: Photo[] }) {
   // ── Upload ──────────────────────────────────────────────────────────────────
   // Select-then-submit (mirrors the admin/Map modal): files collect in state via
   // drag/drop or Browse, then SUBMIT posts the batch. SUBMIT is never disabled
@@ -73,15 +109,40 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
     })
   }
 
-  function startEdit(p: Photo) { setEditing(p.id); setCaption(p.caption ?? '') }
-  function saveCaption(id: string) {
-    router.put(`/member/properties/${propertyId}/photos/${id}`, { caption }, {
-      preserveScroll: true, onSuccess: () => setEditing(null),
+  // ── Edit photo details ────────────────────────────────────────────────────────
+  const [editing, setEditing] = useState<Photo | null>(null)
+  const [eCaption, setECaption] = useState('')
+  const [eTags, setETags] = useState<string[]>([])
+  const [eLat, setELat] = useState('')
+  const [eLng, setELng] = useState('')
+  const [ePrimary, setEPrimary] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  function openEdit(p: Photo) {
+    setEditing(p)
+    setECaption(p.caption ?? '')
+    setETags(p.tags ?? [])
+    setELat(p.latitude !== null ? String(p.latitude) : '')
+    setELng(p.longitude !== null ? String(p.longitude) : '')
+    setEPrimary(p.is_primary)
+  }
+
+  function submitEdit() {
+    if (!editing) return
+    setSaving(true)
+    router.put(`/member/properties/${propertyId}/photos/${editing.id}`, {
+      caption: eCaption.trim() || null,
+      tags: eTags,
+      latitude: eLat.trim() === '' ? null : eLat.trim(),
+      longitude: eLng.trim() === '' ? null : eLng.trim(),
+      is_primary: ePrimary,
+    }, {
+      preserveScroll: true,
+      onSuccess: () => setEditing(null),
+      onFinish: () => setSaving(false),
     })
   }
-  function setPrimary(id: string) {
-    router.post(`/member/properties/${propertyId}/photos/${id}/primary`, {}, { preserveScroll: true })
-  }
+
   function move(id: string, direction: 'up' | 'down') {
     router.post(`/member/properties/${propertyId}/photos/${id}/move`, { direction }, { preserveScroll: true })
   }
@@ -90,7 +151,7 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
     router.delete(`/member/properties/${propertyId}/photos/${id}`, { preserveScroll: true })
   }
 
-  const galleryDescription = 'Photos shown on the public listing. The cover photo is the first image buyers see — use Set Cover to choose it and the arrows to set display order.'
+  const galleryDescription = 'Photos shown on the public listing. The primary photo is the cover image buyers see first — open Edit to set it, plus captions, tags and location, and use the arrows to set display order.'
 
   const uploadAction = (
     <button type="button" onClick={() => { resetUpload(); setShowUpload(true) }} style={uploadBtn}>
@@ -99,51 +160,122 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
     </button>
   )
 
+  const total = photos.length
+
   return (
     <Section title="Photo Gallery" description={galleryDescription} action={uploadAction}>
-      {photos.length === 0 ? (
+      {total === 0 ? (
         <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: 0 }}>
           No photos yet. Use <strong>Upload Photos</strong> above — the first photo you upload becomes the cover photo.
         </p>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
           {photos.map((p, i) => (
-            <div key={p.id} style={{ border: '1px solid #d4c9b0', background: '#fff' }}>
-              <div style={{ position: 'relative', aspectRatio: '4 / 3', overflow: 'hidden', background: '#ece4d4' }}>
+            <div key={p.id} style={{ border: '1px solid #d4c9b0', background: '#fff', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ position: 'relative', aspectRatio: '16 / 10', overflow: 'hidden', background: '#ece4d4' }}>
                 <Thumb documentId={p.document_id} alt={p.caption ?? ''} />
                 {p.is_primary && (
-                  <span style={{ position: 'absolute', top: '8px', left: '8px', fontFamily: 'var(--mono)', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '3px 8px', background: INK, color: '#F4ECDC' }}>
-                    Cover
+                  <span style={{ position: 'absolute', top: '8px', left: '8px', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '3px 9px', background: INK, color: '#fff', border: `1px solid ${TAN}` }}>
+                    ★ Primary
                   </span>
                 )}
+                <span style={{ position: 'absolute', top: '8px', right: '8px', fontFamily: 'var(--mono)', fontSize: '9px', padding: '2px 7px', background: 'rgba(10,21,18,0.65)', color: '#fff' }}>
+                  {String(i + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}
+                </span>
               </div>
-              <div style={{ padding: '10px' }}>
-                {editing === p.id ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <input type="text" value={caption} onChange={e => setCaption(e.target.value)} style={input} maxLength={255} placeholder="Caption" />
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button type="button" onClick={() => saveCaption(p.id)} style={inkBtn}>Save</button>
-                      <button type="button" onClick={() => setEditing(null)} style={ghostBtn}>Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', color: p.caption ? INK : '#a89874', margin: '0 0 10px', minHeight: '20px' }}>
-                    {p.caption || 'No caption'}
-                  </p>
-                )}
-                {editing !== p.id && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {!p.is_primary && <button type="button" onClick={() => setPrimary(p.id)} style={ghostBtn}>Set Cover</button>}
-                    <button type="button" onClick={() => startEdit(p)} style={ghostBtn}>Caption</button>
-                    <button type="button" onClick={() => move(p.id, 'up')} disabled={i === 0} style={{ ...ghostBtn, opacity: i === 0 ? 0.35 : 1 }}>↑</button>
-                    <button type="button" onClick={() => move(p.id, 'down')} disabled={i === photos.length - 1} style={{ ...ghostBtn, opacity: i === photos.length - 1 ? 0.35 : 1 }}>↓</button>
-                    <button type="button" onClick={() => remove(p.id)} style={dangerBtn}>Delete</button>
+              <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', fontStyle: p.caption ? 'normal' : 'italic', color: p.caption ? INK : '#a89874', margin: 0, minHeight: '20px' }}>
+                  {p.caption || 'No caption'}
+                </p>
+
+                {p.tags.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                    {p.tags.map(t => (
+                      <span key={t} style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.04em', textTransform: 'uppercase', color: '#6b5d40', background: '#f5f1eb', border: '1px solid #e5e0d8', borderRadius: '999px', padding: '2px 7px' }}>{t}</span>
+                    ))}
                   </div>
                 )}
+
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>
+                  {p.latitude !== null && p.longitude !== null ? (
+                    <a href={`https://www.google.com/maps?q=${p.latitude},${p.longitude}`} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: ACCENT, textDecoration: 'none' }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0Z" /><circle cx="12" cy="10" r="3" /></svg>
+                      {p.latitude.toFixed(6)}, {p.longitude.toFixed(6)}
+                    </a>
+                  ) : (
+                    <span style={{ color: '#c4bdac' }}>No location</span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: 'auto', paddingTop: '4px' }}>
+                  <button type="button" onClick={() => move(p.id, 'up')} disabled={i === 0} title="Move earlier" style={{ ...ghostBtn, opacity: i === 0 ? 0.35 : 1 }}>←</button>
+                  <button type="button" onClick={() => move(p.id, 'down')} disabled={i === total - 1} title="Move later" style={{ ...ghostBtn, opacity: i === total - 1 ? 0.35 : 1 }}>→</button>
+                  <button type="button" onClick={() => openEdit(p)} style={ghostBtn}>Edit</button>
+                  <button type="button" onClick={() => remove(p.id)} style={dangerBtn}>Delete</button>
+                </div>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {/* ── Edit photo details modal ────────────────────────────────────────────── */}
+      {editing && (
+        <Modal
+          title="Edit Photo Details"
+          onClose={() => setEditing(null)}
+          footer={(
+            <>
+              <button type="button" onClick={submitEdit} disabled={saving} style={{ ...fiPrimary, opacity: saving ? 0.6 : 1 }}>
+                <CheckIcon />
+                {saving ? 'Saving…' : 'Submit'}
+              </button>
+              <button type="button" onClick={() => setEditing(null)} style={uploadBtn}>
+                <XIcon />
+                Cancel
+              </button>
+            </>
+          )}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            {/* Caption / Description */}
+            <div>
+              <label style={label}>Caption / Description</label>
+              <textarea value={eCaption} onChange={e => setECaption(e.target.value)} maxLength={255} rows={3} style={{ ...input, minHeight: '70px', resize: 'vertical' }} />
+            </div>
+
+            {/* Tags */}
+            <div>
+              <label style={label}>Tags</label>
+              <TagsField tags={eTags} onChange={setETags} />
+              <div style={mHelper}>Press Enter after each tag. Used for gallery filtering.</div>
+            </div>
+
+            {/* GPS */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div>
+                <label style={label}>Latitude</label>
+                <input type="text" inputMode="decimal" value={eLat} onChange={e => setELat(e.target.value)} placeholder="30.267153" style={input} />
+                <div style={mHelper}>Where the photo was taken (WGS84). Auto-filled from the photo's EXIF GPS data when available.</div>
+              </div>
+              <div>
+                <label style={label}>Longitude</label>
+                <input type="text" inputMode="decimal" value={eLng} onChange={e => setELng(e.target.value)} placeholder="-97.743057" style={input} />
+                <div style={mHelper}>Negative values are West.</div>
+              </div>
+            </div>
+
+            {/* Primary toggle */}
+            <div>
+              <PillToggle on={ePrimary} onChange={setEPrimary} disabled={editing.is_primary} label="Primary (cover) photo" />
+              <div style={mHelper}>
+                {editing.is_primary
+                  ? 'This is the current primary photo. Set another photo as primary to change it.'
+                  : 'Make this the cover photo shown on the public listing.'}
+              </div>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* ── Upload modal ───────────────────────────────────────────────────────── */}

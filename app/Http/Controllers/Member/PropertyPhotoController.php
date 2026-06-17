@@ -59,9 +59,28 @@ class PropertyPhotoController extends Controller
     {
         $this->authorizeOwnsPhoto($property, $photo);
 
-        $data = $request->validate(['caption' => 'nullable|string|max:255']);
+        $data = $request->validate([
+            'caption'    => 'nullable|string|max:255',
+            'tags'       => 'array',
+            'tags.*'     => 'string|max:40',
+            'latitude'   => 'nullable|numeric|min:-90|max:90',
+            'longitude'  => 'nullable|numeric|min:-180|max:180',
+            'is_primary' => 'boolean',
+        ]);
 
-        $this->properties->updatePhotoDetails($photo, $data['caption'] ?? null, []);
+        $this->properties->updatePhotoDetails(
+            $photo,
+            $data['caption'] ?? null,
+            $data['tags'] ?? [],
+            isset($data['latitude']) ? (float) $data['latitude'] : null,
+            isset($data['longitude']) ? (float) $data['longitude'] : null,
+        );
+
+        // Promote to cover only when a non-primary photo is toggled on (a photo
+        // can't un-primary itself — another photo must be set as primary instead).
+        if (! empty($data['is_primary'])) {
+            $this->properties->setPrimaryPhoto($photo);
+        }
 
         return back()->with('success', 'Photo updated.');
     }

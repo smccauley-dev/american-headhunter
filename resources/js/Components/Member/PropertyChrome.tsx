@@ -247,12 +247,12 @@ export function Modal({ title, onClose, children, footer }: { title: string; onC
 }
 
 /** EXIF-style pill toggle (sage when on) used in the media upload modals. */
-export function PillToggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+export function PillToggle({ on, onChange, label, disabled }: { on: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', opacity: disabled ? 0.55 : 1 }}>
       <button
-        type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)}
-        style={{ position: 'relative', width: '40px', height: '22px', borderRadius: '999px', border: 'none', cursor: 'pointer', flexShrink: 0, background: on ? '#6b7856' : '#c9bfa9', transition: 'background .15s' }}
+        type="button" role="switch" aria-checked={on} disabled={disabled} onClick={() => { if (!disabled) onChange(!on) }}
+        style={{ position: 'relative', width: '40px', height: '22px', borderRadius: '999px', border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', flexShrink: 0, background: on ? '#6b7856' : '#c9bfa9', transition: 'background .15s' }}
       >
         <span style={{ position: 'absolute', top: '2px', left: on ? '20px' : '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
       </button>
