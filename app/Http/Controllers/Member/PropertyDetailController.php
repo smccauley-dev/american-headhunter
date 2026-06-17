@@ -38,9 +38,25 @@ class PropertyDetailController extends Controller
 
     public function edit(string $property): Response
     {
+        return Inertia::render('Member/Properties/Details', $this->payload($property));
+    }
+
+    /**
+     * Redesign mock-up of the details hub on the full-parity "Field Record" kit
+     * (PropertyChromeV2 / DetailsV2). Same data as edit(); once approved this
+     * folds into edit()/Details. The shared update() route handles the save.
+     */
+    public function editV2(string $property): Response
+    {
+        return Inertia::render('Member/Properties/DetailsV2', $this->payload($property));
+    }
+
+    /** Shared Inertia payload for the details hub (edit + editV2). */
+    private function payload(string $property): array
+    {
         $record = $this->authorizeManage($property);
 
-        return Inertia::render('Member/Properties/Details', [
+        return [
             'property' => [
                 'id'          => $record->id,
                 'title'       => $record->title,
@@ -72,7 +88,7 @@ class PropertyDetailController extends Controller
             'eligibleManagers' => $this->properties->getEligibleManagerContacts($property),
             'editableContacts' => $this->properties->getEditableContacts($property),
             'contactTypes'     => PropertyContact::TYPES,
-        ]);
+        ];
     }
 
     public function update(Request $request, string $property): RedirectResponse

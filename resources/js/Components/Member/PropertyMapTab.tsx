@@ -6,7 +6,7 @@ import {
   fieldLabel as label, fieldInput as input,
   toolbarBtn as ghostBtn, toolbarActiveBtn as activeBtn, toolbarInkBtn as inkBtn, toolbarDangerBtn as dangerBtn,
   fiGhostBtn as uploadBtn, fiPrimaryBtn as fiPrimary, modalHelper as mHelper,
-} from './PropertyChrome'
+} from './PropertyChromeV2'
 
 export interface MapMarker {
   id: string
