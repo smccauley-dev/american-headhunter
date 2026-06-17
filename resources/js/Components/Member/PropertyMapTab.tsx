@@ -5,7 +5,7 @@ import {
   Section, INK, ACCENT, TAN,
   Modal, UploadIcon,
   fieldLabel as label, fieldInput as input,
-  toolbarBtn as ghostBtn, toolbarActiveBtn as activeBtn, toolbarInkBtn as inkBtn, toolbarDangerBtn as dangerBtn,
+  toolbarBtn as ghostBtn, toolbarInkBtn as inkBtn, toolbarDangerBtn as dangerBtn,
   fiGhostBtn as uploadBtn, fiPrimaryBtn as fiPrimary, modalHelper as mHelper,
 } from './PropertyChrome'
 
@@ -41,7 +41,13 @@ export interface DeletedMapImage {
 }
 
 const meta: React.CSSProperties = { fontFamily: 'monospace', fontSize: '11px', color: '#9ca3af' }
-const restoreBtn: React.CSSProperties = { ...ghostBtn, color: '#065f46', borderColor: '#6ee7b7' }
+
+// Map toolbar buttons mirror the admin map toolbar exactly: uppercase + tracked,
+// weight 500, and the active (placing) state inverts to a filled-ink button.
+const tbGhost: React.CSSProperties = { ...ghostBtn, textTransform: 'uppercase', letterSpacing: '.04em' }
+const tbActive: React.CSSProperties = { ...tbGhost, borderColor: INK, background: INK, color: '#fff' }
+const tbDanger: React.CSSProperties = { ...dangerBtn, textTransform: 'uppercase', letterSpacing: '.04em' }
+const restoreBtn: React.CSSProperties = { ...tbGhost, color: '#065f46', borderColor: '#6ee7b7' }
 
 const DRAG_THRESHOLD = 1.2 // percent of image moved before a press counts as a drag
 
@@ -256,12 +262,12 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
         <>
           {/* Toolbar */}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-            <button type="button" onClick={() => setAddMode(a => !a)} style={addMode ? activeBtn : ghostBtn}>
-              {addMode ? '✛ Click the map to place — or cancel' : '✛ Add Marker'}
+            <button type="button" onClick={() => setAddMode(a => !a)} style={addMode ? tbActive : tbGhost}>
+              {addMode ? '+ Click the map to place — or cancel' : '+ Add Marker'}
             </button>
-            <button type="button" onClick={openDetails} style={ghostBtn}>Edit Details</button>
-            <a href={`/member/properties/${propertyId}/map-images/${selected.id}/download`} style={ghostBtn}>Download</a>
-            <button type="button" onClick={() => deleteImage(selected.id)} style={dangerBtn}>Delete</button>
+            <button type="button" onClick={openDetails} style={tbGhost}>Edit Details</button>
+            <a href={`/member/properties/${propertyId}/map-images/${selected.id}/download`} style={tbGhost}>Download</a>
+            <button type="button" onClick={() => deleteImage(selected.id)} style={tbDanger}>Delete</button>
             <span style={{ ...meta, marginLeft: 'auto' }}>
               {selected.markers.length} marker{selected.markers.length === 1 ? '' : 's'} · drag a pin to move it · click a pin to edit
             </span>
