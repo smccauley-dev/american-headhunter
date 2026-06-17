@@ -76,19 +76,42 @@ Muted variants of `--ink` (`#0a1512`) use opacity rather than separate tokens.
 | Body / lede text | Crimson Pro | 16–18px | 300–400 | — | — |
 | UI labels / mono text | JetBrains Mono | 9–11px | 400–600 | uppercase | 0.12–0.25em |
 | Coordinates / metadata | JetBrains Mono | 10px | 400 | uppercase | 0.15–0.20em |
+| Browser-print mono (print only) | Courier New | — | 400–700 | — | — |
+| dompdf PDF mono (print only) | DejaVu Sans Mono | — | 400–700 | — | — |
 
 Both systems load Fraunces, Crimson Pro, and JetBrains Mono from Google Fonts.
 
-> **Mono standard — non-negotiable.** JetBrains Mono is the *only* monospace
-> typeface permitted anywhere on the site — admin, member, public, and email.
-> No other mono face (Instrument Mono, Roboto Mono, Source Code Pro, Courier,
-> Consolas, SF Mono, etc.) may be introduced. The canonical stack is
+> **Screen mono standard — non-negotiable.** JetBrains Mono is the *only*
+> monospace typeface permitted on any *screen* surface — admin, member,
+> public, and email. No other mono face (Instrument Mono, Roboto Mono, Source
+> Code Pro, Consolas, SF Mono, etc.) may be introduced. The canonical stack is
 > `'JetBrains Mono', Menlo, monospace` (the trailing entries are fallbacks
 > only, never a primary choice). JetBrains is required because the design
 > system leans on mono weight for hierarchy (400/500/600) and JetBrains ships
 > the full 300–800 range; single-weight faces cannot express it. When this
 > value changes, update both `resources/css/app.css` and
 > `app/Providers/Filament/AdminPanelProvider.php`.
+>
+> **Print mono standard.** Printed documents are the one deliberate exception:
+> they never use JetBrains Mono. JetBrains is a Google web font, and print is
+> generated server-side where a web font cannot be reliably loaded. The print
+> mono standard splits by delivery path:
+>
+> - **Browser-printed HTML** (rendered with `response()->view(...)` and printed
+>   from the browser, e.g. `resources/views/admin/print-application.blade.php`)
+>   uses **Courier New** — `'Courier New', Courier, monospace`. It is a
+>   universally available system face and carries the typewriter/legal-document
+>   feel appropriate to applications and contracts.
+> - **dompdf-generated PDFs** (`barryvdh/laravel-dompdf`, e.g.
+>   `resources/views/pdf/*`) use **DejaVu Sans Mono** —
+>   `'DejaVu Sans Mono', monospace`. Courier New must *not* be used here:
+>   dompdf maps it to the built-in Courier core font, which is Latin-1 only and
+>   renders accented names, smart quotes, em-dashes, and ° as blanks. DejaVu
+>   Sans Mono is dompdf's bundled, full-Unicode mono and is the only safe
+>   choice for legal documents.
+>
+> Both are print-only. Neither may leak onto a screen surface — screens are
+> JetBrains Mono, always.
 
 ---
 
