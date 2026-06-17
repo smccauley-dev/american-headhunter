@@ -357,6 +357,12 @@ html {
   border-color: var(--ink);
   background-color: rgba(10, 21, 18, 0.03);
 }
+/* FilePond paints the panel as stacked sub-layers; square every one so no
+   rounded corners survive (parity with the admin's injected skin). */
+.filepond--root .filepond--panel,
+.filepond--root .filepond--panel-top,
+.filepond--root .filepond--panel-center,
+.filepond--root .filepond--panel-bottom { border-radius: 0; }
 .filepond--root .filepond--drop-label {
   color: rgba(10, 21, 18, 0.55);
   font-family: var(--mono);

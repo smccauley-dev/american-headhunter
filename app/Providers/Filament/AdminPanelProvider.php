@@ -913,6 +913,12 @@ class AdminPanelProvider extends PanelProvider
             background-color: #faf7f2 !important;
             border: 1px dashed #a89874 !important;
         }
+        /* FilePond paints the panel as stacked sub-layers; Filament's bundled
+           FilePond CSS rounds those, so square every layer (not just panel-root). */
+        .filepond--root .filepond--panel,
+        .filepond--root .filepond--panel-top,
+        .filepond--root .filepond--panel-center,
+        .filepond--root .filepond--panel-bottom { border-radius: 0 !important; }
         .filepond--root:hover .filepond--panel-root {
             border-color: #0a1512 !important;
             background-color: rgba(10, 21, 18, 0.03) !important;
