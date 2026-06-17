@@ -1,6 +1,12 @@
 import { router } from '@inertiajs/react'
-import { useState, useRef } from 'react'
-import { Section, INK, ACCENT } from './PropertyChrome'
+import { useState } from 'react'
+import {
+  Section, INK, ACCENT,
+  Modal, DropZone, SelectedFiles, PillToggle, UploadIcon, CheckIcon, XIcon,
+  fieldLabel as label, fieldInput as input, modalHelper as mHelper,
+  toolbarBtn as ghostBtn, toolbarInkBtn as inkBtn, toolbarDangerBtn as dangerBtn,
+  fiGhostBtn as uploadBtn, fiPrimaryBtn as fiPrimary,
+} from './PropertyChrome'
 
 export interface Photo {
   id: string
@@ -10,48 +16,45 @@ export interface Photo {
   is_primary: boolean
 }
 
-const ghostBtn: React.CSSProperties = {
-  fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em',
-  textTransform: 'uppercase', padding: '6px 11px', background: 'transparent',
-  color: INK, border: '1px solid #d4c9b0', cursor: 'pointer',
-}
-
-const input: React.CSSProperties = {
-  width: '100%', fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', color: INK,
-  background: '#fff', border: '1px solid #d4c9b0', padding: '8px 10px', outline: 'none', boxSizing: 'border-box',
-}
-
 export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: string; photos: Photo[] }) {
-  const fileRef = useRef<HTMLInputElement>(null)
+  // Inline caption editing
   const [editing, setEditing] = useState<string | null>(null)
   const [caption, setCaption] = useState('')
 
-  // Upload state — a hidden file input triggered by a button that uploads the
-  // selection immediately via plain FormData + router.post. This mirrors the one
-  // uploader proven to work in this app (the profile PhotosTab); a separate
-  // "select then submit" button is the friction we are removing.
+  // ── Upload ──────────────────────────────────────────────────────────────────
+  // Select-then-submit (mirrors the admin/Map modal): files collect in state via
+  // drag/drop or Browse, then SUBMIT posts the batch. SUBMIT is never disabled
+  // until a file is chosen — it shows a validation error instead of dead-clicking.
+  const [showUpload, setShowUpload] = useState(false)
+  const [uploadFiles, setUploadFiles] = useState<File[]>([])
   const [batchCaption, setBatchCaption] = useState('')
   const [importExif, setImportExif] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = e.target.files
-    if (!selected?.length) return
+  function addFiles(list: FileList | null) {
+    if (!list?.length) return
+    setUploadError(null)
+    setUploadFiles(prev => [...prev, ...Array.from(list)].slice(0, 20))
+  }
+
+  function resetUpload() {
+    setUploadFiles([]); setBatchCaption(''); setImportExif(true); setUploadError(null)
+  }
+
+  function submitUpload() {
+    if (uploadFiles.length === 0) { setUploadError('Please add at least one photo.'); return }
     const fd = new FormData()
-    Array.from(selected).forEach(f => fd.append('photos[]', f))
+    uploadFiles.forEach(f => fd.append('photos[]', f))
     if (batchCaption) fd.append('caption', batchCaption)
     fd.append('import_exif', importExif ? '1' : '0')
     setUploading(true)
     setUploadError(null)
     router.post(`/member/properties/${propertyId}/photos`, fd, {
       preserveScroll: true, forceFormData: true,
-      onSuccess: () => setBatchCaption(''),
-      onError: errs => setUploadError(errs.photos ?? 'Upload failed.'),
-      onFinish: () => {
-        setUploading(false)
-        if (fileRef.current) fileRef.current.value = ''
-      },
+      onSuccess: () => { resetUpload(); setShowUpload(false) },
+      onError: errs => setUploadError((errs as Record<string, string>).photos ?? 'Upload failed.'),
+      onFinish: () => setUploading(false),
     })
   }
 
@@ -72,33 +75,20 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
     router.delete(`/member/properties/${propertyId}/photos/${id}`, { preserveScroll: true })
   }
 
-  return (
-    <Section title="Photos">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '22px', borderBottom: '1px solid #e5ddd0', paddingBottom: '20px' }}>
-        <input
-          type="text"
-          value={batchCaption}
-          onChange={e => setBatchCaption(e.target.value)}
-          style={input}
-          placeholder="Caption applied to this batch (optional)"
-          maxLength={255}
-        />
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontFamily: 'var(--body)', fontSize: '14px', color: '#6b5e50' }}>
-          <input type="checkbox" checked={importExif} onChange={e => setImportExif(e.target.checked)} />
-          Import location from photo metadata (EXIF GPS)
-        </label>
-        {uploadError && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{uploadError}</div>}
-        <div>
-          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} style={{ fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '10px 22px', background: INK, color: '#F4ECDC', border: 'none', cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.6 : 1 }}>
-            {uploading ? 'Uploading…' : 'Upload Photos'}
-          </button>
-        </div>
-        <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
-      </div>
+  const galleryDescription = 'Photos shown on the public listing. The cover photo is the first image buyers see — use Set Cover to choose it and the arrows to set display order.'
 
+  const uploadAction = (
+    <button type="button" onClick={() => { resetUpload(); setShowUpload(true) }} style={uploadBtn}>
+      <UploadIcon />
+      Upload Photos
+    </button>
+  )
+
+  return (
+    <Section title="Photo Gallery" description={galleryDescription} action={uploadAction}>
       {photos.length === 0 ? (
         <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: 0 }}>
-          No photos yet. The first photo you upload becomes the cover photo.
+          No photos yet. Use <strong>Upload Photos</strong> above — the first photo you upload becomes the cover photo.
         </p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
@@ -117,7 +107,7 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <input type="text" value={caption} onChange={e => setCaption(e.target.value)} style={input} maxLength={255} placeholder="Caption" />
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <button type="button" onClick={() => saveCaption(p.id)} style={{ ...ghostBtn, background: INK, color: '#F4ECDC', borderColor: INK }}>Save</button>
+                      <button type="button" onClick={() => saveCaption(p.id)} style={inkBtn}>Save</button>
                       <button type="button" onClick={() => setEditing(null)} style={ghostBtn}>Cancel</button>
                     </div>
                   </div>
@@ -127,18 +117,63 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
                   </p>
                 )}
                 {editing !== p.id && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     {!p.is_primary && <button type="button" onClick={() => setPrimary(p.id)} style={ghostBtn}>Set Cover</button>}
                     <button type="button" onClick={() => startEdit(p)} style={ghostBtn}>Caption</button>
                     <button type="button" onClick={() => move(p.id, 'up')} disabled={i === 0} style={{ ...ghostBtn, opacity: i === 0 ? 0.35 : 1 }}>↑</button>
                     <button type="button" onClick={() => move(p.id, 'down')} disabled={i === photos.length - 1} style={{ ...ghostBtn, opacity: i === photos.length - 1 ? 0.35 : 1 }}>↓</button>
-                    <button type="button" onClick={() => remove(p.id)} style={{ ...ghostBtn, color: ACCENT, borderColor: 'rgba(200,76,33,0.4)' }}>Delete</button>
+                    <button type="button" onClick={() => remove(p.id)} style={dangerBtn}>Delete</button>
                   </div>
                 )}
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {/* ── Upload modal ───────────────────────────────────────────────────────── */}
+      {showUpload && (
+        <Modal
+          title="Upload Property Photos"
+          onClose={() => setShowUpload(false)}
+          footer={(
+            <>
+              <button type="button" onClick={submitUpload} disabled={uploading} style={{ ...fiPrimary, opacity: uploading ? 0.6 : 1 }}>
+                <CheckIcon />
+                {uploading ? 'Uploading…' : 'Submit'}
+              </button>
+              <button type="button" onClick={() => setShowUpload(false)} style={uploadBtn}>
+                <XIcon />
+                Cancel
+              </button>
+            </>
+          )}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            {/* Photos — drag & drop / browse */}
+            <div>
+              <label style={label}>Photos <span style={{ color: ACCENT }}>*</span></label>
+              <DropZone onFiles={addFiles} />
+              <SelectedFiles files={uploadFiles} onRemove={i => setUploadFiles(prev => prev.filter((_, idx) => idx !== i))} />
+              <div style={mHelper}>JPG, PNG, or WebP — max 15 MB each, up to 20 per batch. The first photo becomes the cover photo.</div>
+            </div>
+
+            {/* Caption */}
+            <div>
+              <label style={label}>Caption</label>
+              <input type="text" value={batchCaption} onChange={e => setBatchCaption(e.target.value)} style={input} maxLength={255} />
+              <div style={mHelper}>Optional — applied to every photo in this batch. Edit photos individually afterwards.</div>
+            </div>
+
+            {/* Import EXIF toggle */}
+            <div>
+              <PillToggle on={importExif} onChange={setImportExif} label="Import photo metadata (EXIF)" />
+              <div style={mHelper}>When on, we read the metadata each camera or phone embeds in a photo — including any GPS coordinates recorded when the picture was taken — and use it to auto-fill the photo's location. Turn it off to ignore that metadata and leave the location blank. Imported coordinates stay private to staff and lessees; they are never shown publicly unless you separately enable that.</div>
+            </div>
+
+            {uploadError && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{uploadError}</div>}
+          </div>
+        </Modal>
       )}
     </Section>
   )

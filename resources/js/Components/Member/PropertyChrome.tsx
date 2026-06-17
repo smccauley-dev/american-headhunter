@@ -1,5 +1,5 @@
 import { Head, router } from '@inertiajs/react'
-import { useState as useReactState } from 'react'
+import { useState as useReactState, useRef as useReactRef } from 'react'
 
 /**
  * Shared chrome for the member-portal property management pages (Form, Listings,
@@ -154,6 +154,147 @@ export function PortalChrome({ headTitle, children }: { headTitle: string; child
         </div>
       </div>
     </>
+  )
+}
+
+// ── Shared media kit (Map + Photos tabs) ─────────────────────────────────────
+// One source of truth for the chrome the property-media tabs share, so the Map
+// and Photos tabs stay pixel-identical: the squared #FAFAFA toolbar buttons, the
+// Filament-style `fi-btn` header action, the parchment modal shell with a serif
+// heading + tan rules + hard offset shadow, and the modal field/helper styles.
+
+export const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+
+/** Small mono field label used inside modals/forms. */
+export const fieldLabel: React.CSSProperties = {
+  display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
+  letterSpacing: '.12em', textTransform: 'uppercase', color: TAN, marginBottom: '5px',
+}
+
+export const fieldInput: React.CSSProperties = {
+  width: '100%', fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', color: INK,
+  background: '#fff', border: '1px solid #d4c9b0', padding: '8px 10px', outline: 'none', boxSizing: 'border-box',
+}
+
+/** Squared #FAFAFA toolbar / card button — mirrors the admin map toolbar. */
+export const toolbarBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: 0,
+  background: '#FAFAFA', border: '1px solid #e5e7eb', fontFamily: SANS, fontSize: '12px',
+  fontWeight: 500, color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none',
+}
+export const toolbarActiveBtn: React.CSSProperties = { ...toolbarBtn, borderColor: '#0a1512', color: '#0a1512', fontWeight: 600 }
+export const toolbarInkBtn: React.CSSProperties = { ...toolbarBtn, background: INK, color: '#F4ECDC', borderColor: INK }
+export const toolbarDangerBtn: React.CSSProperties = { ...toolbarBtn, color: '#b91c1c', borderColor: '#fca5a5' }
+
+/** Filament `fi-btn` header action: square corners, 36px, mono, uppercase, ghost. */
+export const fiGhostBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+  height: '36px', padding: '0 0.875rem', borderRadius: 0, boxShadow: 'none',
+  background: '#fafafa', color: 'rgba(10,21,18,0.65)', border: '1px solid rgba(10,21,18,0.2)',
+  fontFamily: 'var(--mono), monospace', fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase',
+  lineHeight: 1, whiteSpace: 'nowrap', cursor: 'pointer', flexShrink: 0,
+}
+/** Dark primary `fi-btn` (modal SUBMIT). */
+export const fiPrimaryBtn: React.CSSProperties = { ...fiGhostBtn, background: INK, color: '#e8dcc4', border: 'none' }
+
+/** Modal helper text — Crimson Pro serif, muted (matches the admin form copy). */
+export const modalHelper: React.CSSProperties = { fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', lineHeight: 1.45, color: '#6b5e50', marginTop: '6px' }
+
+export function UploadIcon() {
+  return (
+    <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+    </svg>
+  )
+}
+export function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+  )
+}
+export function XIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M6 18 18 6M6 6l12 12" /></svg>
+  )
+}
+
+/**
+ * Parchment modal shell — mirrors the admin Filament modal: #f4ecdc window with a
+ * 1px ink border + hard 8px offset shadow, a Fraunces serif heading (title case),
+ * a tan header rule, and an optional footer (tan top rule) for the action buttons.
+ */
+export function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(10,21,18,0.55)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 16px', overflowY: 'auto' }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ width: '100%', maxWidth: '480px', background: '#f4ecdc', border: `1px solid ${INK}`, boxShadow: `8px 8px 0 ${INK}` }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${TAN}` }}>
+          <div style={{ fontFamily: 'var(--display), Georgia, serif', fontSize: '18px', fontWeight: 500, color: INK }}>{title}</div>
+          <button type="button" onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '20px', lineHeight: 1, color: 'rgba(10,21,18,0.4)' }}>×</button>
+        </div>
+        <div style={{ padding: '18px' }}>{children}</div>
+        {footer && (
+          <div style={{ padding: '12px 18px', borderTop: `1px solid ${TAN}`, display: 'flex', gap: '10px' }}>{footer}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** EXIF-style pill toggle (sage when on) used in the media upload modals. */
+export function PillToggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <button
+        type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)}
+        style={{ position: 'relative', width: '40px', height: '22px', borderRadius: '999px', border: 'none', cursor: 'pointer', flexShrink: 0, background: on ? '#6b7856' : '#c9bfa9', transition: 'background .15s' }}
+      >
+        <span style={{ position: 'absolute', top: '2px', left: on ? '20px' : '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
+      </button>
+      <span style={{ ...fieldLabel, marginBottom: 0 }}>{label}</span>
+    </div>
+  )
+}
+
+/** Drag & drop / Browse file zone (matches the admin filepond dropzone). */
+export function DropZone({ onFiles }: { onFiles: (files: FileList | null) => void }) {
+  const [over, setOver] = useReactState(false)
+  const ref = useReactRef<HTMLInputElement>(null)
+  return (
+    <>
+      <div
+        onClick={() => ref.current?.click()}
+        onDragOver={e => { e.preventDefault(); setOver(true) }}
+        onDragLeave={() => setOver(false)}
+        onDrop={e => { e.preventDefault(); setOver(false); onFiles(e.dataTransfer.files) }}
+        style={{ border: `1px dashed ${over ? INK : TAN}`, background: over ? 'rgba(10,21,18,0.03)' : '#faf7f2', padding: '28px 16px', textAlign: 'center', cursor: 'pointer' }}
+      >
+        <div style={{ fontFamily: SANS, fontSize: '13px', color: '#6b5e50' }}>
+          Drag &amp; Drop your files or <span style={{ color: ACCENT, textDecoration: 'underline' }}>Browse</span>
+        </div>
+      </div>
+      <input ref={ref} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={e => { onFiles(e.target.files); if (ref.current) ref.current.value = '' }} />
+    </>
+  )
+}
+
+/** Selected-file list with per-file remove (shown under a DropZone). */
+export function SelectedFiles({ files, onRemove }: { files: File[]; onRemove: (i: number) => void }) {
+  if (files.length === 0) return null
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px' }}>
+      {files.map((f, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontFamily: 'var(--mono)', fontSize: '11px', color: INK }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+          <button type="button" onClick={() => onRemove(i)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '15px', lineHeight: 1, flexShrink: 0 }}>×</button>
+        </div>
+      ))}
+    </div>
   )
 }
 

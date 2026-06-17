@@ -1,6 +1,12 @@
 import { useForm, router } from '@inertiajs/react'
 import { useRef, useState } from 'react'
-import { Section, INK, ACCENT, TAN } from './PropertyChrome'
+import {
+  Section, INK, ACCENT, TAN,
+  Modal, SANS, UploadIcon,
+  fieldLabel as label, fieldInput as input,
+  toolbarBtn as ghostBtn, toolbarActiveBtn as activeBtn, toolbarInkBtn as inkBtn, toolbarDangerBtn as dangerBtn,
+  fiGhostBtn as uploadBtn, fiPrimaryBtn as fiPrimary, modalHelper as mHelper,
+} from './PropertyChrome'
 
 export interface MapMarker {
   id: string
@@ -33,81 +39,10 @@ export interface DeletedMapImage {
   deleted_at: string | null
 }
 
-const input: React.CSSProperties = {
-  width: '100%', fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '14px', color: INK,
-  background: '#fff', border: '1px solid #d4c9b0', padding: '8px 10px', outline: 'none', boxSizing: 'border-box',
-}
-
-const label: React.CSSProperties = {
-  display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
-  letterSpacing: '.12em', textTransform: 'uppercase', color: '#a89874', marginBottom: '5px',
-}
-
-// Buttons mirror the admin Filament map editor toolbar exactly: a light
-// gray (#FAFAFA) face, gray border, 6px radius, 12px sans label. The
-// selected/active state swaps the face to #E7DFD0 (per the admin theme).
-const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
-const ghostBtn: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: '5px',
-  padding: '6px 12px', borderRadius: 0,
-  background: '#FAFAFA', border: '1px solid #e5e7eb',
-  fontFamily: SANS, fontSize: '12px', fontWeight: 500,
-  color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none',
-}
-const activeBtn: React.CSSProperties = { ...ghostBtn, background: '#FAFAFA', borderColor: '#0a1512', color: '#0a1512', fontWeight: 600 }
-const inkBtn: React.CSSProperties = { ...ghostBtn, background: INK, color: '#F4ECDC', borderColor: INK }
-const dangerBtn: React.CSSProperties = { ...ghostBtn, color: '#b91c1c', borderColor: '#fca5a5' }
+const meta: React.CSSProperties = { fontFamily: 'monospace', fontSize: '11px', color: '#9ca3af' }
 const restoreBtn: React.CSSProperties = { ...ghostBtn, color: '#065f46', borderColor: '#6ee7b7' }
 
-const meta: React.CSSProperties = { fontFamily: 'monospace', fontSize: '11px', color: '#9ca3af' }
-
-// The Upload Map Images button is the admin's Filament ghost `fi-btn`, which is
-// styled very differently from the inline toolbar buttons: square corners, 36px
-// tall, monospace, 11px, 0.12em letter-spacing, UPPERCASE, #fafafa face with a
-// muted-ink border. Mirrored 1:1 from AdminPanelProvider's injected .fi-btn CSS.
-const uploadBtn: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-  height: '36px', padding: '0 0.875rem', borderRadius: 0, boxShadow: 'none',
-  background: '#fafafa', color: 'rgba(10,21,18,0.65)', border: '1px solid rgba(10,21,18,0.2)',
-  fontFamily: 'var(--mono), monospace', fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase',
-  lineHeight: 1, whiteSpace: 'nowrap', cursor: 'pointer', flexShrink: 0,
-}
-
 const DRAG_THRESHOLD = 1.2 // percent of image moved before a press counts as a drag
-
-// ── Modal shell ───────────────────────────────────────────────────────────────
-// Mirrors the admin Filament modal exactly: parchment window (#f4ecdc) with a 1px
-// ink border + hard 8px offset shadow, a Fraunces serif heading (title case), a
-// tan header rule, and an optional footer (tan top rule) holding the action buttons.
-function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
-  return (
-    <div
-      onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(10,21,18,0.55)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 16px', overflowY: 'auto' }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: '480px', background: '#f4ecdc', border: `1px solid ${INK}`, boxShadow: `8px 8px 0 ${INK}` }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${TAN}` }}>
-          <div style={{ fontFamily: 'var(--display), Georgia, serif', fontSize: '18px', fontWeight: 500, color: INK }}>{title}</div>
-          <button type="button" onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '20px', lineHeight: 1, color: 'rgba(10,21,18,0.4)' }}>×</button>
-        </div>
-        <div style={{ padding: '18px' }}>{children}</div>
-        {footer && (
-          <div style={{ padding: '12px 18px', borderTop: `1px solid ${TAN}`, display: 'flex', gap: '10px' }}>{footer}</div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// Footer action buttons — the admin's Filament fi-btn pair: SUBMIT is the dark
-// primary (#0a1512 / #e8dcc4), CANCEL is the ghost (re-using uploadBtn's spec).
-const fiPrimary: React.CSSProperties = { ...uploadBtn, background: INK, color: '#e8dcc4', border: 'none' }
-
-// Modal helper text — Crimson Pro serif, muted, matching the admin form helper copy.
-const mHelper: React.CSSProperties = { fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', lineHeight: 1.45, color: '#6b5e50', marginTop: '6px' }
 
 type MarkerFields = { label: string; marker_type: string; color: string; use_color: boolean; latitude: string; longitude: string; notes: string }
 type DetailFields = { description: string; latitude: string; longitude: string; show_coords_publicly: boolean; is_boundary: boolean }
@@ -305,9 +240,7 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
 
   const uploadAction = (
     <button type="button" onClick={() => { resetUpload(); setShowUpload(true) }} style={uploadBtn}>
-      <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
-      </svg>
+      <UploadIcon />
       Upload Map Images
     </button>
   )
