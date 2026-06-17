@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, useForm } from '@inertiajs/react';
 import { US_STATES } from '@/lib/usStates';
 import { formatPhoneInput } from '@/lib/phone';
+import FilePondUploader from '@/Components/FilePondUploader';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -218,88 +219,24 @@ const sectionLabel = (color = 'var(--blaze)'): React.CSSProperties => ({
 
 // ── FileUploadInput component ────────────────────────────────────────────────
 
-function FileUploadInput({ label, file, onChange }: {
+function FileUploadInput({ label, onChange }: {
     label: string;
     file: File | null;
     onChange: (file: File | null) => void;
 }) {
-    const ref = useRef<HTMLInputElement>(null);
-    const hasFile = !!file;
-
-    function formatSize(bytes: number): string {
-        if (bytes < 1024) return `${bytes} B`;
-        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    }
-
+    // FilePond in local mode (no server): it just holds the chosen file and shows
+    // the same dashed parchment dropzone as the admin uploader; the actual File is
+    // lifted into the surrounding application form and submitted with everything
+    // else. JPG / PNG / PDF up to 5 MB.
     return (
         <div>
             <label style={labelStyle}>{label}</label>
-            <div
-                onClick={() => ref.current?.click()}
-                style={{
-                    border: `1px dashed ${hasFile ? 'var(--sage)' : 'var(--parch-dim)'}`,
-                    background: hasFile ? '#f4fbf4' : 'var(--bone)',
-                    padding: '12px 14px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    transition: 'border-color 0.15s, background 0.15s',
-                    userSelect: 'none',
-                }}
-            >
-                {/* Upload / check icon */}
-                {hasFile ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--sage)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--parch-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                        <polyline points="17 8 12 3 7 8" />
-                        <line x1="12" y1="3" x2="12" y2="15" />
-                    </svg>
-                )}
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                    {hasFile ? (
-                        <>
-                            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--sage-dim)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {file!.name}
-                            </div>
-                            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--parch-deep)', marginTop: 1 }}>
-                                {formatSize(file!.size)} · Click to change
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink)', fontWeight: 600 }}>
-                                Click to upload
-                            </div>
-                            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--parch-deep)', marginTop: 1 }}>
-                                JPG, PNG, or PDF · max 5 MB
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                {hasFile && (
-                    <button
-                        type="button"
-                        onClick={e => { e.stopPropagation(); onChange(null); if (ref.current) ref.current.value = ''; }}
-                        style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--blaze)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', flexShrink: 0 }}
-                    >
-                        Remove
-                    </button>
-                )}
-            </div>
-            <input
-                ref={ref}
-                type="file"
-                accept=".jpg,.jpeg,.png,.pdf"
-                onChange={e => onChange(e.target.files?.[0] ?? null)}
-                style={{ display: 'none' }}
+            <FilePondUploader
+                name="file"
+                maxFileSize="5MB"
+                acceptedFileTypes={['image/jpeg', 'image/png', 'application/pdf']}
+                labelIdle='Drag &amp; Drop your file or <span class="filepond--label-action">Browse</span>'
+                onupdatefiles={items => onChange(items[0]?.file ?? null)}
             />
         </div>
     );

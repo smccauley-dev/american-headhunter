@@ -210,6 +210,10 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::delete('/properties/{property}/photos/{photo}',          [MemberPropertyPhotoController::class, 'destroy'])->name('properties.photos.destroy');
 
     // Map tab — image-based maps with percent-coordinate markers.
+    // Temp routes are declared before the {mapImage} routes so DELETE .../map-images/temp
+    // isn't captured as {mapImage} (mirrors the photos temp routes).
+    Route::post('/properties/{property}/map-images/temp',           [MemberPropertyMapController::class, 'tempStore'])->name('properties.map.temp.store')->middleware('throttle:60,1');
+    Route::delete('/properties/{property}/map-images/temp',         [MemberPropertyMapController::class, 'tempRevert'])->name('properties.map.temp.revert')->middleware('throttle:60,1');
     Route::get('/properties/{property}/map-images/{documentId}',    [MemberPropertyMapController::class, 'serveImage'])->name('properties.map.serve');
     Route::get('/properties/{property}/map-images/{mapImage}/download', [MemberPropertyMapController::class, 'downloadImage'])->name('properties.map.download');
     Route::post('/properties/{property}/map-images',                [MemberPropertyMapController::class, 'storeImage'])->name('properties.map.store')->middleware('throttle:30,1');

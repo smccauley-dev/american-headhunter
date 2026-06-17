@@ -1,12 +1,6 @@
 import { router } from '@inertiajs/react'
 import { useRef, useState } from 'react'
-import { FilePond, registerPlugin } from 'react-filepond'
-import 'filepond/dist/filepond.min.css'
-import FilePondPluginImagePreview from 'filepond-plugin-image-preview'
-import 'filepond-plugin-image-preview/dist/filepond-plugin-image-preview.min.css'
-import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
-import FilePondPluginFileValidateSize from 'filepond-plugin-file-validate-size'
-import FilePondPluginImageExifOrientation from 'filepond-plugin-image-exif-orientation'
+import FilePondUploader from '../FilePondUploader'
 import {
   Section, INK, ACCENT, TAN,
   Modal, PillToggle, UploadIcon, CheckIcon, XIcon,
@@ -14,20 +8,6 @@ import {
   toolbarBtn as ghostBtn, toolbarDangerBtn as dangerBtn,
   fiGhostBtn as uploadBtn, fiPrimaryBtn as fiPrimary,
 } from './PropertyChrome'
-
-registerPlugin(
-  FilePondPluginImagePreview,
-  FilePondPluginFileValidateType,
-  FilePondPluginFileValidateSize,
-  FilePondPluginImageExifOrientation,
-)
-
-/** Laravel's encrypted CSRF cookie — FilePond runs its own XHR, so (unlike Inertia)
- * it must set the X-XSRF-TOKEN header itself. */
-function xsrfToken(): string {
-  const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/)
-  return m ? decodeURIComponent(m[1]) : ''
-}
 
 export interface Photo {
   id: string
@@ -320,31 +300,17 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
             {/* Photos — FilePond instant-upload (parity with the admin uploader) */}
             <div>
               <label style={label}>Photos <span style={{ color: ACCENT }}>*</span></label>
-              <FilePond
+              <FilePondUploader
                 ref={pondRef}
                 allowMultiple
                 maxFiles={20}
                 maxFileSize="10MB"
                 acceptedFileTypes={['image/jpeg', 'image/png', 'image/webp']}
                 name="photo"
-                credits={false}
                 labelIdle='Drag &amp; Drop your photos or <span class="filepond--label-action">Browse</span>'
                 onupdatefiles={() => setUploadError(null)}
-                server={{
-                  url: `/member/properties/${propertyId}/photos`,
-                  process: {
-                    url: '/temp',
-                    method: 'POST',
-                    withCredentials: true,
-                    headers: { 'X-XSRF-TOKEN': xsrfToken() },
-                  },
-                  revert: {
-                    url: '/temp',
-                    method: 'DELETE',
-                    withCredentials: true,
-                    headers: { 'X-XSRF-TOKEN': xsrfToken() },
-                  },
-                }}
+                processUrl={`/member/properties/${propertyId}/photos/temp`}
+                revertUrl={`/member/properties/${propertyId}/photos/temp`}
               />
               <div style={mHelper}>JPG, PNG, or WebP — max 10 MB each, up to 20 per batch. The first photo becomes the cover photo.</div>
             </div>

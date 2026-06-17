@@ -245,7 +245,12 @@ class ProfileController extends Controller
         return redirect()->route('member.profile');
     }
 
-    public function uploadAvatar(Request $request)
+    /**
+     * FilePond process: the avatar is instant-uploaded the moment it is dropped
+     * (parity with the admin avatar FileUpload). Returns the new document id as
+     * plain text; the client reloads the profile prop to show the new photo.
+     */
+    public function uploadAvatar(Request $request): \Illuminate\Http\Response
     {
         $request->validate([
             'avatar' => 'required|image|max:4096|mimes:jpg,jpeg,png,webp',
@@ -274,7 +279,7 @@ class ProfileController extends Controller
         $profile->avatar_document_id = $doc->id;
         $profile->save();
 
-        return redirect()->route('member.profile');
+        return response($doc->id)->header('Content-Type', 'text/plain');
     }
 
     public function serveAvatar(string $userId): \Symfony\Component\HttpFoundation\StreamedResponse
@@ -303,35 +308,38 @@ class ProfileController extends Controller
         ]);
     }
 
-    public function uploadPhoto(Request $request)
+    /**
+     * FilePond process: one photo per request, instant-uploaded the moment it is
+     * dropped (parity with the admin / property uploaders). Returns the new
+     * document id as plain text so FilePond can track it; the gallery refreshes
+     * via an Inertia partial reload on the client when the batch finishes.
+     */
+    public function uploadPhoto(Request $request): \Illuminate\Http\Response
     {
         $request->validate([
-            'photos'   => 'required|array|max:10',
-            'photos.*' => 'image|max:8192|mimes:jpg,jpeg,png,webp',
+            'photo' => 'required|image|max:8192|mimes:jpg,jpeg,png,webp',
         ]);
 
-        $userId = session('auth.user_id');
+        $userId   = session('auth.user_id');
+        $file     = $request->file('photo');
+        $ext      = strtolower($file->getClientOriginalExtension());
+        $filename = Str::uuid() . '.' . $ext;
+        $dir      = "profile_photos/{$userId}";
 
-        foreach ($request->file('photos', []) as $file) {
-            $ext      = strtolower($file->getClientOriginalExtension());
-            $filename = Str::uuid() . '.' . $ext;
-            $dir      = "profile_photos/{$userId}";
+        Storage::disk('local')->putFileAs($dir, $file, $filename);
 
-            Storage::disk('local')->putFileAs($dir, $file, $filename);
+        $doc = $this->documents->register(
+            ownerUserId:      $userId,
+            documentType:     'profile_photo',
+            originalFilename: $file->getClientOriginalName(),
+            mimeType:         $file->getMimeType() ?? 'image/jpeg',
+            sizeBytes:        $file->getSize(),
+            storageBucket:    'local',
+            storageKey:       "{$dir}/{$filename}",
+            storageProvider:  'garage',
+        );
 
-            $this->documents->register(
-                ownerUserId:      $userId,
-                documentType:     'profile_photo',
-                originalFilename: $file->getClientOriginalName(),
-                mimeType:         $file->getMimeType() ?? 'image/jpeg',
-                sizeBytes:        $file->getSize(),
-                storageBucket:    'local',
-                storageKey:       "{$dir}/{$filename}",
-                storageProvider:  'garage',
-            );
-        }
-
-        return redirect()->route('member.profile');
+        return response($doc->id)->header('Content-Type', 'text/plain');
     }
 
     public function servePhoto(string $documentId): \Symfony\Component\HttpFoundation\StreamedResponse

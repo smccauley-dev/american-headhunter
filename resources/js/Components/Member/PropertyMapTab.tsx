@@ -1,8 +1,9 @@
 import { useForm, router } from '@inertiajs/react'
 import { useRef, useState } from 'react'
+import FilePondUploader from '../FilePondUploader'
 import {
   Section, INK, ACCENT, TAN,
-  Modal, SANS, UploadIcon,
+  Modal, UploadIcon,
   fieldLabel as label, fieldInput as input,
   toolbarBtn as ghostBtn, toolbarActiveBtn as activeBtn, toolbarInkBtn as inkBtn, toolbarDangerBtn as dangerBtn,
   fiGhostBtn as uploadBtn, fiPrimaryBtn as fiPrimary, modalHelper as mHelper,
@@ -70,41 +71,37 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
   const [showDetails, setShowDetails] = useState(false)
 
   // ── Upload ──────────────────────────────────────────────────────────────────
-  // Select-then-submit (mirrors the admin modal): files are collected by drag/drop
-  // or Browse into state, then SUBMIT posts the batch. SUBMIT is never disabled
-  // until a selection exists — clicking with no files shows a validation error
-  // instead of being a dead, greyed-out button.
+  // Mirrors the admin FilePond flow (identical to the Photos tab): each dropped
+  // file instant-uploads to a temp token (server.process) and is revertable
+  // (server.revert); SUBMIT then commits the staged tokens as a batch. SUBMIT is
+  // never disabled until files are present — it shows a validation error instead
+  // of dead-clicking.
+  const pondRef = useRef<any>(null)
   const [description, setDescription] = useState('')
   const [importExif, setImportExif] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const [uploadFiles, setUploadFiles] = useState<File[]>([])
-  const [dragOver, setDragOver] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
-
-  function addFiles(list: FileList | null) {
-    if (!list?.length) return
-    setUploadError(null)
-    setUploadFiles(prev => [...prev, ...Array.from(list)].slice(0, 10))
-  }
 
   function resetUpload() {
-    setUploadFiles([]); setDescription(''); setImportExif(true); setUploadError(null)
-    if (fileRef.current) fileRef.current.value = ''
+    pondRef.current?.removeFiles()
+    setDescription(''); setImportExif(true); setUploadError(null)
   }
 
   function submitUpload() {
-    if (uploadFiles.length === 0) { setUploadError('Please add at least one map image.'); return }
-    const fd = new FormData()
-    uploadFiles.forEach(f => fd.append('images[]', f))
-    if (description) fd.append('description', description)
-    fd.append('import_exif', importExif ? '1' : '0')
+    const items: any[] = pondRef.current?.getFiles() ?? []
+    if (items.length === 0) { setUploadError('Please add at least one map image.'); return }
+    const ids = items.map(f => f.serverId).filter(Boolean)
+    if (ids.length !== items.length) { setUploadError('Please wait for all images to finish uploading.'); return }
     setUploading(true)
     setUploadError(null)
-    router.post(`/member/properties/${propertyId}/map-images`, fd, {
-      preserveScroll: true, forceFormData: true,
+    router.post(`/member/properties/${propertyId}/map-images`, {
+      tmp_files: ids,
+      description: description.trim() || null,
+      import_exif: importExif,
+    }, {
+      preserveScroll: true,
       onSuccess: () => { resetUpload(); setShowUpload(false) },
-      onError: errs => setUploadError((errs as Record<string, string>).images ?? 'Upload failed.'),
+      onError: errs => setUploadError((errs as Record<string, string>).tmp_files ?? 'Upload failed.'),
       onFinish: () => setUploading(false),
     })
   }
@@ -380,34 +377,21 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
           )}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            {/* Map Images — drag & drop / browse */}
+            {/* Map Images — FilePond instant-upload (parity with the admin uploader) */}
             <div>
               <label style={label}>Map Images <span style={{ color: ACCENT }}>*</span></label>
-              <div
-                onClick={() => fileRef.current?.click()}
-                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
-                style={{
-                  border: `1px dashed ${dragOver ? INK : TAN}`,
-                  background: dragOver ? 'rgba(10,21,18,0.03)' : '#faf7f2',
-                  padding: '28px 16px', textAlign: 'center', cursor: 'pointer',
-                }}
-              >
-                <div style={{ fontFamily: SANS, fontSize: '13px', color: '#6b5e50' }}>
-                  Drag &amp; Drop your files or <span style={{ color: ACCENT, textDecoration: 'underline' }}>Browse</span>
-                </div>
-              </div>
-              {uploadFiles.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px' }}>
-                  {uploadFiles.map((f, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontFamily: 'var(--mono)', fontSize: '11px', color: INK }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                      <button type="button" onClick={() => setUploadFiles(prev => prev.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '15px', lineHeight: 1, flexShrink: 0 }}>×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <FilePondUploader
+                ref={pondRef}
+                allowMultiple
+                maxFiles={10}
+                maxFileSize="15MB"
+                acceptedFileTypes={['image/jpeg', 'image/png', 'image/webp']}
+                name="image"
+                labelIdle='Drag &amp; Drop your files or <span class="filepond--label-action">Browse</span>'
+                onupdatefiles={() => setUploadError(null)}
+                processUrl={`/member/properties/${propertyId}/map-images/temp`}
+                revertUrl={`/member/properties/${propertyId}/map-images/temp`}
+              />
               <div style={mHelper}>JPG, PNG, or WebP — max 15 MB each. The first map image on a property becomes the boundary map.</div>
             </div>
 
@@ -433,8 +417,6 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
             </div>
 
             {uploadError && <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: ACCENT }}>{uploadError}</div>}
-
-            <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={e => { addFiles(e.target.files); if (fileRef.current) fileRef.current.value = '' }} />
           </div>
         </Modal>
       )}

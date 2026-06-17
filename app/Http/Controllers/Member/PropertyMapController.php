@@ -9,6 +9,9 @@ use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -55,20 +58,58 @@ class PropertyMapController extends Controller
         );
     }
 
+    /** FilePond process: stage one dropped file, return its opaque token. */
+    public function tempStore(Request $request, string $property): Response
+    {
+        $this->authorizeManage($property);
+
+        $request->validate([
+            'image' => 'required|image|max:15360', // 15 MB — matches the uploader
+        ]);
+
+        $this->pruneTemp($property);
+
+        $path = $request->file('image')->store($this->tempDir($property), 'local');
+
+        // FilePond stores this token and echoes it back on revert and on submit.
+        return response(basename($path))->header('Content-Type', 'text/plain');
+    }
+
+    /** FilePond revert: drop a staged file the user removed before submitting. */
+    public function tempRevert(Request $request, string $property): Response
+    {
+        $this->authorizeManage($property);
+
+        $this->deleteTemp($property, trim($request->getContent()));
+
+        return response('');
+    }
+
     public function storeImage(Request $request, string $property): RedirectResponse
     {
         $this->authorizeManage($property);
 
         $data = $request->validate([
-            'images'      => 'required|array|max:10',
-            'images.*'    => 'image|max:15360', // 15 MB
+            'tmp_files'   => 'required|array|max:10',
+            'tmp_files.*' => 'string',
             'description' => 'nullable|string|max:255',
             'import_exif' => 'boolean',
         ]);
 
         $uploaded = 0;
-        foreach ($data['images'] as $file) {
+        foreach ($data['tmp_files'] as $token) {
+            $path = $this->tempDir($property) . '/' . basename($token);
+            if (! Storage::disk('local')->exists($path)) {
+                continue; // stale/foreign token — skip rather than fail the batch
+            }
             try {
+                $file = new UploadedFile(
+                    Storage::disk('local')->path($path),
+                    basename($path),
+                    Storage::disk('local')->mimeType($path) ?: 'image/jpeg',
+                    null,
+                    true,
+                );
                 $this->maps->addMapImage(
                     $property,
                     $file,
@@ -78,6 +119,8 @@ class PropertyMapController extends Controller
                 $uploaded++;
             } catch (\Throwable $e) {
                 report($e);
+            } finally {
+                Storage::disk('local')->delete($path);
             }
         }
 
@@ -247,6 +290,36 @@ class PropertyMapController extends Controller
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /** Per-property staging dir, shared shape with the admin map uploader. */
+    private function tempDir(string $propertyId): string
+    {
+        return 'pending-property-maps/' . basename($propertyId);
+    }
+
+    /** Delete a single staged file by token (basename-only, no traversal). */
+    private function deleteTemp(string $propertyId, string $token): void
+    {
+        $name = basename($token);
+        if ($name === '') {
+            return;
+        }
+        $path = $this->tempDir($propertyId) . '/' . $name;
+        if (Storage::disk('local')->exists($path)) {
+            Storage::disk('local')->delete($path);
+        }
+    }
+
+    /** Sweep staged files older than a day so abandoned drops don't accumulate. */
+    private function pruneTemp(string $propertyId): void
+    {
+        $cutoff = now()->subDay()->getTimestamp();
+        foreach (Storage::disk('local')->files($this->tempDir($propertyId)) as $file) {
+            if (Storage::disk('local')->lastModified($file) < $cutoff) {
+                Storage::disk('local')->delete($file);
+            }
+        }
+    }
 
     private function authorizeManage(string $propertyId): void
     {

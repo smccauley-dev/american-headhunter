@@ -2,6 +2,7 @@ import { Head, useForm, router, usePage } from '@inertiajs/react'
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { formatPhone, telHref } from '@/lib/phone'
+import FilePondUploader from '@/Components/FilePondUploader'
 
 interface Signer {
   name: string
@@ -346,7 +347,13 @@ function UploadDocumentForm({ uploadUrl, tags }: { uploadUrl: string; tags: Reco
 
       <div style={{ marginBottom: '12px' }}>
         <label style={labelStyle}>File (PDF, max 20 MB) *</label>
-        <input type="file" accept="application/pdf" required onChange={e => setData('document', e.target.files?.[0] ?? null)} style={{ fontFamily: 'var(--body)', fontSize: '14px' }} />
+        <FilePondUploader
+          name="document"
+          maxFileSize="20MB"
+          acceptedFileTypes={['application/pdf']}
+          labelIdle='Drag &amp; Drop your PDF or <span class="filepond--label-action">Browse</span>'
+          onupdatefiles={items => setData('document', items[0]?.file ?? null)}
+        />
         {errors.document && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.document}</div>}
       </div>
 

@@ -1,6 +1,7 @@
 import { Head, router, usePage } from '@inertiajs/react'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { US_STATE_CODES, US_STATE_NAMES } from '@/lib/usStates'
+import FilePondUploader from '@/Components/FilePondUploader'
 import {
   EyeIcon,
   EyeSlashIcon,
@@ -735,8 +736,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
   const [editing, setEditing]               = useState(false)
   const [tab, setTab]                       = useState<'about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security' | 'leases'>(initial_tab ?? 'about')
   const [saving, setSaving]                 = useState(false)
-  const [avatarUploading, setAvatarUploading] = useState(false)
-  const avatarInputRef                      = useRef<HTMLInputElement>(null)
+  const avatarPondRef                       = useRef<any>(null)
 
   const [form, setForm] = useState({
     first_name:    profile.first_name,
@@ -855,18 +855,6 @@ export default function HunterProfile({ user, profile, photos, activity, securit
     setEditing(false)
   }
 
-  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setAvatarUploading(true)
-    const fd = new FormData()
-    fd.append('avatar', file)
-    router.post('/member/profile/avatar', fd, {
-      forceFormData: true,
-      onFinish: () => setAvatarUploading(false),
-    })
-  }
-
   const displayName = profile.display_name
     || `${profile.first_name} ${profile.last_name}`.trim()
     || user.email
@@ -931,58 +919,49 @@ export default function HunterProfile({ user, profile, photos, activity, securit
             <div style={{ ...fieldCard, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <DashedInset />
 
-              {/* Avatar — inset so it sits inside the dashed border */}
-              <div
-                onClick={() => editing && avatarInputRef.current?.click()}
-                style={{
-                  position: 'relative',
-                  margin: '16px 16px 0',
-                  aspectRatio: '1 / 1',
-                  background: 'var(--ah-ink)',
-                  cursor: editing ? 'pointer' : 'default',
-                  overflow: 'hidden',
-                }}
-              >
-                {profile.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt={displayName}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+              {/* Avatar — inset so it sits inside the dashed border. In edit mode
+                  it becomes a FilePond uploader (parity with the admin avatar
+                  FileUpload); otherwise it shows the current photo or initials. */}
+              {editing ? (
+                <div style={{ margin: '16px 16px 0' }}>
+                  <FilePondUploader
+                    ref={avatarPondRef}
+                    name="avatar"
+                    maxFileSize="4MB"
+                    acceptedFileTypes={['image/jpeg', 'image/png', 'image/webp']}
+                    labelIdle='Drag &amp; Drop your photo or <span class="filepond--label-action">Browse</span>'
+                    stylePanelLayout="compact"
+                    imagePreviewHeight={180}
+                    processUrl="/member/profile/avatar"
+                    onprocessfiles={() => { router.reload({ only: ['profile'] }); avatarPondRef.current?.removeFiles() }}
                   />
-                ) : (
-                  <div style={{
-                    position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily: 'Fraunces, Georgia, serif', fontSize: '52px', fontWeight: 400, color: '#a89874',
-                  }}>
-                    {initials}
-                  </div>
-                )}
-
-                {editing && (
-                  <div style={{
-                    position: 'absolute', inset: 0, background: 'rgba(10,21,18,0.72)',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                  }}>
-                    {avatarUploading ? (
-                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#fff', letterSpacing: '.1em', textTransform: 'uppercase' }}>
-                        Uploading…
-                      </span>
-                    ) : (
-                      <>
-                        <svg width="26" height="26" fill="none" stroke="#fff" strokeWidth="1.5" viewBox="0 0 24 24">
-                          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                          <circle cx="12" cy="13" r="4" />
-                        </svg>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#F4ECDC', letterSpacing: '.12em', textTransform: 'uppercase' }}>
-                          Change Photo
-                        </span>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handleAvatarChange} />
+                </div>
+              ) : (
+                <div
+                  style={{
+                    position: 'relative',
+                    margin: '16px 16px 0',
+                    aspectRatio: '1 / 1',
+                    background: 'var(--ah-ink)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {profile.avatar_url ? (
+                    <img
+                      src={profile.avatar_url}
+                      alt={displayName}
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <div style={{
+                      position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontFamily: 'Fraunces, Georgia, serif', fontSize: '52px', fontWeight: 400, color: '#a89874',
+                    }}>
+                      {initials}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Name + trust + location */}
               <div style={{ padding: '16px 18px 0' }}>
@@ -2107,25 +2086,8 @@ function PhotosTab({ photos, editing, visibilityValue, onVisibility }: {
   visibilityValue: 'public' | 'private'
   onVisibility: (val: 'public' | 'private') => void
 }) {
-  const uploadInputRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false)
+  const pondRef = useRef<any>(null)
   const [deleting, setDeleting]   = useState<string | null>(null)
-
-  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files
-    if (!files?.length) return
-    setUploading(true)
-    const fd = new FormData()
-    Array.from(files).forEach(f => fd.append('photos[]', f))
-    router.post('/member/profile/photos', fd, {
-      forceFormData: true,
-      preserveState: true,
-      onFinish: () => {
-        setUploading(false)
-        if (uploadInputRef.current) uploadInputRef.current.value = ''
-      },
-    })
-  }
 
   function handleDelete(id: string) {
     setDeleting(id)
@@ -2140,35 +2102,23 @@ function PhotosTab({ photos, editing, visibilityValue, onVisibility }: {
 
       <TabPrivacyHeader value={visibilityValue} editing={editing} onChange={onVisibility} />
 
-      {/* Upload bar — always visible */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874' }}>
-          {photos.length} {photos.length === 1 ? 'Photo' : 'Photos'}
-        </span>
-        <button
-          onClick={() => uploadInputRef.current?.click()}
-          disabled={uploading}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: '7px',
-            fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700,
-            letterSpacing: '.1em', textTransform: 'uppercase',
-            padding: '8px 18px', background: uploading ? '#e5ddd0' : 'var(--ah-ink)',
-            color: uploading ? '#a89874' : '#F4ECDC',
-            border: 'none', cursor: uploading ? 'not-allowed' : 'pointer',
-          }}
-        >
-          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
-          </svg>
-          {uploading ? 'Uploading…' : 'Upload Photos'}
-        </button>
-        <input
-          ref={uploadInputRef}
-          type="file"
-          multiple
-          accept="image/jpeg,image/png,image/webp"
-          style={{ display: 'none' }}
-          onChange={handleUpload}
+      {/* Upload — FilePond instant-upload (parity with the admin/property uploaders) */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874' }}>
+            {photos.length} {photos.length === 1 ? 'Photo' : 'Photos'}
+          </span>
+        </div>
+        <FilePondUploader
+          ref={pondRef}
+          allowMultiple
+          maxFiles={10}
+          maxFileSize="8MB"
+          acceptedFileTypes={['image/jpeg', 'image/png', 'image/webp']}
+          name="photo"
+          labelIdle='Drag &amp; Drop your photos or <span class="filepond--label-action">Browse</span>'
+          processUrl="/member/profile/photos"
+          onprocessfiles={() => { router.reload({ only: ['photos'] }); pondRef.current?.removeFiles() }}
         />
       </div>
 
