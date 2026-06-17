@@ -347,7 +347,7 @@ html {
    class rules regardless of whether the bundled plugin CSS loads before or after
    this file. Mirrors the old custom DropZone: square corners, paper drop zone,
    dashed parch-deep border, mono labels, blaze "Browse" action. */
-.filepond--root { font-family: var(--mono); margin-bottom: 0; }
+.filepond--root { font-family: var(--mono); margin-bottom: 0; border-radius: 0; }
 .filepond--root .filepond--panel-root {
   border-radius: 0;
   background-color: var(--paper);

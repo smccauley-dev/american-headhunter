@@ -907,7 +907,10 @@ class AdminPanelProvider extends PanelProvider
             border: none !important;
             background-color: transparent !important;
         }
-        .filepond--root { font-family: 'JetBrains Mono', Menlo, monospace !important; margin-bottom: 0 !important; }
+        /* Filament's compiled .filepond--root is rounded (border-radius:var(--radius-lg))
+           AND overflow:hidden, so it CLIPS the square panel into rounded corners.
+           Squaring the root is the actual fix — squaring the panel alone is not enough. */
+        .filepond--root { font-family: 'JetBrains Mono', Menlo, monospace !important; margin-bottom: 0 !important; border-radius: 0 !important; }
         .filepond--root .filepond--panel-root {
             border-radius: 0 !important;
             background-color: #faf7f2 !important;
