@@ -1,12 +1,33 @@
 import { router } from '@inertiajs/react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { FilePond, registerPlugin } from 'react-filepond'
+import 'filepond/dist/filepond.min.css'
+import FilePondPluginImagePreview from 'filepond-plugin-image-preview'
+import 'filepond-plugin-image-preview/dist/filepond-plugin-image-preview.min.css'
+import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
+import FilePondPluginFileValidateSize from 'filepond-plugin-file-validate-size'
+import FilePondPluginImageExifOrientation from 'filepond-plugin-image-exif-orientation'
 import {
   Section, INK, ACCENT, TAN,
-  Modal, DropZone, SelectedFiles, PillToggle, UploadIcon, CheckIcon, XIcon,
+  Modal, PillToggle, UploadIcon, CheckIcon, XIcon,
   fieldLabel as label, fieldInput as input, modalHelper as mHelper,
   toolbarBtn as ghostBtn, toolbarDangerBtn as dangerBtn,
   fiGhostBtn as uploadBtn, fiPrimaryBtn as fiPrimary,
 } from './PropertyChrome'
+
+registerPlugin(
+  FilePondPluginImagePreview,
+  FilePondPluginFileValidateType,
+  FilePondPluginFileValidateSize,
+  FilePondPluginImageExifOrientation,
+)
+
+/** Laravel's encrypted CSRF cookie — FilePond runs its own XHR, so (unlike Inertia)
+ * it must set the X-XSRF-TOKEN header itself. */
+function xsrfToken(): string {
+  const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/)
+  return m ? decodeURIComponent(m[1]) : ''
+}
 
 export interface Photo {
   id: string
@@ -73,38 +94,37 @@ function TagsField({ tags, onChange }: { tags: string[]; onChange: (t: string[])
 
 export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: string; photos: Photo[] }) {
   // ── Upload ──────────────────────────────────────────────────────────────────
-  // Select-then-submit (mirrors the admin/Map modal): files collect in state via
-  // drag/drop or Browse, then SUBMIT posts the batch. SUBMIT is never disabled
-  // until a file is chosen — it shows a validation error instead of dead-clicking.
+  // Mirrors the admin FilePond flow: each dropped file instant-uploads to a temp
+  // token (server.process) and is revertable (server.revert); SUBMIT then commits
+  // the staged tokens as a batch. SUBMIT is never disabled until files are present —
+  // it shows a validation error instead of dead-clicking.
+  const pondRef = useRef<any>(null)
   const [showUpload, setShowUpload] = useState(false)
-  const [uploadFiles, setUploadFiles] = useState<File[]>([])
   const [batchCaption, setBatchCaption] = useState('')
   const [importExif, setImportExif] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  function addFiles(list: FileList | null) {
-    if (!list?.length) return
-    setUploadError(null)
-    setUploadFiles(prev => [...prev, ...Array.from(list)].slice(0, 20))
-  }
-
   function resetUpload() {
-    setUploadFiles([]); setBatchCaption(''); setImportExif(true); setUploadError(null)
+    pondRef.current?.removeFiles()
+    setBatchCaption(''); setImportExif(true); setUploadError(null)
   }
 
   function submitUpload() {
-    if (uploadFiles.length === 0) { setUploadError('Please add at least one photo.'); return }
-    const fd = new FormData()
-    uploadFiles.forEach(f => fd.append('photos[]', f))
-    if (batchCaption) fd.append('caption', batchCaption)
-    fd.append('import_exif', importExif ? '1' : '0')
+    const items: any[] = pondRef.current?.getFiles() ?? []
+    if (items.length === 0) { setUploadError('Please add at least one photo.'); return }
+    const ids = items.map(f => f.serverId).filter(Boolean)
+    if (ids.length !== items.length) { setUploadError('Please wait for all photos to finish uploading.'); return }
     setUploading(true)
     setUploadError(null)
-    router.post(`/member/properties/${propertyId}/photos`, fd, {
-      preserveScroll: true, forceFormData: true,
+    router.post(`/member/properties/${propertyId}/photos`, {
+      tmp_files: ids,
+      caption: batchCaption.trim() || null,
+      import_exif: importExif,
+    }, {
+      preserveScroll: true,
       onSuccess: () => { resetUpload(); setShowUpload(false) },
-      onError: errs => setUploadError((errs as Record<string, string>).photos ?? 'Upload failed.'),
+      onError: errs => setUploadError((errs as Record<string, string>).tmp_files ?? 'Upload failed.'),
       onFinish: () => setUploading(false),
     })
   }
@@ -297,12 +317,36 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
           )}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            {/* Photos — drag & drop / browse */}
+            {/* Photos — FilePond instant-upload (parity with the admin uploader) */}
             <div>
               <label style={label}>Photos <span style={{ color: ACCENT }}>*</span></label>
-              <DropZone onFiles={addFiles} />
-              <SelectedFiles files={uploadFiles} onRemove={i => setUploadFiles(prev => prev.filter((_, idx) => idx !== i))} />
-              <div style={mHelper}>JPG, PNG, or WebP — max 15 MB each, up to 20 per batch. The first photo becomes the cover photo.</div>
+              <FilePond
+                ref={pondRef}
+                allowMultiple
+                maxFiles={20}
+                maxFileSize="10MB"
+                acceptedFileTypes={['image/jpeg', 'image/png', 'image/webp']}
+                name="photo"
+                credits={false}
+                labelIdle='Drag &amp; Drop your photos or <span class="filepond--label-action">Browse</span>'
+                onupdatefiles={() => setUploadError(null)}
+                server={{
+                  url: `/member/properties/${propertyId}/photos`,
+                  process: {
+                    url: '/temp',
+                    method: 'POST',
+                    withCredentials: true,
+                    headers: { 'X-XSRF-TOKEN': xsrfToken() },
+                  },
+                  revert: {
+                    url: '/temp',
+                    method: 'DELETE',
+                    withCredentials: true,
+                    headers: { 'X-XSRF-TOKEN': xsrfToken() },
+                  },
+                }}
+              />
+              <div style={mHelper}>JPG, PNG, or WebP — max 10 MB each, up to 20 per batch. The first photo becomes the cover photo.</div>
             </div>
 
             {/* Caption */}

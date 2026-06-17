@@ -199,7 +199,10 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/properties/{property}/managers',            [MemberPropertyManagerController::class, 'store'])->name('properties.managers.store');
     Route::delete('/properties/{property}/managers/{manager}', [MemberPropertyManagerController::class, 'destroy'])->name('properties.managers.destroy');
 
-    // Photos tab.
+    // Photos tab. The /temp routes (FilePond instant-upload + revert) are declared
+    // before the {photo} routes so DELETE .../photos/temp isn't captured as {photo}.
+    Route::post('/properties/{property}/photos/temp',               [MemberPropertyPhotoController::class, 'tempStore'])->name('properties.photos.temp.store')->middleware('throttle:60,1');
+    Route::delete('/properties/{property}/photos/temp',             [MemberPropertyPhotoController::class, 'tempRevert'])->name('properties.photos.temp.revert')->middleware('throttle:60,1');
     Route::post('/properties/{property}/photos',                     [MemberPropertyPhotoController::class, 'store'])->name('properties.photos.store')->middleware('throttle:30,1');
     Route::put('/properties/{property}/photos/{photo}',             [MemberPropertyPhotoController::class, 'update'])->name('properties.photos.update');
     Route::post('/properties/{property}/photos/{photo}/primary',    [MemberPropertyPhotoController::class, 'setPrimary'])->name('properties.photos.primary');

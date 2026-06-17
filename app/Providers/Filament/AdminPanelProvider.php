@@ -894,13 +894,16 @@ class AdminPanelProvider extends PanelProvider
             color: #0a1512 !important;
         }
 
-        /* File upload drop zone */
-        .fi-main .fi-fo-file-upload-input-ctn {
+        /* File upload drop zone — squared in main content AND in modals (the photo
+           and map uploaders open in action modals, which the .fi-main scope misses). */
+        .fi-main .fi-fo-file-upload-input-ctn,
+        .fi-modal .fi-fo-file-upload-input-ctn {
             border-radius: 0 !important;
             border: 1px dashed #a89874 !important;
             background-color: #faf7f2 !important;
         }
-        .fi-main .fi-fo-file-upload-input-ctn:hover {
+        .fi-main .fi-fo-file-upload-input-ctn:hover,
+        .fi-modal .fi-fo-file-upload-input-ctn:hover {
             border-color: #0a1512 !important;
             background-color: rgba(10, 21, 18, 0.03) !important;
         }

@@ -1,24 +1,24 @@
 {{-- Property photo gallery: $photos = collection of PropertyPhoto, ordered.
      Buttons mount Filament page actions on EditPropertyV2 via wire:click. --}}
 @php
-    $btn = 'display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:6px;background:#fff;'
+    $btn = 'display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:0;background:#FAFAFA;'
          . 'border:1px solid #e5e7eb;font-size:12px;font-weight:500;color:#374151;cursor:pointer;white-space:nowrap;';
 @endphp
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;">
     @foreach ($photos as $photo)
-        <div style="border:1px solid #e5e0d8;border-radius:8px;overflow:hidden;background:#fff;display:flex;flex-direction:column;">
+        <div style="border:1px solid #d4c9b0;overflow:hidden;background:#fff;display:flex;flex-direction:column;">
             <div style="position:relative;aspect-ratio:16/10;background:#f5f1eb;">
                 <img src="{{ route('admin.documents.view', $photo->document_id) }}"
                      alt="{{ $photo->caption ?? 'Property photo' }}"
                      loading="lazy"
                      style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">
                 @if ($photo->is_primary)
-                    <span style="position:absolute;top:8px;left:8px;background:#0a1512;color:#fff !important;border:1px solid #a89874;font-family:monospace;font-size:10px !important;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:3px;line-height:1.4;white-space:nowrap;">&#9733; Primary</span>
+                    <span style="position:absolute;top:8px;left:8px;background:#0a1512;color:#fff !important;border:1px solid #a89874;font-family:monospace;font-size:9px !important;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:0;line-height:1.4;white-space:nowrap;">&#9733; Primary</span>
                 @endif
-                <span style="position:absolute;top:8px;right:8px;background:rgba(10,21,18,0.65);color:#fff !important;font-family:monospace;font-size:10px !important;padding:2px 7px;border-radius:3px;line-height:1.4;white-space:nowrap;">{{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }} / {{ str_pad((string) $photos->count(), 2, '0', STR_PAD_LEFT) }}</span>
+                <span style="position:absolute;top:8px;right:8px;background:rgba(10,21,18,0.65);color:#fff !important;font-family:monospace;font-size:9px !important;padding:2px 7px;border-radius:0;line-height:1.4;white-space:nowrap;">{{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }} / {{ str_pad((string) $photos->count(), 2, '0', STR_PAD_LEFT) }}</span>
             </div>
             <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;flex:1;">
-                <div style="font-size:13px;color:#374151;min-height:18px;{{ $photo->caption ? '' : 'color:#9ca3af;font-style:italic;' }}">
+                <div style="font-family:'Crimson Pro',Georgia,serif;font-size:14px;color:#0a1512;min-height:20px;{{ $photo->caption ? '' : 'color:#a89874;font-style:italic;' }}">
                     {{ $photo->caption ?: 'No caption' }}
                 </div>
                 @if (! empty($photo->tags))
