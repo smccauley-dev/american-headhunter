@@ -55,6 +55,17 @@ class EntitlementService extends BaseService
         $this->invalidate("user_entitlements:{$userId}");
     }
 
+    /**
+     * Invalidate every user's entitlement cache.
+     * Call when a change affects many users at once: plan version published,
+     * a plan's feature entitlements edited, or a promotion's terms changed.
+     * The leading wildcard matches Laravel's cache prefix on the key.
+     */
+    public function invalidateAll(): void
+    {
+        $this->invalidatePattern('*user_entitlements:*');
+    }
+
     private function getUserEntitlements(User $user): array
     {
         return $this->cache("user_entitlements:{$user->id}", function () use ($user) {

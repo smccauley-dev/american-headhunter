@@ -64,6 +64,18 @@ class AdminAuth
         return static::hasAnyRole('super_admin', 'global_admin', 'security_admin');
     }
 
+    /** Membership plans, plan versions, entitlements, promotions, promo codes */
+    public static function canManagePricing(): bool
+    {
+        return static::hasAnyRole('super_admin', 'global_admin');
+    }
+
+    /** Billing oversight — read-only invoices, payments, payouts */
+    public static function canViewBilling(): bool
+    {
+        return static::hasAnyRole('super_admin', 'global_admin', 'security_admin');
+    }
+
     /** Feature flags, system configuration — super_admin only */
     public static function canManageSystem(): bool
     {
