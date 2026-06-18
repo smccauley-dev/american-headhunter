@@ -587,6 +587,99 @@ class PropertyFormV2
         return new HtmlString($html);
     }
 
+    /**
+     * Per-item actions on the listings repeater for day-hunt listings: view the
+     * availability calendar and manage owner blackout ranges. Both only appear on
+     * a saved day-hunt listing (a calendar needs a persisted listing id). Booked
+     * dates are lease-driven and never edited here.
+     *
+     * @return array<Action>
+     */
+    private static function dayHuntListingActions(): array
+    {
+        $isSavedDayHunt = function (array $arguments, Repeater $component): bool {
+            $item = $component->getRawItemState($arguments['item']);
+
+            return ($item['listing_type'] ?? null) === 'day_hunt' && ! empty($item['id']);
+        };
+
+        return [
+            Action::make('listingAvailability')
+                ->label('Availability')
+                ->icon('heroicon-o-calendar-days')
+                ->color('gray')
+                ->visible($isSavedDayHunt)
+                ->modalHeading('Day-Hunt Availability Calendar')
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel('Close')
+                ->modalContent(function (array $arguments, Repeater $component) {
+                    $item = $component->getRawItemState($arguments['item']);
+
+                    return view('filament.admin.day-hunt-availability', [
+                        'calendar' => app(PropertyService::class)->getAvailabilityCalendar($item['id']),
+                    ]);
+                }),
+            Action::make('listingBlackouts')
+                ->label('Blackouts')
+                ->icon('heroicon-o-no-symbol')
+                ->color('gray')
+                ->visible($isSavedDayHunt)
+                ->modalHeading('Manage Blackout Dates')
+                ->modalDescription('Block dates that cannot be booked. Booked dates come from leases and are managed automatically — they cannot be edited here.')
+                ->fillForm(function (array $arguments, Repeater $component): array {
+                    $item = $component->getRawItemState($arguments['item']);
+
+                    return [
+                        'blocks' => array_map(
+                            fn (array $b): array => [
+                                'date_start' => $b['date_start'],
+                                'date_end'   => $b['date_end'],
+                                'reason'     => $b['reason'],
+                            ],
+                            app(PropertyService::class)->getBlackoutRanges($item['id']),
+                        ),
+                    ];
+                })
+                ->schema([
+                    Repeater::make('blocks')
+                        ->label('Blackout ranges')
+                        ->columns(3)
+                        ->defaultItems(0)
+                        ->addActionLabel('Add blackout')
+                        ->schema([
+                            DatePicker::make('date_start')
+                                ->label('From')
+                                ->required(),
+                            DatePicker::make('date_end')
+                                ->label('To')
+                                ->required()
+                                ->afterOrEqual('date_start'),
+                            Select::make('reason')
+                                ->options([
+                                    'blocked'     => 'Blocked',
+                                    'maintenance' => 'Maintenance',
+                                ])
+                                ->default('blocked')
+                                ->required(),
+                        ]),
+                ])
+                ->action(function (array $arguments, array $data, Repeater $component): void {
+                    $item = $component->getRawItemState($arguments['item']);
+
+                    try {
+                        app(PropertyService::class)->replaceBlackouts(
+                            $item['id'],
+                            $data['blocks'] ?? [],
+                            auth()->id(),
+                        );
+                        Notification::make()->title('Blackout dates updated')->success()->send();
+                    } catch (\RuntimeException $e) {
+                        Notification::make()->title('Could not save')->body($e->getMessage())->danger()->send();
+                    }
+                }),
+        ];
+    }
+
     private static function contactsRepeater(): Repeater
     {
         return Repeater::make('contacts')
@@ -864,6 +957,7 @@ class PropertyFormV2
                                                 ? 'ID · ' . strtoupper(substr($state['id'], 0, 8))
                                                 : 'New Listing'
                                             )
+                                            ->extraItemActions(self::dayHuntListingActions())
                                             ->addAction(fn(\Filament\Actions\Action $action) => $action
                                                 ->label('Add Listing')
                                                 ->icon('heroicon-o-plus-circle')
@@ -874,6 +968,7 @@ class PropertyFormV2
                                                 Select::make('listing_type')
                                                     ->label('Type')
                                                     ->required()
+                                                    ->live()
                                                     ->options([
                                                         'annual_lease'   => 'Annual Lease',
                                                         'seasonal_lease' => 'Seasonal Lease',
@@ -919,10 +1014,17 @@ class PropertyFormV2
                                                     ->minValue(1)
                                                     ->placeholder('No minimum'),
                                                 TextInput::make('price_per_hunter')
-                                                    ->label('Price Per Hunter')
+                                                    ->label(fn (Get $get): string => $get('listing_type') === 'day_hunt' ? 'Price Per Hunter / Day' : 'Price Per Hunter')
                                                     ->numeric()
                                                     ->prefix('$')
                                                     ->minValue(0),
+                                                TextInput::make('price_per_hunter_weekly')
+                                                    ->label('Price Per Hunter / Week')
+                                                    ->numeric()
+                                                    ->prefix('$')
+                                                    ->minValue(0)
+                                                    ->helperText('Day-hunt only — discounted rate applied to each full 7-day block. Leave blank for no weekly discount.')
+                                                    ->visible(fn (Get $get): bool => $get('listing_type') === 'day_hunt'),
                                                 TextInput::make('price_total')
                                                     ->label('Total Price')
                                                     ->numeric()
