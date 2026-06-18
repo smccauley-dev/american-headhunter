@@ -236,6 +236,56 @@ class DayHuntBookingTest extends TestCase
         ]);
     }
 
+    public function test_blackouts_are_full_replaced_and_listed(): void
+    {
+        $svc = app(PropertyService::class);
+
+        $svc->replaceBlackouts($this->listingId, [
+            ['date_start' => '2026-08-04', 'date_end' => '2026-08-05', 'reason' => 'blocked'],
+            ['date_start' => '2026-08-20', 'date_end' => '2026-08-21', 'reason' => 'maintenance'],
+        ]);
+        $this->assertCount(2, $svc->getBlackoutRanges($this->listingId));
+
+        // Full-replace: one range in, the previous two gone.
+        $svc->replaceBlackouts($this->listingId, [
+            ['date_start' => '2026-08-10', 'date_end' => '2026-08-11', 'reason' => 'blocked'],
+        ]);
+        $ranges = $svc->getBlackoutRanges($this->listingId);
+        $this->assertCount(1, $ranges);
+        $this->assertSame('2026-08-10', $ranges[0]['date_start']);
+    }
+
+    public function test_a_blackout_overlapping_a_booking_is_rejected_with_a_friendly_message(): void
+    {
+        $leaseId = $this->createLease($this->listingId, '2026-08-05', '2026-08-07', '900.00');
+        app(LeaseService::class)->activate($leaseId);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('overlap');
+
+        app(PropertyService::class)->replaceBlackouts($this->listingId, [
+            ['date_start' => '2026-08-06', 'date_end' => '2026-08-08', 'reason' => 'blocked'],
+        ]);
+    }
+
+    public function test_availability_calendar_counts_each_day_state(): void
+    {
+        $leaseId = $this->createLease($this->listingId, '2026-08-05', '2026-08-07', '900.00'); // 3 booked
+        app(LeaseService::class)->activate($leaseId);
+        app(PropertyService::class)->replaceBlackouts($this->listingId, [
+            ['date_start' => '2026-08-10', 'date_end' => '2026-08-11', 'reason' => 'blocked'], // 2 blocked
+        ]);
+
+        $cal = app(PropertyService::class)->getAvailabilityCalendar($this->listingId);
+
+        // Season Aug 1–31 = 31 days; 3 booked + 2 blocked + 26 available.
+        $this->assertSame(3, $cal['totals']['booked']);
+        $this->assertSame(2, $cal['totals']['blocked']);
+        $this->assertSame(26, $cal['totals']['available']);
+        $this->assertNotEmpty($cal['months']);
+        $this->assertSame('August 2026', $cal['months'][0]['label']);
+    }
+
     public function test_quote_applies_the_weekly_rate_to_each_full_week(): void
     {
         // 10 inclusive days = 1 full week (weekly 800) + 3 days (3 × 150 = 450) per

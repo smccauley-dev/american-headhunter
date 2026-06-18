@@ -18,6 +18,7 @@ use App\Models\Property\PropertySpecies;
 use App\Services\BaseService;
 use App\Services\Documents\DocumentService;
 use App\Support\PhoneNumber;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -373,6 +374,162 @@ class PropertyService extends BaseService
             $listing = PropertyListing::on('property')->find($listingId);
             $this->invalidate("listing:{$listingId}", "property:{$listing?->property_id}");
         }
+    }
+
+    /**
+     * Blocked / maintenance ranges (owner blackouts — never booked rows) for the
+     * blackout editor. Read replica.
+     *
+     * @return list<array{id:string, date_start:string, date_end:string, reason:string}>
+     */
+    public function getBlackoutRanges(string $listingId): array
+    {
+        return PropertyAvailability::on('property_read')
+            ->where('listing_id', $listingId)
+            ->whereIn('reason', ['blocked', 'maintenance'])
+            ->orderBy('date_start')
+            ->get(['id', 'date_start', 'date_end', 'reason'])
+            ->map(fn (PropertyAvailability $r) => [
+                'id'         => $r->id,
+                'date_start' => $r->date_start->toDateString(),
+                'date_end'   => $r->date_end->toDateString(),
+                'reason'     => $r->reason,
+            ])
+            ->all();
+    }
+
+    /**
+     * Full-replace a listing's blackout (blocked/maintenance) ranges. Booked rows
+     * are never touched — they come from leases. Throws a friendly RuntimeException
+     * when a range overlaps another range or an existing booking (EXCLUDE guard).
+     *
+     * @param  list<array{date_start:string, date_end:string, reason?:string}>  $ranges
+     */
+    public function replaceBlackouts(string $listingId, array $ranges, ?string $userId = null): void
+    {
+        try {
+            DB::connection('property')->transaction(function () use ($listingId, $ranges, $userId) {
+                PropertyAvailability::on('property')
+                    ->where('listing_id', $listingId)
+                    ->whereIn('reason', ['blocked', 'maintenance'])
+                    ->delete();
+
+                foreach ($ranges as $r) {
+                    $reason = ($r['reason'] ?? 'blocked');
+                    PropertyAvailability::on('property')->create([
+                        'listing_id'         => $listingId,
+                        'date_start'         => $r['date_start'],
+                        'date_end'           => $r['date_end'],
+                        'reason'             => in_array($reason, ['blocked', 'maintenance'], true) ? $reason : 'blocked',
+                        'created_by_user_id' => $userId,
+                    ]);
+                }
+            });
+        } catch (QueryException $e) {
+            if ($this->isOverlapViolation($e)) {
+                throw new \RuntimeException(
+                    'Those dates overlap an existing booking or another blackout. Adjust the ranges so none overlap.'
+                );
+            }
+            throw $e;
+        }
+
+        $listing = PropertyListing::on('property')->find($listingId);
+        $this->invalidate("listing:{$listingId}", "property:{$listing?->property_id}");
+    }
+
+    /** Postgres exclusion-constraint (overlap) violation — SQLSTATE 23P01. */
+    private function isOverlapViolation(QueryException $e): bool
+    {
+        return (string) ($e->errorInfo[0] ?? '') === '23P01'
+            || str_contains($e->getMessage(), 'excl_property_availability_no_overlap');
+    }
+
+    /**
+     * Month-by-month availability grid for a day-hunt listing's season, for the
+     * admin and landowner calendar. Each in-season day is marked available /
+     * booked / blocked / maintenance; cells outside the month or season are
+     * padding. Read replica.
+     *
+     * @return array{
+     *   season_start: ?string,
+     *   season_end: ?string,
+     *   months: list<array{label:string, weeks:list<list<array{day:?int, status:string, title:?string}>>}>,
+     *   totals: array{available:int, booked:int, blocked:int},
+     * }
+     */
+    public function getAvailabilityCalendar(string $listingId): array
+    {
+        $empty = ['season_start' => null, 'season_end' => null, 'months' => [], 'totals' => ['available' => 0, 'booked' => 0, 'blocked' => 0]];
+
+        $listing = PropertyListing::on('property_read')->find($listingId);
+        if (! $listing || ! $listing->season_start || ! $listing->season_end) {
+            return $empty;
+        }
+
+        $start = Carbon::parse($listing->season_start)->startOfDay();
+        $end   = Carbon::parse($listing->season_end)->startOfDay();
+        if ($end->lt($start)) {
+            return $empty;
+        }
+
+        // Seed every in-season day as available, then overlay each range.
+        $status = [];
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            $status[$d->toDateString()] = 'available';
+        }
+
+        foreach (PropertyAvailability::on('property_read')->where('listing_id', $listingId)->get() as $r) {
+            $rs = Carbon::parse($r->date_start)->startOfDay();
+            $re = Carbon::parse($r->date_end)->startOfDay();
+            for ($d = $rs->copy(); $d->lte($re); $d->addDay()) {
+                $key = $d->toDateString();
+                if (array_key_exists($key, $status)) {
+                    $status[$key] = $r->reason; // booked | blocked | maintenance
+                }
+            }
+        }
+
+        $totals = ['available' => 0, 'booked' => 0, 'blocked' => 0];
+        foreach ($status as $s) {
+            match ($s) {
+                'available' => $totals['available']++,
+                'booked'    => $totals['booked']++,
+                default     => $totals['blocked']++, // blocked + maintenance
+            };
+        }
+
+        $months  = [];
+        $cursor  = $start->copy()->startOfMonth();
+        $lastMon = $end->copy()->startOfMonth();
+
+        while ($cursor->lte($lastMon)) {
+            $cells   = [];
+            $firstD  = (int) $cursor->copy()->startOfMonth()->dayOfWeek; // 0 = Sun
+            $inMonth = $cursor->daysInMonth;
+
+            for ($i = 0; $i < $firstD; $i++) {
+                $cells[] = ['day' => null, 'status' => 'pad', 'title' => null];
+            }
+            for ($day = 1; $day <= $inMonth; $day++) {
+                $date = $cursor->copy()->day($day)->toDateString();
+                $s    = $status[$date] ?? 'out';
+                $cells[] = ['day' => $day, 'status' => $s, 'title' => ucfirst($s) . ' — ' . $date];
+            }
+            while (count($cells) % 7 !== 0) {
+                $cells[] = ['day' => null, 'status' => 'pad', 'title' => null];
+            }
+
+            $months[] = ['label' => $cursor->format('F Y'), 'weeks' => array_chunk($cells, 7)];
+            $cursor->addMonth();
+        }
+
+        return [
+            'season_start' => $start->format('M j, Y'),
+            'season_end'   => $end->format('M j, Y'),
+            'months'       => $months,
+            'totals'       => $totals,
+        ];
     }
 
     /**
