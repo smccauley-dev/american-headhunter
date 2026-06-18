@@ -226,6 +226,7 @@ class AdminPanelProvider extends PanelProvider
                 'Marketplace',
                 'Users & Access',
                 'Pricing & Promotions',
+                'Billing',
                 'Communications',
                 'Safety & Compliance',
                 'System',
