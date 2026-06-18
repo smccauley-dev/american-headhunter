@@ -2,21 +2,15 @@
 
 namespace App\Filament\Admin\Resources\Properties\RelationManagers;
 
-use App\Models\Property\PropertyListing;
-use App\Services\Property\PropertyService;
-use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Section;
-use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -37,7 +31,6 @@ class ListingsRelationManager extends RelationManager
                         Select::make('listing_type')
                             ->label('Type')
                             ->required()
-                            ->live()
                             ->options([
                                 'annual_lease'   => 'Annual Lease',
                                 'seasonal_lease' => 'Seasonal Lease',
@@ -99,17 +92,10 @@ class ListingsRelationManager extends RelationManager
                     ->description('Set either Price Per Hunter or Total Price — not both.')
                     ->schema([
                         TextInput::make('price_per_hunter')
-                            ->label(fn (Get $get): string => $get('listing_type') === 'day_hunt' ? 'Price Per Hunter / Day' : 'Price Per Hunter')
+                            ->label('Price Per Hunter')
                             ->numeric()
                             ->prefix('$')
                             ->minValue(0),
-                        TextInput::make('price_per_hunter_weekly')
-                            ->label('Price Per Hunter / Week')
-                            ->numeric()
-                            ->prefix('$')
-                            ->minValue(0)
-                            ->helperText('Day-hunt only — discounted rate applied to each full 7-day block. Leave blank for no weekly discount.')
-                            ->visible(fn (Get $get): bool => $get('listing_type') === 'day_hunt'),
                         TextInput::make('price_total')
                             ->label('Total Price')
                             ->numeric()
@@ -213,67 +199,6 @@ class ListingsRelationManager extends RelationManager
                     ->label('Add Listing'),
             ])
             ->actions([
-                Action::make('availability')
-                    ->label('Availability')
-                    ->icon('heroicon-o-calendar-days')
-                    ->visible(fn (PropertyListing $record): bool => $record->listing_type === 'day_hunt')
-                    ->modalHeading('Day-Hunt Availability Calendar')
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Close')
-                    ->modalContent(fn (PropertyListing $record) => view('filament.admin.day-hunt-availability', [
-                        'calendar' => app(PropertyService::class)->getAvailabilityCalendar($record->id),
-                    ])),
-                Action::make('blackouts')
-                    ->label('Blackouts')
-                    ->icon('heroicon-o-no-symbol')
-                    ->visible(fn (PropertyListing $record): bool => $record->listing_type === 'day_hunt')
-                    ->modalHeading('Manage Blackout Dates')
-                    ->modalDescription('Block dates that cannot be booked. Booked dates come from leases and are managed automatically — they cannot be edited here.')
-                    ->fillForm(fn (PropertyListing $record): array => [
-                        'blocks' => array_map(
-                            fn (array $b): array => [
-                                'date_start' => $b['date_start'],
-                                'date_end'   => $b['date_end'],
-                                'reason'     => $b['reason'],
-                            ],
-                            app(PropertyService::class)->getBlackoutRanges($record->id),
-                        ),
-                    ])
-                    ->schema([
-                        Repeater::make('blocks')
-                            ->label('Blackout ranges')
-                            ->columns(3)
-                            ->defaultItems(0)
-                            ->addActionLabel('Add blackout')
-                            ->schema([
-                                DatePicker::make('date_start')
-                                    ->label('From')
-                                    ->required(),
-                                DatePicker::make('date_end')
-                                    ->label('To')
-                                    ->required()
-                                    ->afterOrEqual('date_start'),
-                                Select::make('reason')
-                                    ->options([
-                                        'blocked'     => 'Blocked',
-                                        'maintenance' => 'Maintenance',
-                                    ])
-                                    ->default('blocked')
-                                    ->required(),
-                            ]),
-                    ])
-                    ->action(function (array $data, PropertyListing $record): void {
-                        try {
-                            app(PropertyService::class)->replaceBlackouts(
-                                $record->id,
-                                $data['blocks'] ?? [],
-                                auth()->id(),
-                            );
-                            Notification::make()->title('Blackout dates updated')->success()->send();
-                        } catch (\RuntimeException $e) {
-                            Notification::make()->title('Could not save')->body($e->getMessage())->danger()->send();
-                        }
-                    }),
                 EditAction::make(),
                 DeleteAction::make(),
             ]);
