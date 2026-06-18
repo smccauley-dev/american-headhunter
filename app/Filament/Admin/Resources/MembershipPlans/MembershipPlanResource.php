@@ -1,0 +1,257 @@
+<?php
+
+namespace App\Filament\Admin\Resources\MembershipPlans;
+
+use App\Filament\Admin\Resources\MembershipPlans\Pages\CreateMembershipPlan;
+use App\Filament\Admin\Resources\MembershipPlans\Pages\EditMembershipPlan;
+use App\Filament\Admin\Resources\MembershipPlans\Pages\ListMembershipPlans;
+use App\Filament\Admin\Resources\MembershipPlans\RelationManagers\EntitlementsRelationManager;
+use App\Filament\Admin\Resources\MembershipPlans\RelationManagers\VersionsRelationManager;
+use App\Models\Platform\MembershipPlan;
+use App\Support\AdminAuth;
+use BackedEnum;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\CreateAction;
+use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
+
+class MembershipPlanResource extends Resource
+{
+    protected static ?string $model = MembershipPlan::class;
+
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+
+    protected static ?string $navigationLabel = 'Membership Plans';
+
+    protected static ?string $slug = 'membership-plans';
+
+    protected static ?int $navigationSort = 1;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Pricing & Promotions';
+    }
+
+    protected static ?string $recordTitleAttribute = 'display_name';
+
+    public const ACCOUNT_TYPES = [
+        'hunter'     => 'Hunter',
+        'landowner'  => 'Landowner',
+        'club'       => 'Club',
+        'outfitter'  => 'Outfitter',
+        'consultant' => 'Consultant',
+        'seller'     => 'Seller',
+    ];
+
+    public static function canAccess(): bool
+    {
+        return AdminAuth::canManagePricing();
+    }
+
+    public static function canCreate(): bool
+    {
+        return AdminAuth::canManagePricing();
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return AdminAuth::canManagePricing();
+    }
+
+    // Plans are referenced by immutable versions and live subscriptions —
+    // deprecate via the Active toggle instead of deleting.
+    public static function canDelete(Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
+    public static function form(Schema $schema): Schema
+    {
+        return $schema->components([
+            Section::make('Identity')
+                ->description('The plan key is locked into published versions and subscriptions — it cannot change once the plan exists.')
+                ->columns(2)
+                ->schema([
+                    TextInput::make('plan_key')
+                        ->label('Plan Key')
+                        ->required()
+                        ->maxLength(64)
+                        ->fontFamily('mono')
+                        ->disabled(fn (string $operation): bool => $operation === 'edit')
+                        ->dehydrated(fn (string $operation): bool => $operation === 'create')
+                        ->helperText('Lowercase, e.g. hunter_scout. Permanent once created.'),
+                    Select::make('account_type')
+                        ->label('Account Type')
+                        ->options(self::ACCOUNT_TYPES)
+                        ->required(),
+                    TextInput::make('display_name')
+                        ->label('Display Name')
+                        ->required()
+                        ->maxLength(100),
+                    TextInput::make('tagline')
+                        ->label('Tagline')
+                        ->maxLength(150),
+                    Textarea::make('description')
+                        ->rows(3)
+                        ->columnSpanFull(),
+                ]),
+
+            Section::make('Pricing')
+                ->description('Staged pricing. Publishing a new version is what locks these in for new subscribers; existing subscribers keep their version.')
+                ->columns(2)
+                ->schema([
+                    TextInput::make('monthly_price_cents')
+                        ->label('Monthly Price')
+                        ->numeric()
+                        ->prefix('$')
+                        ->minValue(0)
+                        ->step(0.01),
+                    TextInput::make('annual_price_cents')
+                        ->label('Annual Price')
+                        ->numeric()
+                        ->prefix('$')
+                        ->minValue(0)
+                        ->step(0.01),
+                    TextInput::make('platform_fee_pct')
+                        ->label('Platform Fee')
+                        ->numeric()
+                        ->suffix('%')
+                        ->minValue(0)
+                        ->maxValue(100)
+                        ->step(0.01),
+                    TextInput::make('commission_pct')
+                        ->label('Commission')
+                        ->numeric()
+                        ->suffix('%')
+                        ->minValue(0)
+                        ->maxValue(100)
+                        ->step(0.01),
+                    Toggle::make('monthly_enabled')
+                        ->label('Monthly Billing Enabled'),
+                    Toggle::make('annual_enabled')
+                        ->label('Annual Billing Enabled'),
+                ]),
+
+            Section::make('Stripe')
+                ->description('Entered manually until Stripe product sync is wired up. Leave blank if not yet created in Stripe.')
+                ->collapsed()
+                ->columns(2)
+                ->schema([
+                    TextInput::make('stripe_product_id')
+                        ->label('Product ID')
+                        ->fontFamily('mono')
+                        ->maxLength(100),
+                    TextInput::make('stripe_monthly_price_id')
+                        ->label('Monthly Price ID')
+                        ->fontFamily('mono')
+                        ->maxLength(100),
+                    TextInput::make('stripe_annual_price_id')
+                        ->label('Annual Price ID')
+                        ->fontFamily('mono')
+                        ->maxLength(100),
+                ]),
+
+            Section::make('Visibility')
+                ->columns(2)
+                ->schema([
+                    Toggle::make('is_public')
+                        ->label('Public')
+                        ->helperText('Shown on the public pricing page.'),
+                    Toggle::make('is_active')
+                        ->label('Active')
+                        ->helperText('Available for new subscriptions.'),
+                    Toggle::make('is_default_free')
+                        ->label('Default Free Tier')
+                        ->helperText('The fallback plan for this account type.'),
+                    TextInput::make('sort_order')
+                        ->label('Sort Order')
+                        ->numeric()
+                        ->default(0),
+                    Textarea::make('admin_notes')
+                        ->label('Admin Notes')
+                        ->rows(2)
+                        ->columnSpanFull(),
+                ]),
+        ]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                TextColumn::make('plan_key')
+                    ->label('Key')
+                    ->searchable()
+                    ->sortable()
+                    ->fontFamily('mono'),
+                TextColumn::make('account_type')
+                    ->label('Type')
+                    ->badge()
+                    ->formatStateUsing(fn (string $state): string => self::ACCOUNT_TYPES[$state] ?? $state),
+                TextColumn::make('display_name')
+                    ->label('Name')
+                    ->searchable(),
+                TextColumn::make('monthly_price_cents')
+                    ->label('Monthly')
+                    ->money('USD', divideBy: 100)
+                    ->sortable(),
+                TextColumn::make('currentVersion.version_number')
+                    ->label('Live Ver.')
+                    ->alignCenter()
+                    ->placeholder('—'),
+                IconColumn::make('is_public')
+                    ->label('Public')
+                    ->boolean(),
+                IconColumn::make('is_active')
+                    ->label('Active')
+                    ->boolean(),
+                TextColumn::make('updated_at')
+                    ->dateTime('M j, Y H:i')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->defaultSort('sort_order')
+            ->filters([])
+            ->recordActions([
+                EditAction::make(),
+            ])
+            ->toolbarActions([
+                CreateAction::make()
+                    ->label('Add Plan'),
+                BulkActionGroup::make([]),
+            ]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            EntitlementsRelationManager::class,
+            VersionsRelationManager::class,
+        ];
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index'  => ListMembershipPlans::route('/'),
+            'create' => CreateMembershipPlan::route('/create'),
+            'edit'   => EditMembershipPlan::route('/{record}/edit'),
+        ];
+    }
+}
