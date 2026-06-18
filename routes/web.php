@@ -197,6 +197,10 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::put('/properties/{property}/listings/{listing}',    [MemberPropertyListingController::class, 'update'])->name('properties.listings.update');
     Route::delete('/properties/{property}/listings/{listing}', [MemberPropertyListingController::class, 'destroy'])->name('properties.listings.destroy');
 
+    // Day-hunt availability calendar for a listing (view + manage blackouts).
+    Route::get('/properties/{property}/listings/{listing}/availability',  [MemberPropertyListingController::class, 'availability'])->name('properties.listings.availability');
+    Route::put('/properties/{property}/listings/{listing}/availability',  [MemberPropertyListingController::class, 'saveBlackouts'])->name('properties.listings.availability.blackouts');
+
     // Lease applications for a property's listing(s) — view (parity with the admin
     // application view), message the applicant, and approve/reject.
     Route::get('/properties/{property}/applications',                       [MemberLeaseApplicationController::class, 'index'])->name('properties.applications.index');

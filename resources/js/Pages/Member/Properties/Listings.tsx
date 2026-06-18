@@ -13,6 +13,7 @@ interface Listing {
   min_hunters: number | null
   max_hunters: number
   price_per_hunter: number | null
+  price_per_hunter_weekly: number | null
   price_total: number | null
   deposit_amount: number | null
   deposit_percent: number | null
@@ -99,10 +100,13 @@ function ListingForm({ property, listing, listingTypes, statuses, visibilities, 
     max_hunters:      listing?.max_hunters != null ? String(listing.max_hunters) : '1',
     min_hunters:      listing?.min_hunters != null ? String(listing.min_hunters) : '',
     price_per_hunter: listing?.price_per_hunter != null ? String(listing.price_per_hunter) : '',
+    price_per_hunter_weekly: listing?.price_per_hunter_weekly != null ? String(listing.price_per_hunter_weekly) : '',
     price_total:      listing?.price_total != null ? String(listing.price_total) : '',
     deposit_amount:   listing?.deposit_amount != null ? String(listing.deposit_amount) : '',
     deposit_percent:  listing?.deposit_percent != null ? String(listing.deposit_percent) : '',
   })
+
+  const isDayHunt = data.listing_type === 'day_hunt'
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -157,13 +161,26 @@ function ListingForm({ property, listing, listingTypes, statuses, visibilities, 
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-        <Field htmlFor="price_per_hunter" text="Price Per Hunter ($)" error={errors.price_per_hunter}>
+        <Field htmlFor="price_per_hunter" text={isDayHunt ? 'Price Per Hunter / Day ($)' : 'Price Per Hunter ($)'} error={errors.price_per_hunter}>
           <input id="price_per_hunter" type="number" min={0} step="0.01" value={data.price_per_hunter} onChange={e => setData('price_per_hunter', e.target.value)} style={input} />
         </Field>
-        <Field htmlFor="price_total" text="Total Price ($)" error={errors.price_total}>
-          <input id="price_total" type="number" min={0} step="0.01" value={data.price_total} onChange={e => setData('price_total', e.target.value)} style={input} />
-        </Field>
+        {isDayHunt ? (
+          <Field htmlFor="price_per_hunter_weekly" text="Price Per Hunter / Week ($)" error={errors.price_per_hunter_weekly}>
+            <input id="price_per_hunter_weekly" type="number" min={0} step="0.01" value={data.price_per_hunter_weekly} onChange={e => setData('price_per_hunter_weekly', e.target.value)} style={input} placeholder="No weekly discount" />
+          </Field>
+        ) : (
+          <Field htmlFor="price_total" text="Total Price ($)" error={errors.price_total}>
+            <input id="price_total" type="number" min={0} step="0.01" value={data.price_total} onChange={e => setData('price_total', e.target.value)} style={input} />
+          </Field>
+        )}
       </div>
+      {isDayHunt && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+          <Field htmlFor="price_total" text="Total Price ($)" error={errors.price_total}>
+            <input id="price_total" type="number" min={0} step="0.01" value={data.price_total} onChange={e => setData('price_total', e.target.value)} style={input} />
+          </Field>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
         <Field htmlFor="deposit_amount" text="Deposit ($)" error={errors.deposit_amount}>
@@ -252,7 +269,13 @@ export default function PropertyListings({ property, listings, listingTypes, sta
                       </span>
                     </div>
                     <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: '#6b5e50', lineHeight: 1.7 }}>
-                      <span>{money(l.price_per_hunter)}/hunter</span>
+                      <span>{money(l.price_per_hunter)}{l.listing_type === 'day_hunt' ? '/hunter/day' : '/hunter'}</span>
+                      {l.listing_type === 'day_hunt' && l.price_per_hunter_weekly != null && (
+                        <>
+                          <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
+                          <span>{money(l.price_per_hunter_weekly)}/hunter/week</span>
+                        </>
+                      )}
                       <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
                       <span>Total {money(l.price_total)}</span>
                       <span style={{ color: '#d4c9b0', margin: '0 8px' }}>·</span>
@@ -272,6 +295,11 @@ export default function PropertyListings({ property, listings, listingTypes, sta
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                    {l.listing_type === 'day_hunt' && (
+                      <a href={`/member/properties/${property.id}/listings/${l.id}/availability`} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '7px 14px', background: 'transparent', color: INK, border: '1px solid #d4c9b0', cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap', pointerEvents: editing !== null ? 'none' : 'auto', opacity: editing !== null ? 0.5 : 1 }}>
+                        Calendar
+                      </a>
+                    )}
                     <button onClick={() => setEditing(l.id)} disabled={editing !== null} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '7px 14px', background: 'transparent', color: INK, border: '1px solid #d4c9b0', cursor: editing !== null ? 'not-allowed' : 'pointer' }}>
                       Edit
                     </button>

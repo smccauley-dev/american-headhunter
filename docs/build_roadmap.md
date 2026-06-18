@@ -176,14 +176,14 @@ The goal: feature flags, membership tiers, and property listings working — the
 ### 3.2 DB 2 Property Migrations ✅ (2026-05-24)
 
 - [x] `properties` — UUID PK, owner cross-DB ref, slug (unique partial index), address_encrypted (pgp_sym_encrypt), state/county, total_acres, huntable_acres, boundary_geospatial_id, primary_photo_document_id, soft deletes
-- [x] `property_listings` — listing_type CHECK (annual_lease/seasonal_lease/day_hunt/auction), status, season dates, hunter limits, price_per_hunter/price_total, deposit logic, visibility, soft deletes
+- [x] `property_listings` — listing_type CHECK (annual_lease/seasonal_lease/day_hunt/auction), status, season dates, hunter limits, price_per_hunter/price_per_hunter_weekly (day-hunt)/price_total, deposit logic, visibility, soft deletes
 - [x] `property_photos` — document_id cross-DB ref, sort_order, is_primary, soft deletes
 - [x] `property_amenities` — seeded with 26 amenities across 6 categories (accommodation, access, water, stand, food_plot, other)
 - [x] `property_amenity_listings` — pivot table linking amenities to listings
 - [x] `property_species` — species_code CHECK (15 species + other), is_primary flag
 - [x] `property_rules` — rule_text per property, sort_order
 - [x] `property_access_info` — access_info_encrypted (pgp_sym_encrypt), RLS enabled (staff/super_admin at DB level; full lessee auth in PropertyService)
-- [x] `property_availability` — date_start/date_end range blocking (booked/blocked/maintenance)
+- [x] `property_availability` — date_start/date_end range blocking (booked/blocked/maintenance); day-hunt booking calendar adds cost/hunter_count/lease_id/created_by_user_id, a booked⇒lease+cost CHECK, and a btree_gist EXCLUDE preventing overlapping ranges per listing (migration `2026_06_18_000001_add_day_hunt_booking_fields`). Booked rows are written by `LeaseService` activation (`markBooked`) and freed on cancel/terminate (`releaseBooking`); blackouts managed via `replaceBlackouts`. Calendar surfaced in the admin Filament listing actions and the member-portal availability page; per-day + per-week per-hunter quote via `PropertyService::computeDayHuntQuote`
 - [x] `property_views` — append-only view tracking for ETL; `saved_properties` hunter wishlist
 - [x] `php artisan migrate:single property --fresh` — 10/10 zero errors; RLS verified on property_access_info
 

@@ -399,6 +399,30 @@ class PropertyService extends BaseService
     }
 
     /**
+     * Booked ranges (lease-reserved dates, with the agreed cost snapshot) for a
+     * listing — read-only on the landowner calendar; these are created/freed by
+     * lease activation, never edited by hand. Read replica.
+     *
+     * @return list<array{date_start:string, date_end:string, cost:?float, hunter_count:?int, lease_id:?string}>
+     */
+    public function getBookedRanges(string $listingId): array
+    {
+        return PropertyAvailability::on('property_read')
+            ->where('listing_id', $listingId)
+            ->where('reason', 'booked')
+            ->orderBy('date_start')
+            ->get(['date_start', 'date_end', 'cost', 'hunter_count', 'lease_id'])
+            ->map(fn (PropertyAvailability $r) => [
+                'date_start'   => $r->date_start->toDateString(),
+                'date_end'     => $r->date_end->toDateString(),
+                'cost'         => $r->cost !== null ? (float) $r->cost : null,
+                'hunter_count' => $r->hunter_count,
+                'lease_id'     => $r->lease_id,
+            ])
+            ->all();
+    }
+
+    /**
      * Full-replace a listing's blackout (blocked/maintenance) ranges. Booked rows
      * are never touched — they come from leases. Throws a friendly RuntimeException
      * when a range overlaps another range or an existing booking (EXCLUDE guard).
