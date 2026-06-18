@@ -217,6 +217,17 @@ class LeaseService extends BaseService
     {
         $lease = Lease::findOrFail($leaseId);
         $lease->update(['status' => 'active']);
+
+        // Guard against a silent RLS no-op: under a role without UPDATE rights on
+        // `leases` the write affects zero rows without raising, which previously
+        // let activation report success while the lease stayed pending. Re-read
+        // and fail loudly so a misconfigured role can never strand a lease.
+        if ($lease->fresh()?->status !== 'active') {
+            throw new \RuntimeException(
+                "Lease {$leaseId} activation did not persist — the connection role lacks UPDATE on leases."
+            );
+        }
+
         $this->invalidate("lease_detail:{$leaseId}");
 
         $this->auditService->log(

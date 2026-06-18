@@ -2,6 +2,7 @@
 
 namespace App\Services\Lease;
 
+use App\Database\ConnectionRole;
 use App\Models\Documents\Document;
 use App\Models\Documents\EsignatureRequest;
 use App\Models\Documents\EsignatureSigner;
@@ -340,40 +341,47 @@ class EsignatureService extends BaseService
             return false;
         }
 
-        $request->status       = 'completed';
-        $request->completed_at = now();
-        $request->save();
+        // The final signature may be the lessee's, recorded from the member
+        // portal under ah_runtime — where `leases` grants only SELECT, so an
+        // UPDATE silently affects zero rows and the lease never activates. This
+        // is a trusted state transition, so run the completion writes under
+        // ah_system (BYPASSRLS) and restore the prior role afterwards.
+        return ConnectionRole::asSystem(function () use ($request): bool {
+            $request->status       = 'completed';
+            $request->completed_at = now();
+            $request->save();
 
-        // Permanent completion event in DB 3
-        SignatureEvent::create([
-            'lease_id'    => $request->lease_id,
-            'user_id'     => $request->requester_user_id,
-            'provider'    => 'in_platform',
-            'event_type'  => 'completed',
-            'occurred_at' => now(),
-        ]);
-
-        // Activate the lease record — LeaseService::activate() writes the
-        // canonical 'lease.activated' audit event (no actor: automatic on the
-        // final signature; the SignatureEvent rows record who signed).
-        $this->leaseService->activate($request->lease_id);
-
-        // Approve the primary lessee in lease_hunters
-        LeaseHunter::where('lease_id', $request->lease_id)
-            ->where('role', 'primary')
-            ->update(['is_approved' => true, 'approved_at' => now()]);
-
-        // Generate and store the executed-lease PDF so both parties can download
-        // their signed agreement. Never let a PDF failure block lease activation.
-        try {
-            app(LeaseAgreementPdfService::class)->generateAndStore($request);
-        } catch (\Throwable $e) {
-            Log::error('Failed to generate signed-lease PDF', [
-                'request_id' => $request->id,
-                'error'      => $e->getMessage(),
+            // Permanent completion event in DB 3
+            SignatureEvent::create([
+                'lease_id'    => $request->lease_id,
+                'user_id'     => $request->requester_user_id,
+                'provider'    => 'in_platform',
+                'event_type'  => 'completed',
+                'occurred_at' => now(),
             ]);
-        }
 
-        return true;
+            // Activate the lease record — LeaseService::activate() writes the
+            // canonical 'lease.activated' audit event (no actor: automatic on the
+            // final signature; the SignatureEvent rows record who signed).
+            $this->leaseService->activate($request->lease_id);
+
+            // Approve the primary lessee in lease_hunters
+            LeaseHunter::where('lease_id', $request->lease_id)
+                ->where('role', 'primary')
+                ->update(['is_approved' => true, 'approved_at' => now()]);
+
+            // Generate and store the executed-lease PDF so both parties can download
+            // their signed agreement. Never let a PDF failure block lease activation.
+            try {
+                app(LeaseAgreementPdfService::class)->generateAndStore($request);
+            } catch (\Throwable $e) {
+                Log::error('Failed to generate signed-lease PDF', [
+                    'request_id' => $request->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+
+            return true;
+        });
     }
 }

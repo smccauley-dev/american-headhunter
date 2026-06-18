@@ -799,6 +799,35 @@ A hunter may write only their own rows; staff/super_admin retain write access fo
 
 ---
 
+## SEC-046 — Lease Activation Silently Default-Denied Under `ah_runtime`: Lessee-Last E-Signature Never Activates the Lease (HIGH) — Fixed 2026-06-17
+
+| Field | Detail |
+|---|---|
+| **Severity** | High |
+| **Status** | FIXED (2026-06-17) |
+| **File** | `app/Database/ConnectionRole.php`, `app/Services/Lease/EsignatureService.php`, `app/Services/Lease/LeaseService.php` |
+| **Lineage** | Fallout of SEC-043 (runtime role flip); missed by the SEC-045 sweep |
+
+**Description:**
+`leases` has only a `FOR SELECT` policy (`leases_parties_and_staff`). As with SEC-045, a SELECT-only policy supplies no `WITH CHECK` for writes, so under the non-owner `ah_runtime` role an `UPDATE leases` is default-denied. Unlike an INSERT (which raises `new row violates row-level security policy`), an **UPDATE filtered by RLS simply affects zero rows and does not raise.** When the **lessee signs last from the member portal** (`LeaseSignController::sign`, an `ah_runtime` request → `EsignatureService::recordSignature` → `activateIfComplete` → `LeaseService::activate`), the `UPDATE leases SET status='active'` and the `lease_hunters` primary-approval `UPDATE` both **silently no-op'd**. The signing request was still marked `completed`, the executed PDF was still generated, and `activateIfComplete` still returned `true` — so the member saw *"Your lease is now active!"* and a misleading `lease.activated` audit row was written, while the lease row stayed `pending_signatures` indefinitely. It only worked when the **lessor countersigned last via the Filament admin panel** (`ah_system`, BYPASSRLS), which is why it escaped notice.
+
+SEC-045's catalog sweep explicitly classified `leases`/`lease_hunters` as "written exclusively on `ah_system` paths (Filament admin)" — it **missed the in-platform e-signature completion path**, which writes them under `ah_runtime` whenever the lessee is the final signer. Observed in dev on lease `744889ba` (Piney Creek): both parties signed Jun 16, request `completed`, signed PDF stored, yet `status = pending_signatures`.
+
+**Root Cause:**
+RLS write enforcement (`WITH CHECK` / `USING` for UPDATE) is separate from read enforcement; the SELECT-only lease policy grants no UPDATE. The lease-activation state transition runs on a user-facing `ah_runtime` connection, where that UPDATE silently affects zero rows. Compounding it, `LeaseService::activate` trusted the `update()` call without verifying persistence, so the silent failure was reported as success.
+
+**Fix (two parts, by design — no broadened runtime write policy):**
+Lease activation is a *trusted system state transition*, not a self-service party edit. Granting `ah_runtime` an UPDATE policy on `leases` would let an authenticated party forge lease state — the same hazard called out for `invoices`/`payments`/`payouts` in SEC-045. So instead of a write policy:
+- **`ConnectionRole::asSystem(callable)`** — new scoped helper that elevates every app writer connection to `ah_system` (BYPASSRLS) for the duration of a closure, then restores the *exact* prior credentials (safe to nest; correct under console/queue which already run as `ah_system`).
+- **`EsignatureService::activateIfComplete`** now runs the completion writes (request `completed`, `SignatureEvent`, `LeaseService::activate`, `lease_hunters` approval, executed-PDF generation) inside `asSystem`, so the final signature activates the lease regardless of which party signs last. `leases` stays write-locked to trusted roles under `ah_runtime`.
+- **`LeaseService::activate`** re-reads the row after the update and throws a `RuntimeException` if `status !== 'active'`, so a role lacking UPDATE on `leases` can never again silently strand a lease while reporting success.
+
+**Data remediation:** the one stranded dev lease (`744889ba`) was activated and its primary hunter approved via the console (`ah_system`).
+
+**Verification:** `tests/Feature/Security/LeaseActivationRlsTest` connects explicitly as `ah_runtime` and proves (1) RLS is enabled on `leases`, (2) a runtime `UPDATE leases` affects zero rows (the silent no-op), (3) `LeaseService::activate` run directly under runtime now throws (the persistence guard), and (4) wrapping it in `ConnectionRole::asSystem` persists `status='active'`. Full Security suite: 22 passed.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |

@@ -47,6 +47,45 @@ final class ConnectionRole
         self::apply(env('DB_SYSTEM_USERNAME', 'ah_system'), env('DB_SYSTEM_PASSWORD', 'secret'), $purge);
     }
 
+    /**
+     * Run a closure with every app writer connection elevated to ah_system
+     * (BYPASSRLS), then restore the exact credentials that were in effect before.
+     *
+     * Use for trusted state transitions that legitimately write RLS-protected
+     * tables from a user-facing (ah_runtime) request — e.g. activating a lease on
+     * the final e-signature. The `leases` table only grants SELECT under
+     * ah_runtime, so an UPDATE there silently affects zero rows; this runs the
+     * write under a role that can persist it without broadening party write access.
+     *
+     * Capturing and restoring the prior creds (rather than assuming ah_runtime)
+     * keeps this safe to nest and correct under console/queue (ah_system) too.
+     */
+    public static function asSystem(callable $callback): mixed
+    {
+        $previous = [];
+        foreach (self::APP_CONNECTIONS as $connection) {
+            $previous[$connection] = [
+                config("database.connections.{$connection}.username"),
+                config("database.connections.{$connection}.password"),
+            ];
+        }
+
+        self::useSystem(true);
+
+        try {
+            return $callback();
+        } finally {
+            foreach (self::APP_CONNECTIONS as $connection) {
+                [$username, $password] = $previous[$connection];
+                config([
+                    "database.connections.{$connection}.username" => $username,
+                    "database.connections.{$connection}.password" => $password,
+                ]);
+                DB::purge($connection);
+            }
+        }
+    }
+
     private static function apply(string $username, string $password, bool $purge): void
     {
         foreach (self::APP_CONNECTIONS as $connection) {
