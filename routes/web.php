@@ -165,6 +165,7 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/leases/{lease}/documents', [LeaseDocumentController::class, 'upload'])->name('leases.documents.upload')->middleware('throttle:20,1');
     Route::get('/leases/{lease}/documents/{leaseDocument}/download', [LeaseDocumentController::class, 'download'])->name('leases.documents.download');
     Route::delete('/leases/{lease}/documents/{leaseDocument}', [LeaseDocumentController::class, 'destroy'])->name('leases.documents.destroy');
+    Route::post('/leases/{lease}/messages', [MemberController::class, 'message'])->name('leases.messages.store')->middleware('throttle:20,1');
 
     Route::post('/checkin',  [CheckInController::class, 'store'])->name('checkin.store')->middleware('throttle:20,1');
     Route::post('/checkout', [CheckInController::class, 'destroy'])->name('checkin.destroy')->middleware('throttle:20,1');

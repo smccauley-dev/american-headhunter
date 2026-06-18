@@ -2,17 +2,21 @@
 
 namespace App\Http\Controllers\Member;
 
+use App\Database\ConnectionRole;
 use App\Enums\LeaseDocumentTag;
 use App\Http\Controllers\Controller;
 use App\Models\Identity\User;
 use App\Models\Lease\Lease;
 use App\Services\Documents\DocumentService;
+use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Lease\LeaseDocumentService;
 use App\Services\Lease\LeaseService;
 use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -36,7 +40,7 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService): Response
     {
         $userId = session('auth.user_id');
 
@@ -140,6 +144,27 @@ class MemberController extends Controller
             }
         }
 
+        // Communications — the application message thread (landowner ↔ applicant,
+        // plus staff). Keyed on the originating application. Sender-name resolution
+        // hits the identity DB, which default-denies other users' rows under
+        // ah_runtime (SEC-047), so it runs under ah_system.
+        $communications = null;
+        if ($leaseRecord->application_id) {
+            $messages    = $messageService->getForApplication($leaseRecord->application_id);
+            $senderNames = $this->resolveSenderNames($messages->pluck('sender_user_id'));
+
+            $communications = [
+                'messages' => $messages->map(fn ($m) => [
+                    'role'        => $m->sender_role,
+                    'sender_name' => $senderNames[$m->sender_user_id] ?? ucfirst($m->sender_role),
+                    'is_me'       => $m->sender_user_id === $userId,
+                    'message'     => $m->message,
+                    'sent_at'     => $m->created_at?->format('M j, Y g:i A'),
+                ])->values()->all(),
+                'message_url' => route('member.leases.messages.store', $lease),
+            ];
+        }
+
         return Inertia::render('Member/Lease', [
             'lease' => [
                 'id'          => $leaseRecord->id,
@@ -170,6 +195,63 @@ class MemberController extends Controller
             'documents'      => $leaseDocuments,
             'document_tags'  => LeaseDocumentTag::options(),
             'upload_url'     => route('member.leases.documents.upload', $lease),
+            'communications' => $communications,
         ]);
+    }
+
+    public function message(Request $request, string $lease, ApplicationMessageService $messageService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where(function ($q) use ($userId) {
+                $q->where('lessee_user_id', $userId)
+                  ->orWhere('lessor_user_id', $userId);
+            })
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        abort_if($leaseRecord->application_id === null, 404, 'This lease has no application thread.');
+
+        $data = $request->validate([
+            'message' => 'required|string|max:2000',
+        ]);
+
+        $role = $leaseRecord->lessor_user_id === $userId ? 'landowner' : 'applicant';
+
+        // ah_system so the recipient-notification email can resolve the other
+        // party's identity row (SEC-047).
+        ConnectionRole::asSystem(fn () => $messageService->send(
+            $leaseRecord->application_id,
+            $userId,
+            $role,
+            $data['message'],
+        ));
+
+        return back()->with('success', 'Message sent.');
+    }
+
+    /**
+     * Map of user_id => display name from the identity DB. Must run within an
+     * ah_system scope — the identity `users` RLS default-denies other users'
+     * rows under ah_runtime (SEC-047). asSystem is nest-safe.
+     *
+     * @param  \Illuminate\Support\Collection<int, string>  $userIds
+     * @return array<string, string>
+     */
+    private function resolveSenderNames($userIds): array
+    {
+        $ids = $userIds->filter()->unique()->values();
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $users = ConnectionRole::asSystem(
+            fn () => User::on('identity')->with('profile')->whereIn('id', $ids)->get()
+        );
+
+        return $users
+            ->mapWithKeys(fn (User $u) => [$u->id => $u->profile?->full_name ?: $u->email])
+            ->all();
     }
 }

@@ -74,6 +74,19 @@ interface ContactDirectory {
   contacts: LocalContact[]
 }
 
+interface ApplicationMessage {
+  role: string
+  sender_name: string
+  is_me: boolean
+  message: string
+  sent_at: string | null
+}
+
+interface Communications {
+  messages: ApplicationMessage[]
+  message_url: string
+}
+
 interface Props {
   lease: {
     id: string
@@ -108,6 +121,7 @@ interface Props {
   qr: { png_url: string } | null
   stand_map: StandMap | null
   email_qr_url: string | null
+  communications: Communications | null
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -750,7 +764,63 @@ function ContactsSection({ contacts }: { contacts: ContactDirectory }) {
   )
 }
 
-export default function Lease({ lease, property, access_info, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url }: Props) {
+function CommunicationsSection({ data, isLessor }: { data: Communications; isLessor: boolean }) {
+  const { data: form, setData, post, processing, errors, reset } = useForm({ message: '' })
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    post(data.message_url, { preserveScroll: true, onSuccess: () => reset('message') })
+  }
+
+  const otherParty = isLessor ? 'hunter' : 'landowner'
+
+  return (
+    <Section title="Communications">
+      {data.messages.length === 0 ? (
+        <p style={{ fontFamily: 'var(--body)', fontSize: '15px', color: TAN, fontStyle: 'italic', margin: '0 0 16px' }}>
+          No messages yet.
+        </p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+          {data.messages.map((m, i) => {
+            const mine = m.is_me
+            const who = mine ? 'You' : (m.role === 'admin' ? 'Staff' : m.sender_name)
+            return (
+              <div key={i} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '80%', background: mine ? INK : '#fff', color: mine ? '#F4ECDC' : INK, border: `1px solid ${mine ? INK : FIELD_BORDER}`, padding: '12px 14px' }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: mine ? TAN : '#9c9388', marginBottom: '6px' }}>
+                  {who}{m.sent_at ? ` · ${m.sent_at}` : ''}
+                </div>
+                <div style={{ fontFamily: 'var(--body)', fontSize: '15px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{m.message}</div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <form onSubmit={submit} style={{ borderTop: `1px solid ${DIVIDER}`, paddingTop: '18px' }}>
+        <label htmlFor="lease-message" style={{ display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: OLIVE, marginBottom: '6px' }}>
+          Message the {otherParty}
+        </label>
+        <textarea
+          id="lease-message"
+          rows={3}
+          value={form.message}
+          onChange={e => setData('message', e.target.value)}
+          placeholder={`Write a message to the ${otherParty}…`}
+          style={{ width: '100%', padding: '10px 12px', border: `1px solid ${FIELD_BORDER}`, fontFamily: 'var(--body)', fontSize: '15px', background: '#fff', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.5 }}
+        />
+        {errors.message && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.message}</div>}
+        <div style={{ marginTop: '12px' }}>
+          <button type="submit" disabled={processing || !form.message.trim()} style={{ ...btnDark, opacity: (processing || !form.message.trim()) ? 0.6 : 1, cursor: (processing || !form.message.trim()) ? 'not-allowed' : 'pointer' }}>
+            {processing ? 'Sending…' : 'Send Message'}
+          </button>
+        </div>
+      </form>
+    </Section>
+  )
+}
+
+export default function Lease({ lease, property, access_info, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -937,6 +1007,9 @@ export default function Lease({ lease, property, access_info, contacts, signers,
 
           {/* Contacts — landowner, managers, local law enforcement, game warden, emergency */}
           {contacts && <ContactsSection contacts={contacts} />}
+
+          {/* Communications — application message thread with the other party */}
+          {communications && <CommunicationsSection data={communications} isLessor={is_lessor} />}
 
           {/* Lease Documents */}
           {(documents.length > 0 || is_lessor) && (
