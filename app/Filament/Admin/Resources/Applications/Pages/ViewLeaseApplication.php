@@ -805,8 +805,17 @@ class ViewLeaseApplication extends ViewRecord
             );
         }
 
+        $senderNames = UserProfile::on('identity')
+            ->whereIn('user_id', $messages->pluck('sender_user_id')->filter()->unique())
+            ->get()
+            ->mapWithKeys(fn (UserProfile $p) => [
+                $p->user_id => trim("{$p->first_name} {$p->last_name}"),
+            ])
+            ->all();
+
         return new HtmlString(view('filament.admin.applications.communications', [
-            'messages' => $messages,
+            'messages'    => $messages,
+            'senderNames' => $senderNames,
         ])->render());
     }
 

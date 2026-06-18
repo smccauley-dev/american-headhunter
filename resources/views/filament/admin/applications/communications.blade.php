@@ -1,4 +1,4 @@
-{{-- Message thread: $messages = collection of LeaseApplicationMessage --}}
+{{-- Message thread: $messages = collection of LeaseApplicationMessage; $senderNames = [user_id => full name] --}}
 <div style="font-family:system-ui,sans-serif;padding:4px 0">
     @foreach ($messages as $m)
         @php
@@ -15,11 +15,15 @@
                 default     => '#888',
             };
             $isApplicant = $m->sender_role === 'applicant';
+            $senderName = $senderNames[$m->sender_user_id] ?? null;
+            $heading = $senderName
+                ? strtoupper($senderName) . ' (' . strtoupper($roleLabel) . ')'
+                : strtoupper($roleLabel);
         @endphp
         <div style="display:flex;flex-direction:column;align-items:{{ $isApplicant ? 'flex-start' : 'flex-end' }};margin-bottom:16px">
             <div style="max-width:70%">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;justify-content:{{ $isApplicant ? 'flex-start' : 'flex-end' }}">
-                    <span style="font-family:monospace;font-size:10px;font-weight:700;color:{{ $roleColor }};text-transform:uppercase;letter-spacing:.1em">{{ $roleLabel }}</span>
+                    <span style="font-family:monospace;font-size:10px;font-weight:700;color:{{ $roleColor }};text-transform:uppercase;letter-spacing:.1em">{{ $heading }}</span>
                     <span style="font-family:monospace;font-size:10px;color:#aaa">{{ $m->created_at?->format('M j, Y g:i A') ?? '' }}</span>
                 </div>
                 <div style="background:{{ $isApplicant ? '#f5f1eb' : '#eef2ff' }};border:1px solid {{ $isApplicant ? '#e5e0d8' : '#c7d2fe' }};border-radius:4px;padding:12px 16px;font-size:14px;line-height:1.6;color:#1a1a1a">
