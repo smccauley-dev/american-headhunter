@@ -74,7 +74,7 @@ function money(v: number | null): string {
   return '$' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-const ROLE_LABEL: Record<string, string> = { admin: 'Staff', landowner: 'You (Landowner)', applicant: 'Applicant' }
+const ROLE_LABEL: Record<string, string> = { admin: 'Staff', landowner: 'Landowner', applicant: 'Applicant' }
 
 export default function ApplicationShow({ property, application, listing, applicant, hunters, lease, signers, signing_url, documents, messages, history, defaults }: Props) {
   const flash = (usePage().props as { flash?: { success?: string; error?: string } }).flash ?? {}
@@ -252,7 +252,7 @@ export default function ApplicationShow({ property, application, listing, applic
               return (
                 <div key={i} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '78%', background: mine ? INK : '#fff', color: mine ? '#F4ECDC' : INK, border: `1px solid ${mine ? INK : '#d4c9b0'}`, padding: '12px 14px' }}>
                   <div style={{ ...mono, fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: mine ? TAN : '#9c9388', marginBottom: '6px' }}>
-                    {ROLE_LABEL[m.role] ?? m.sender_name}{m.sent_at ? ` · ${m.sent_at}` : ''}
+                    {m.sender_name} ({ROLE_LABEL[m.role] ?? m.role}){m.sent_at ? ` · ${m.sent_at}` : ''}
                   </div>
                   <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', whiteSpace: 'pre-wrap' }}>{m.message}</div>
                 </div>
