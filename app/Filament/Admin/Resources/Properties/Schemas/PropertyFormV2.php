@@ -648,6 +648,11 @@ class PropertyFormV2
                         ->columns(3)
                         ->defaultItems(0)
                         ->addActionLabel('Add blackout')
+                        ->deleteAction(fn (Action $action) => $action
+                            ->label('Delete')
+                            ->icon('heroicon-o-trash')
+                            ->button()
+                        )
                         ->schema([
                             DatePicker::make('date_start')
                                 ->label('From')
