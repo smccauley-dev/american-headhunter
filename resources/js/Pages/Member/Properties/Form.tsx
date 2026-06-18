@@ -108,6 +108,12 @@ export default function PropertyForm({ property, states, statuses }: Props) {
             >
               Edit Details →
             </a>
+            <a
+              href={`/member/properties/${property.id}/applications`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: 'transparent', color: INK, border: `1px solid ${TAN}`, textDecoration: 'none' }}
+            >
+              Lease Applications →
+            </a>
           </div>
           <p style={{ fontFamily: 'var(--body)', fontSize: '14px', color: '#6b5e50', marginTop: '14px', lineHeight: 1.5 }}>
             Game types, rules, amenities, photos, the property map, check-in log, team and contacts are all managed on the details page.

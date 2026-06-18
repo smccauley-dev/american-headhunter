@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\PrintApplicationController;
 use App\Http\Controllers\Apply\ApplyController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\Member\CheckInController;
+use App\Http\Controllers\Member\LeaseApplicationController as MemberLeaseApplicationController;
 use App\Http\Controllers\Member\LeaseDocumentController;
 use App\Http\Controllers\Member\LeaseSignController;
 use App\Http\Controllers\Member\MemberController;
@@ -193,6 +194,14 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/properties/{property}/listings',             [MemberPropertyListingController::class, 'store'])->name('properties.listings.store');
     Route::put('/properties/{property}/listings/{listing}',    [MemberPropertyListingController::class, 'update'])->name('properties.listings.update');
     Route::delete('/properties/{property}/listings/{listing}', [MemberPropertyListingController::class, 'destroy'])->name('properties.listings.destroy');
+
+    // Lease applications for a property's listing(s) — view (parity with the admin
+    // application view), message the applicant, and approve/reject.
+    Route::get('/properties/{property}/applications',                       [MemberLeaseApplicationController::class, 'index'])->name('properties.applications.index');
+    Route::get('/properties/{property}/applications/{application}',         [MemberLeaseApplicationController::class, 'show'])->name('properties.applications.show');
+    Route::post('/properties/{property}/applications/{application}/message', [MemberLeaseApplicationController::class, 'message'])->name('properties.applications.message');
+    Route::post('/properties/{property}/applications/{application}/approve', [MemberLeaseApplicationController::class, 'approve'])->name('properties.applications.approve');
+    Route::post('/properties/{property}/applications/{application}/reject',  [MemberLeaseApplicationController::class, 'reject'])->name('properties.applications.reject');
 
     // Team tab: managers (grant/revoke). The check-in log + all other tabs are
     // served by the details hub (PropertyDetailController::edit).
