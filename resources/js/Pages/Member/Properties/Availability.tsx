@@ -10,7 +10,7 @@ interface Calendar {
   season_start: string | null
   season_end: string | null
   months: Month[]
-  totals: { available: number; booked: number; blocked: number }
+  totals: { available: number; booked: number; blocked: number; maintenance: number }
 }
 
 interface Blackout { date_start: string; date_end: string; reason: 'blocked' | 'maintenance' }
@@ -225,7 +225,8 @@ export default function PropertyAvailability({ property, listing, calendar, blac
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
               <LegendChip status="available" label="Available" count={calendar.totals.available} />
               <LegendChip status="booked" label="Booked" count={calendar.totals.booked} />
-              <LegendChip status="blocked" label="Blocked / Maintenance" count={calendar.totals.blocked} />
+              <LegendChip status="blocked" label="Blocked" count={calendar.totals.blocked} />
+              <LegendChip status="maintenance" label="Maintenance" count={calendar.totals.maintenance} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '24px' }}>
               {calendar.months.map((m, i) => <MonthGrid key={i} month={m} />)}

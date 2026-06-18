@@ -479,12 +479,12 @@ class PropertyService extends BaseService
      *   season_start: ?string,
      *   season_end: ?string,
      *   months: list<array{label:string, weeks:list<list<array{day:?int, status:string, title:?string}>>}>,
-     *   totals: array{available:int, booked:int, blocked:int},
+     *   totals: array{available:int, booked:int, blocked:int, maintenance:int},
      * }
      */
     public function getAvailabilityCalendar(string $listingId): array
     {
-        $empty = ['season_start' => null, 'season_end' => null, 'months' => [], 'totals' => ['available' => 0, 'booked' => 0, 'blocked' => 0]];
+        $empty = ['season_start' => null, 'season_end' => null, 'months' => [], 'totals' => ['available' => 0, 'booked' => 0, 'blocked' => 0, 'maintenance' => 0]];
 
         $listing = PropertyListing::on('property_read')->find($listingId);
         if (! $listing || ! $listing->season_start || ! $listing->season_end) {
@@ -514,12 +514,13 @@ class PropertyService extends BaseService
             }
         }
 
-        $totals = ['available' => 0, 'booked' => 0, 'blocked' => 0];
+        $totals = ['available' => 0, 'booked' => 0, 'blocked' => 0, 'maintenance' => 0];
         foreach ($status as $s) {
             match ($s) {
-                'available' => $totals['available']++,
-                'booked'    => $totals['booked']++,
-                default     => $totals['blocked']++, // blocked + maintenance
+                'available'   => $totals['available']++,
+                'booked'      => $totals['booked']++,
+                'maintenance' => $totals['maintenance']++,
+                default       => $totals['blocked']++,
             };
         }
 

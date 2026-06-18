@@ -31,11 +31,7 @@
                 <span style="display: inline-flex; align-items: center; gap: 6px;">
                     <span style="width: 14px; height: 14px; border-radius: 3px;
                         background: {{ $colors[$key]['bg'] }}; border: 1px solid {{ $colors[$key]['bd'] }};"></span>
-                    {{ $label }}
-                    @if ($key === 'available') ({{ $calendar['totals']['available'] }})
-                    @elseif ($key === 'booked') ({{ $calendar['totals']['booked'] }})
-                    @elseif ($key === 'blocked') ({{ $calendar['totals']['blocked'] }})
-                    @endif
+                    {{ $label }} ({{ $calendar['totals'][$key] ?? 0 }})
                 </span>
             @endforeach
         </div>
