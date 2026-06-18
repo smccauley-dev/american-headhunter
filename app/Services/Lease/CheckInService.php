@@ -2,6 +2,7 @@
 
 namespace App\Services\Lease;
 
+use App\Database\ConnectionRole;
 use App\Models\Lease\CheckIn;
 use App\Models\Lease\Lease;
 use App\Models\Lease\LeaseHunter;
@@ -195,11 +196,20 @@ class CheckInService extends BaseService
             return [];
         }
 
-        $users = \App\Models\Identity\User::on('identity')
-            ->with('profile')
-            ->whereIn('id', $checkIns->pluck('user_id')->unique()->values())
-            ->get()
-            ->keyBy('id');
+        // The viewer (a landowner/manager) is authorized for this property by the
+        // caller, but the identity `users` RLS only lets a non-staff user read
+        // their OWN row — so under ah_runtime the hunters' rows resolve to null
+        // and every entry shows "Unknown user". Resolve these names under
+        // ah_system: a trusted cross-DB assembly scoped to users who actually
+        // checked in on this property's leases. (SEC-047)
+        $userIds = $checkIns->pluck('user_id')->unique()->values();
+        $users = ConnectionRole::asSystem(
+            fn () => \App\Models\Identity\User::on('identity')
+                ->with('profile')
+                ->whereIn('id', $userIds)
+                ->get()
+                ->keyBy('id')
+        );
 
         return $checkIns->map(function (CheckIn $c) use ($users) {
             $user = $users->get($c->user_id);

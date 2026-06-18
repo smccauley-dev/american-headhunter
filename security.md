@@ -828,6 +828,28 @@ Lease activation is a *trusted system state transition*, not a self-service part
 
 ---
 
+## SEC-047 — Property Check-In Log Shows "Unknown user" in the Member Portal: Cross-DB Name Lookup Default-Denied by `users` RLS Under `ah_runtime` (LOW) — Fixed 2026-06-17
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low (functional defect; no data exposure) |
+| **Status** | FIXED (2026-06-17) |
+| **File** | `app/Services/Lease/CheckInService.php` |
+| **Lineage** | Fallout of SEC-043 (runtime role flip) |
+
+**Description:**
+The landowner property check-in log (`/member/properties/{id}/details?tab=checkin` → `PropertyDetailController::edit` → `CheckInService::getHistoryForProperty`) rendered every entry as "Unknown user". The check-in rows themselves loaded fine — only the hunter names were missing. `getHistoryForProperty` resolves names by a cross-DB lookup `User::on('identity')->whereIn('id', $checkInUserIds)`. The identity `users` table RLS (`users_self_read` / `users_admin_read`) only lets a non-staff user SELECT their **own** row, or staff/super_admin read all. Under the member portal's `ah_runtime` role the viewing landowner is neither the hunter nor staff, so every hunter row was filtered out → `null` → the `'Unknown user'` fallback. The identical Filament admin path (`PropertyFormV2`) worked because it runs as `ah_system` (BYPASSRLS).
+
+**Root Cause:**
+`users` RLS is correctly scoped to self/staff for direct access, but it has no concept of the cross-DB "landowner may see hunters who checked in on my property" relationship (leases live in DB 3, users in DB 1 — un-expressible in a single-table RLS policy). The name resolution is a trusted service-layer assembly that runs *after* the caller has already authorized the viewer for the property (`PropertyDetailController::authorizeManage` → `PropertyService::userCanManageProperty`, 404 otherwise), but it executed under `ah_runtime` where RLS hid the rows.
+
+**Fix:**
+Wrap **only** the identity user lookup in `ConnectionRole::asSystem` (the helper introduced in SEC-046). The set of `user_id`s is constrained to users who actually checked in on this property's leases, and the viewer is already authorized for the property, so this is a narrowly-scoped trusted assembly — no `users` RLS broadening, and no other query in the method is elevated.
+
+**Verification:** `php -l` clean; reproduced manually — the member-portal check-in log now shows the hunter's name/email (e.g. `imatester@2digital.com`). The existing admin path is unchanged (already correct under `ah_system`).
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -835,6 +857,8 @@ Lease activation is a *trusted system state transition*, not a self-service part
 | SEC-043 | RLS bypassed platform-wide — app role owns tables, `FORCE ROW LEVEL SECURITY` unset; missing write-side `WITH CHECK` policies on billing tables | High | **FIXED (2026-06-16)** — app runs as non-owner `ah_runtime`; trusted paths via `ah_system` (BYPASSRLS); regression test green | — |
 | SEC-044 | Encrypted-field plaintext + key pass through query bindings (log-exposure if query logging enabled) | Low | OPEN | Pre-launch hardening |
 | SEC-045 | `check_ins` (and payee `w9_records`) write default-denied under `ah_runtime` (SELECT-only RLS policy) | Medium | **FIXED (2026-06-16)** — self-service write policies added to `check_ins` + `w9_records`; `invoices`/`payments`/`payouts` intentionally left runtime-read-only (system-authored via `ah_system`); regression tests green (18 passed) | — |
+| SEC-046 | Lease activation silently default-denied under `ah_runtime` when the lessee signs last — `UPDATE leases` no-ops (SELECT-only RLS) yet reports success; lease stuck at `pending_signatures` | High | **FIXED (2026-06-17)** — completion writes run via `ConnectionRole::asSystem`; `LeaseService::activate` re-reads + throws on non-persist; regression test green (22 passed) | — |
+| SEC-047 | Member-portal property check-in log shows "Unknown user" — cross-DB hunter name lookup default-denied by `users` RLS under `ah_runtime` | Low | **FIXED (2026-06-17)** — name lookup wrapped in `ConnectionRole::asSystem` (viewer already property-authorized) | — |
 
 ---
 
