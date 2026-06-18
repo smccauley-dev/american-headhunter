@@ -18,6 +18,7 @@ class PropertyListing extends BaseModelWithSoftDeletes
         'min_hunters',
         'max_hunters',
         'price_per_hunter',
+        'price_per_hunter_weekly',
         'price_total',
         'deposit_amount',
         'deposit_percent',
@@ -28,8 +29,9 @@ class PropertyListing extends BaseModelWithSoftDeletes
     protected function casts(): array
     {
         return array_merge(parent::casts(), [
-            'price_per_hunter' => 'decimal:2',
-            'price_total'      => 'decimal:2',
+            'price_per_hunter'        => 'decimal:2',
+            'price_per_hunter_weekly' => 'decimal:2',
+            'price_total'             => 'decimal:2',
             'deposit_amount'   => 'decimal:2',
             'auto_renew'       => 'boolean',
             'season_start'     => 'date',

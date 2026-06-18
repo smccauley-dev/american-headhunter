@@ -243,6 +243,21 @@ class LeaseService extends BaseService
         // the gate). Never let QR setup break activation.
         rescue(fn () => app(\App\Services\Documents\DocumentService::class)
             ->getOrCreateCheckInQrForProperty($lease->property_id));
+
+        // Day-hunt leases reserve their dates on the property calendar so the
+        // range shows as booked and can't be re-sold. No-op for other listing
+        // types. Best-effort: a calendar write (including an overlap conflict
+        // from the EXCLUDE constraint) must never strand an already-executed
+        // lease, mirroring the QR rescue above.
+        rescue(fn () => app(\App\Services\Property\PropertyService::class)->markBooked(
+            listingId:       $lease->listing_id,
+            start:           $lease->start_date,
+            end:             $lease->end_date,
+            hunters:         $lease->hunters()->count(),
+            cost:            (float) $lease->total_price,
+            leaseId:         $lease->id,
+            createdByUserId: $actorUserId,
+        ));
     }
 
     /**
@@ -267,6 +282,9 @@ class LeaseService extends BaseService
             userId:         $actorUserId,
             actionSummary:  "Lease cancelled: {$reason}",
         );
+
+        // Free any day-hunt dates this lease held so they become bookable again.
+        rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
     }
 
     public function terminate(string $leaseId, string $reason, ?string $actorUserId = null): void
@@ -287,6 +305,9 @@ class LeaseService extends BaseService
             userId:         $actorUserId,
             actionSummary:  "Lease terminated: {$reason}",
         );
+
+        // Free any day-hunt dates this lease held so they become bookable again.
+        rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
     }
 
     public function expire(string $leaseId, ?string $actorUserId = null): void

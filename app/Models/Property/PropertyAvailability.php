@@ -14,13 +14,19 @@ class PropertyAvailability extends BaseModel
         'date_start',
         'date_end',
         'reason',
+        'cost',
+        'hunter_count',
+        'lease_id',
+        'created_by_user_id',
     ];
 
     protected function casts(): array
     {
         return array_merge(parent::casts(), [
-            'date_start' => 'date',
-            'date_end'   => 'date',
+            'date_start'   => 'date',
+            'date_end'     => 'date',
+            'cost'         => 'decimal:2',
+            'hunter_count' => 'integer',
         ]);
     }
 

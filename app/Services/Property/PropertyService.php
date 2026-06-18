@@ -19,6 +19,7 @@ use App\Services\BaseService;
 use App\Services\Documents\DocumentService;
 use App\Support\PhoneNumber;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -263,6 +264,115 @@ class PropertyService extends BaseService
                 'reason' => $r->reason,
             ])
             ->all();
+    }
+
+    // ─── Day-hunt booking calendar ────────────────────────────────────────────
+
+    /**
+     * Quote a day-hunt booking: the daily per-hunter rate for each day, with the
+     * discounted weekly rate applied to every full 7-day block and the daily rate
+     * for the remainder. Falls back to 7× the daily rate per week when no weekly
+     * rate is set (i.e. no discount). Dates are inclusive — Aug 5–7 is 3 days.
+     *
+     * @return array{days:int, weeks:int, extra_days:int, hunters:int, per_hunter:float, total:float}
+     */
+    public function quoteDayHunt(string $listingId, Carbon $start, Carbon $end, int $hunters): array
+    {
+        $listing = $this->findListing($listingId);
+
+        if (! $listing) {
+            throw new \RuntimeException("Listing {$listingId} not found.");
+        }
+
+        return $this->computeDayHuntQuote($listing, $start, $end, $hunters);
+    }
+
+    private function computeDayHuntQuote(PropertyListing $listing, Carbon $start, Carbon $end, int $hunters): array
+    {
+        $days  = (int) round($start->diffInDays($end)) + 1; // inclusive bounds
+        $weeks = intdiv($days, 7);
+        $extra = $days % 7;
+
+        $daily  = (float) $listing->price_per_hunter;
+        $weekly = $listing->price_per_hunter_weekly !== null
+            ? (float) $listing->price_per_hunter_weekly
+            : $daily * 7;
+
+        $perHunter = $weeks * $weekly + $extra * $daily;
+        $hunters   = max($hunters, 1);
+
+        return [
+            'days'       => $days,
+            'weeks'      => $weeks,
+            'extra_days' => $extra,
+            'hunters'    => $hunters,
+            'per_hunter' => round($perHunter, 2),
+            'total'      => round($perHunter * $hunters, 2),
+        ];
+    }
+
+    /**
+     * Reserve a date range on a day-hunt listing's calendar when its lease
+     * activates. No-op for non-day-hunt listings. The cost passed is the agreed
+     * lease total (snapshotted), so the calendar shows what the lessee actually
+     * pays rather than a recomputation. The EXCLUDE constraint is the final guard
+     * against double-booking — an overlapping range raises and is handled by the
+     * caller (lease activation treats this write as best-effort).
+     */
+    public function markBooked(
+        string $listingId,
+        Carbon $start,
+        Carbon $end,
+        int $hunters,
+        float $cost,
+        string $leaseId,
+        ?string $createdByUserId = null,
+    ): ?PropertyAvailability {
+        $listing = PropertyListing::on('property')->find($listingId);
+
+        if (! $listing || $listing->listing_type !== 'day_hunt') {
+            return null;
+        }
+
+        $booking = PropertyAvailability::on('property')->create([
+            'listing_id'         => $listingId,
+            'date_start'         => $start->toDateString(),
+            'date_end'           => $end->toDateString(),
+            'reason'             => 'booked',
+            'cost'               => $cost,
+            'hunter_count'       => $hunters > 0 ? $hunters : null,
+            'lease_id'           => $leaseId,
+            'created_by_user_id' => $createdByUserId,
+        ]);
+
+        $this->invalidate("listing:{$listingId}", "property:{$listing->property_id}");
+
+        return $booking;
+    }
+
+    /**
+     * Free any booked date ranges tied to a lease — used when a lease is cancelled
+     * or terminated so the dates become bookable again. Hard delete: the table has
+     * no soft-delete column and a freed date must immediately drop off the calendar.
+     */
+    public function releaseBooking(string $leaseId): void
+    {
+        $rows = PropertyAvailability::on('property')
+            ->where('lease_id', $leaseId)
+            ->where('reason', 'booked')
+            ->get();
+
+        $listingIds = [];
+
+        foreach ($rows as $row) {
+            $listingIds[$row->listing_id] = true;
+            $row->delete();
+        }
+
+        foreach (array_keys($listingIds) as $listingId) {
+            $listing = PropertyListing::on('property')->find($listingId);
+            $this->invalidate("listing:{$listingId}", "property:{$listing?->property_id}");
+        }
     }
 
     /**
