@@ -179,6 +179,29 @@ export default function PropertyAvailability({ property, listing, calendar, blac
 
       <PropertyHead property={property} />
 
+      {hasSeason && (
+        <Section title="Booked Dates" description="Lease-reserved dates with the agreed cost. Managed automatically — cancel or terminate the lease to free them.">
+          {bookings.length === 0 ? (
+            <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50' }}>
+              No bookings yet. Activated day-hunt leases will appear here.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {bookings.map((b, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: '1px solid #d4c9b0', background: '#fff', padding: '12px 16px', fontFamily: mono, fontSize: '12px', color: '#6b5e50' }}>
+                  <span style={{ color: INK }}>{b.date_start} → {b.date_end}</span>
+                  <span>
+                    {b.hunter_count != null ? `${b.hunter_count} hunter${b.hunter_count === 1 ? '' : 's'}` : '—'}
+                    <span style={{ color: '#d4c9b0', margin: '0 10px' }}>·</span>
+                    <span style={{ color: ACCENT, fontWeight: 700 }}>{money(b.cost)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
+
       <Section
         title="Day-Hunt Calendar"
         description={hasSeason
@@ -212,32 +235,9 @@ export default function PropertyAvailability({ property, listing, calendar, blac
       </Section>
 
       {hasSeason && (
-        <>
-          <Section title="Booked Dates" description="Lease-reserved dates with the agreed cost. Managed automatically — cancel or terminate the lease to free them.">
-            {bookings.length === 0 ? (
-              <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50' }}>
-                No bookings yet. Activated day-hunt leases will appear here.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {bookings.map((b, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: '1px solid #d4c9b0', background: '#fff', padding: '12px 16px', fontFamily: mono, fontSize: '12px', color: '#6b5e50' }}>
-                    <span style={{ color: INK }}>{b.date_start} → {b.date_end}</span>
-                    <span>
-                      {b.hunter_count != null ? `${b.hunter_count} hunter${b.hunter_count === 1 ? '' : 's'}` : '—'}
-                      <span style={{ color: '#d4c9b0', margin: '0 10px' }}>·</span>
-                      <span style={{ color: ACCENT, fontWeight: 700 }}>{money(b.cost)}</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Section>
-
-          <Section title="Blackout Dates" description="Close dates so they can't be booked. Ranges cannot overlap a booking or each other.">
-            <BlackoutEditor property={property} listing={listing} blackouts={blackouts} />
-          </Section>
-        </>
+        <Section title="Blackout Dates" description="Close dates so they can't be booked. Ranges cannot overlap a booking or each other.">
+          <BlackoutEditor property={property} listing={listing} blackouts={blackouts} />
+        </Section>
       )}
 
     </PortalChrome>
