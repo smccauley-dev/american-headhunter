@@ -3,13 +3,17 @@
 namespace App\Http\Controllers\Member;
 
 use App\Database\ConnectionRole;
+use App\Enums\LeaseDocumentTag;
 use App\Http\Controllers\Controller;
+use App\Models\Documents\Document;
 use App\Models\Identity\User;
+use App\Models\Lease\Lease;
 use App\Models\Lease\LeaseApplication;
 use App\Models\Lease\LeaseApplicationHunter;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\ApplicationService;
 use App\Services\Lease\EsignatureService;
+use App\Services\Lease\LeaseDocumentService;
 use App\Services\Property\PropertyService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
@@ -38,6 +42,7 @@ class LeaseApplicationController extends Controller
         private readonly ApplicationService        $applications,
         private readonly ApplicationMessageService $messages,
         private readonly EsignatureService         $esignatures,
+        private readonly LeaseDocumentService      $leaseDocuments,
     ) {}
 
     private const STATUS_LABELS = [
@@ -227,12 +232,14 @@ class LeaseApplicationController extends Controller
             $lease   = $app->lease()->first();
             $signers = null;
             $signingUrl = null;
+            $documents = [];
             if ($lease) {
                 $signingUrl  = route('member.leases.sign', $lease->id);
                 $esigRequest = $this->esignatures->getRequestForLease($lease->id);
                 $signers     = $esigRequest
                     ? $esigRequest->signers()->orderBy('order_num')->get()
                     : null;
+                $documents   = $this->buildDocuments($lease);
             }
 
             return [
@@ -284,6 +291,7 @@ class LeaseApplicationController extends Controller
                     'signed_at' => $s->signed_at?->format('M j, Y g:i A'),
                 ])->values()->all() ?? [],
                 'signing_url' => $signingUrl,
+                'documents' => $documents,
                 'messages' => $messages->map(fn ($m) => [
                     'role'        => $m->sender_role,
                     'sender_name' => $senderNames[$m->sender_user_id] ?? ucfirst($m->sender_role),
@@ -302,6 +310,71 @@ class LeaseApplicationController extends Controller
                 ],
             ];
         });
+    }
+
+    /**
+     * The lease's documents — the e-signature template (MLA) and fully-executed
+     * copy from the signing request, plus any general lease_documents attachments.
+     * Mirrors the admin ViewLeaseApplication "Lease Documents" section. Download
+     * URLs are member, party-authorized routes (landowner = lessor is a party).
+     * Soft-deleted (admin recovery) documents are intentionally not surfaced here.
+     *
+     * Must be called within the ah_system scope (the document reads live in DB 11).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildDocuments(Lease $lease): array
+    {
+        $documents = [];
+
+        $esigRequest = $this->esignatures->getRequestForLease($lease->id);
+        $esigDocIds  = array_filter([
+            'mla'            => $esigRequest?->template_document_id,
+            'fully_executed' => $esigRequest?->signed_document_id,
+        ]);
+
+        if (! empty($esigDocIds)) {
+            $esigDocs = Document::on('documents')
+                ->whereIn('id', array_values($esigDocIds))
+                ->get(['id', 'original_filename', 'size_bytes', 'created_at'])
+                ->keyBy('id');
+
+            foreach ($esigDocIds as $tagKey => $docId) {
+                $doc = $esigDocs->get($docId);
+                if (! $doc) {
+                    continue;
+                }
+
+                $tag = LeaseDocumentTag::from($tagKey);
+                $documents[] = [
+                    'label'        => $tag->label(),
+                    'badge'        => strtoupper(str_replace('_', ' ', $tagKey)),
+                    'subtitle'     => $tagKey === 'mla'
+                        ? 'Contract sent for e-signature'
+                        : 'Fully executed — all parties have signed',
+                    'filename'     => $doc->original_filename ?? 'document.pdf',
+                    'size'         => $doc->size_bytes ? number_format($doc->size_bytes / 1024, 0) . ' KB' : '',
+                    'date'         => $doc->created_at?->format('M j, Y') ?? '',
+                    'download_url' => $tagKey === 'fully_executed'
+                        ? route('member.leases.signed.download', $lease->id)
+                        : route('member.leases.esign.download', [$lease->id, $docId]),
+                ];
+            }
+        }
+
+        foreach ($this->leaseDocuments->getForLease($lease->id) as $ld) {
+            $documents[] = [
+                'label'        => $ld->tag->label(),
+                'badge'        => strtoupper(str_replace('_', ' ', $ld->tag->value)),
+                'subtitle'     => $ld->notes ?? '',
+                'filename'     => $ld->original_filename ?? 'document.pdf',
+                'size'         => $ld->size_bytes ? number_format($ld->size_bytes / 1024, 0) . ' KB' : '',
+                'date'         => $ld->created_at?->format('M j, Y') ?? '',
+                'download_url' => route('member.leases.documents.download', [$lease->id, $ld->id]),
+            ];
+        }
+
+        return $documents;
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────

@@ -103,6 +103,57 @@ class EsignatureService extends BaseService
         );
     }
 
+    /**
+     * Download a document belonging to a lease's signing request — the contract
+     * template/MLA sent for signature or the fully-executed copy. Authorized to a
+     * party of the lease (lessor or lessee); the document id must be one the lease's
+     * latest signing request actually references, so an arbitrary id cannot be read.
+     */
+    public function downloadEsignatureDocument(
+        string $leaseId,
+        string $documentId,
+        string $requestingUserId,
+    ): \Symfony\Component\HttpFoundation\StreamedResponse {
+        $lease = Lease::where('id', $leaseId)
+            ->whereNull('deleted_at')
+            ->where(function ($q) use ($requestingUserId) {
+                $q->where('lessee_user_id', $requestingUserId)
+                  ->orWhere('lessor_user_id', $requestingUserId);
+            })
+            ->first();
+
+        abort_if($lease === null, 403, 'You are not authorized to download this document.');
+
+        $request = $this->getRequestForLease($leaseId);
+        $allowedIds = array_filter([
+            $request?->template_document_id,
+            $request?->signed_document_id,
+        ]);
+
+        abort_unless(in_array($documentId, $allowedIds, true), 404, 'Document not found.');
+
+        $doc = Document::on('documents')->whereNull('deleted_at')->find($documentId);
+        abort_if($doc === null, 404, 'Document not found.');
+
+        try {
+            $this->auditService->log(
+                eventType:      'document.downloaded',
+                sourceDatabase: 'ah_documents',
+                tableName:      'documents',
+                recordId:       $documentId,
+                actionSummary:  "Lease contract document downloaded by user={$requestingUserId}",
+                userId:         $requestingUserId,
+            );
+        } catch (\Throwable) {}
+
+        $disk = config('filesystems.defaults.documents', 'local');
+
+        return \Illuminate\Support\Facades\Storage::disk($disk)->download(
+            $doc->storage_key,
+            $doc->original_filename ?? 'contract.pdf',
+        );
+    }
+
     // ── Writes ────────────────────────────────────────────────────────────────
 
     /**

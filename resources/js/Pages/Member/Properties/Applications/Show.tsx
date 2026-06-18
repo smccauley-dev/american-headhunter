@@ -22,6 +22,7 @@ interface Hunter { name: string; type: string; is_minor: boolean; email: string 
 interface Signer { name: string; role: string; email: string; status: string; signed_at: string | null }
 interface Message { role: string; sender_name: string; message: string; sent_at: string | null }
 interface History { label: string; to: string; reason: string | null; decided_at: string | null }
+interface LeaseDoc { label: string; badge: string; subtitle: string; filename: string; size: string; date: string; download_url: string }
 
 interface Props {
   property: PropertySummary & { id: string }
@@ -32,6 +33,7 @@ interface Props {
   lease: { ref: string; status: string; start_date: string | null; end_date: string | null; total_price: number | null } | null
   signers: Signer[]
   signing_url: string | null
+  documents: LeaseDoc[]
   messages: Message[]
   history: History[]
   defaults: { start_date: string | null; end_date: string | null }
@@ -74,7 +76,7 @@ function money(v: number | null): string {
 
 const ROLE_LABEL: Record<string, string> = { admin: 'Staff', landowner: 'You (Landowner)', applicant: 'Applicant' }
 
-export default function ApplicationShow({ property, application, listing, applicant, hunters, lease, signers, signing_url, messages, history, defaults }: Props) {
+export default function ApplicationShow({ property, application, listing, applicant, hunters, lease, signers, signing_url, documents, messages, history, defaults }: Props) {
   const flash = (usePage().props as { flash?: { success?: string; error?: string } }).flash ?? {}
   const [modal, setModal] = useState<null | 'approve' | 'reject'>(null)
   const base = `/member/properties/${property.id}/applications/${application.id}`
@@ -180,6 +182,31 @@ export default function ApplicationShow({ property, application, listing, applic
               })}
             </div>
           )}
+        </Section>
+      )}
+
+      {/* Lease documents */}
+      {lease && documents.length > 0 && (
+        <Section title="Lease Documents" description="The contract sent for signature, the fully-executed copy, and any attachments.">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {documents.map((d, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 16px', background: '#fff', border: '1px solid #d4c9b0' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '16px', color: INK }}>{d.label}</span>
+                    <span style={{ ...mono, fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '2px 7px', border: `1px solid ${TAN}`, color: '#6b5e50' }}>{d.badge}</span>
+                  </div>
+                  {d.subtitle && <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', color: '#6b5e50', marginTop: '3px' }}>{d.subtitle}</div>}
+                  <div style={{ ...mono, fontSize: '10px', color: '#9c9388', marginTop: '4px' }}>
+                    {[d.filename, d.size, d.date].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+                <a href={d.download_url} style={{ ...mono, fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 18px', background: 'transparent', color: INK, border: `1px solid ${TAN}`, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                  Download ↓
+                </a>
+              </div>
+            ))}
+          </div>
         </Section>
       )}
 

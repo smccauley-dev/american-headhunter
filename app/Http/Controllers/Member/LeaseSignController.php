@@ -104,6 +104,11 @@ class LeaseSignController extends Controller
         return $esigService->downloadSignedLease($lease, session('auth.user_id'));
     }
 
+    public function downloadEsignDocument(string $lease, string $document, EsignatureService $esigService): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        return $esigService->downloadEsignatureDocument($lease, $document, session('auth.user_id'));
+    }
+
     private function buildLeaseProps(Lease $leaseRecord, PropertyService $propertyService): array
     {
         $property = rescue(fn () => $propertyService->find($leaseRecord->property_id), null);
