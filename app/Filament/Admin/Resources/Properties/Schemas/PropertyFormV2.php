@@ -607,6 +607,7 @@ class PropertyFormV2
             Action::make('listingAvailability')
                 ->label('Availability')
                 ->icon('heroicon-o-calendar-days')
+                ->button()
                 ->color('gray')
                 ->visible($isSavedDayHunt)
                 ->modalHeading('Day-Hunt Availability Calendar')
@@ -622,6 +623,7 @@ class PropertyFormV2
             Action::make('listingBlackouts')
                 ->label('Blackouts')
                 ->icon('heroicon-o-no-symbol')
+                ->button()
                 ->color('gray')
                 ->visible($isSavedDayHunt)
                 ->modalHeading('Manage Blackout Dates')
@@ -958,6 +960,11 @@ class PropertyFormV2
                                                 : 'New Listing'
                                             )
                                             ->extraItemActions(self::dayHuntListingActions())
+                                            ->deleteAction(fn(Action $action) => $action
+                                                ->label('Delete')
+                                                ->icon('heroicon-o-trash')
+                                                ->button()
+                                            )
                                             ->addAction(fn(\Filament\Actions\Action $action) => $action
                                                 ->label('Add Listing')
                                                 ->icon('heroicon-o-plus-circle')
