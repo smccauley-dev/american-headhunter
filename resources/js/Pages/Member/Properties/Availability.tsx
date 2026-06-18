@@ -1,4 +1,5 @@
 import { useForm } from '@inertiajs/react'
+import { TrashIcon } from '@heroicons/react/24/outline'
 import { PortalChrome, PropertyHead, Section, BackLink, INK, ACCENT, type PropertySummary } from '@/Components/Member/PropertyChrome'
 
 type DayStatus = 'available' | 'booked' | 'blocked' | 'maintenance' | 'out' | 'pad'
@@ -155,7 +156,10 @@ function BlackoutEditor({ property, listing, blackouts }: { property: { id: stri
               <option value="maintenance">Maintenance</option>
             </select>
           </div>
-          <button type="button" onClick={() => removeRow(i)} style={{ ...btn('danger'), padding: '9px 14px' }}>Remove</button>
+          <button type="button" onClick={() => removeRow(i)} style={{ ...btn('danger'), padding: '9px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <TrashIcon style={{ width: 14, height: 14 }} />
+            Remove
+          </button>
         </div>
       ))}
 
