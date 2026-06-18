@@ -2,6 +2,7 @@
 
 namespace App\Services\Property;
 
+use App\Database\ConnectionRole;
 use App\Models\Property\Property;
 use App\Models\Property\PropertyListing;
 use App\Models\Property\PropertyManager;
@@ -578,39 +579,72 @@ class PropertyService extends BaseService
     // ─── Managers ─────────────────────────────────────────────────────────────
 
     /**
-     * Active managers on a property with cross-DB-resolved identities, for the
-     * member-portal team view. Read replica + a single identity bulk-load — no
+     * The property team for the member-portal team view: the owner of record
+     * (from owner_user_id) followed by active manager grants, each with a
+     * cross-DB-resolved identity. Read replica + a single identity bulk-load — no
      * Eloquent cross-DB relationship.
+     *
+     * The owner is synthesized from owner_user_id because a property created
+     * normally has no property_managers row for its owner — only owners assigned
+     * after the fact (via an 'owner' grant) do. Any such existing 'owner' grant
+     * for the same user is dropped so the owner is never listed twice.
      *
      * @return array<int, array<string, mixed>>
      */
     public function getManagersForProperty(string $propertyId): array
     {
+        $property = Property::on('property_read')->find($propertyId);
+
+        if (! $property) {
+            return [];
+        }
+
         $managers = PropertyManager::on('property_read')
             ->where('property_id', $propertyId)
             ->whereNull('revoked_at')
             ->orderBy('granted_at')
-            ->get();
-
-        if ($managers->isEmpty()) {
-            return [];
-        }
+            ->get()
+            // The owner is rendered as its own synthesized row below; never also
+            // list it as a manager grant.
+            ->reject(fn (PropertyManager $m) => $m->user_id === $property->owner_user_id)
+            ->values();
 
         $userIds = $managers->pluck('user_id')
             ->merge($managers->pluck('granted_by_user_id'))
+            ->push($property->owner_user_id)
             ->filter()->unique()->values()->all();
 
-        $users = \App\Models\Identity\User::on('identity')
-            ->with('profile')
-            ->whereIn('id', $userIds)
-            ->get()
-            ->keyBy('id');
+        // The viewer is authorized for this property by the caller, but the
+        // identity `users` RLS only lets a non-staff user read their own row, so
+        // manager names would resolve to '—' under ah_runtime. Resolve under
+        // ah_system — a trusted assembly scoped to this property's team. (SEC-047)
+        $users = ConnectionRole::asSystem(
+            fn () => \App\Models\Identity\User::on('identity')
+                ->with('profile')
+                ->whereIn('id', $userIds)
+                ->get()
+                ->keyBy('id')
+        );
 
-        return $managers->map(function (PropertyManager $m) use ($users) {
+        $team = [];
+
+        if ($property->owner_user_id) {
+            $owner = $users->get($property->owner_user_id);
+            $team[] = [
+                'id'         => 'owner',
+                'name'       => $owner?->profile?->full_name ?: ($owner?->email ?? '—'),
+                'email'      => $owner?->email ?? '',
+                'role'       => 'owner',
+                'granted_at' => null,
+                'granted_by' => '—',
+            ];
+        }
+
+        foreach ($managers as $m) {
             $user      = $users->get($m->user_id);
             $grantedBy = $users->get($m->granted_by_user_id);
 
-            return [
+            $team[] = [
                 'id'         => $m->id,
                 'name'       => $user?->profile?->full_name ?: ($user?->email ?? '—'),
                 'email'      => $user?->email ?? '',
@@ -618,7 +652,9 @@ class PropertyService extends BaseService
                 'granted_at' => $m->granted_at?->format('M j, Y'),
                 'granted_by' => $grantedBy?->profile?->full_name ?: ($grantedBy?->email ?? '—'),
             ];
-        })->all();
+        }
+
+        return $team;
     }
 
     /**
