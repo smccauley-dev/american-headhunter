@@ -1190,8 +1190,9 @@ Phases 1, 2, 3, 3.9, 3.10, 4.1–4.6 complete; Phase 5.6 (Admin Billing — Fila
 **Immediate next actions:**
 
 1. **Phase 5.1–5.5** — Stripe billing pipeline (Checkout, Connect onboarding/payouts, webhooks, promotions auto-apply) — deferred pending Stripe keys; admin pricing config (5.6) is now in place to drive it
-2. **Phase 4.7** — Document generation jobs: `GenerateLeasePdf`, `GenerateQrCode`, `ScanUploadedFile`
-3. **Phase 6** — Wildlife & field operations (harvest logging, trail cameras, quotas, CWD)
+2. **Phase 6** — Wildlife & field operations (harvest logging, trail cameras, quotas, CWD)
+
+> Phase 4.7 (Lease PDF / QR / virus-scan document jobs) is complete — see §4.7. Day-hunt booking calendar shipped and merged to main (2026-06-18).
 
 **Open items:**
 - SEC-024: Configure `TrustProxies` middleware before relying on IP allowlist in production
