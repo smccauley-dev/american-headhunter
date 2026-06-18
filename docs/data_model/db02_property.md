@@ -8,7 +8,7 @@
 **Server:** High-memory standard PostgreSQL instance — optimized for full-text search and listing browse
 **Encryption Key:** Key B — rotated annually via Azure Key Vault
 **Extensions:** `uuid-ossp`
-**RLS Enabled:** Yes — on `property_access_info` (lessees of that property only), `property_availability`
+**RLS Enabled:** Yes — on `property_access_info` (lessees of that property only). Note: `property_availability` is **not** RLS-protected despite earlier docs claiming so — ownership is enforced in the service layer (see that table's notes).
 
 This database stores all land parcel data, published listings, photos, amenities, species, rules, access information, and hunter wishlists. It is the primary data source for the public property search and the member portal lease management view.
 
@@ -82,6 +82,7 @@ CREATE TABLE property_listings (
     min_hunters      SMALLINT     NULL,
     max_hunters      SMALLINT     NOT NULL DEFAULT 1,
     price_per_hunter NUMERIC(10,2) NULL,
+    price_per_hunter_weekly NUMERIC(10,2) NULL,
     price_total      NUMERIC(10,2) NULL,
     deposit_amount   NUMERIC(10,2) NULL,
     deposit_percent  SMALLINT     NULL CHECK (deposit_percent BETWEEN 0 AND 100),
@@ -106,6 +107,7 @@ CREATE TRIGGER trg_property_listings_updated_at
 
 **Notes:**
 - Either `price_per_hunter` or `price_total` must be non-null for active listings. The service layer enforces this.
+- For `day_hunt` listings, `price_per_hunter` is the **per-day** rate and `price_per_hunter_weekly` is the optional discounted rate applied to each full 7-day block of a booking (remainder days bill at the daily rate). Per-hunter. Leave the weekly column null for no weekly discount — `PropertyService::computeDayHuntQuote` then falls back to `daily × 7`. Ignored for non-day-hunt types.
 - `deposit_amount` and `deposit_percent` are mutually exclusive — only one should be set. The billing service uses whichever is present.
 - `listing_type = 'auction'` will also create a row in `ah_commerce.auction_listings` (DB 6) via `AuctionService`.
 - Active listings query: `WHERE status = 'active' AND deleted_at IS NULL`.
@@ -360,24 +362,51 @@ CREATE POLICY access_info_owner_or_active_lessee ON property_access_info
 
 ### `property_availability`
 
-Blocked or booked date ranges for a listing. Prevents double-booking and surfaces available windows on the calendar.
+Blocked or booked date ranges for a listing. Prevents double-booking and surfaces available windows on the day-hunt calendar (admin + landowner member portal). Each row is one of:
+
+- **`booked`** — a lease-reserved range. Created by `PropertyService::markBooked` when a `day_hunt` lease activates and freed by `releaseBooking` when it cancels/terminates (hooked in `LeaseService`). Always traces to a lease (`lease_id` + `cost` required) — there are no hand-entered priced bookings.
+- **`blocked` / `maintenance`** — owner blackouts (offline use, no cost). Managed via `PropertyService::replaceBlackouts` (full-replace) from the admin "Blackouts" action and the member portal availability page.
 
 ```sql
-CREATE TABLE property_availability (
-    id          UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    listing_id  UUID        NOT NULL REFERENCES property_listings (id) ON DELETE CASCADE,
-    date_start  DATE        NOT NULL,
-    date_end    DATE        NOT NULL,
-    reason      VARCHAR(20) NOT NULL DEFAULT 'booked'
-                    CHECK (reason IN ('booked', 'blocked', 'maintenance')),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+CREATE EXTENSION IF NOT EXISTS btree_gist;
 
-    CONSTRAINT chk_property_availability_dates CHECK (date_end >= date_start)
+CREATE TABLE property_availability (
+    id                 UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    listing_id         UUID        NOT NULL REFERENCES property_listings (id) ON DELETE CASCADE,
+    date_start         DATE        NOT NULL,
+    date_end           DATE        NOT NULL,
+    reason             VARCHAR(20) NOT NULL DEFAULT 'booked'
+                           CHECK (reason IN ('booked', 'blocked', 'maintenance')),
+    cost               NUMERIC(10,2) NULL,                 -- agreed lease total (booked rows only)
+    hunter_count       INT         NULL,
+    lease_id           UUID        NULL,                   -- References DB 3 (Lease) leases.id (booked rows only)
+    created_by_user_id UUID        NULL,                   -- References DB 1 (Identity) users.id
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_property_availability_dates CHECK (date_end >= date_start),
+
+    -- A booked row must trace to a lease and carry a cost; a non-booked
+    -- (blocked/maintenance) row must carry neither.
+    CONSTRAINT chk_property_availability_booked_lease CHECK (
+        (reason =  'booked' AND lease_id IS NOT NULL AND cost IS NOT NULL) OR
+        (reason <> 'booked' AND lease_id IS NULL     AND cost IS NULL)
+    ),
+
+    -- No two ranges for the same listing may overlap (exclusive per date),
+    -- regardless of reason or party size. SQLSTATE 23P01 on violation.
+    CONSTRAINT excl_property_availability_no_overlap
+        EXCLUDE USING gist (listing_id WITH =, daterange(date_start, date_end, '[]') WITH &&)
 );
 
 CREATE INDEX idx_property_availability_listing_id ON property_availability (listing_id);
 CREATE INDEX idx_property_availability_dates      ON property_availability (listing_id, date_start, date_end);
 ```
+
+**Notes:**
+- The `cost` snapshot is the agreed lease total at activation, so the calendar shows what the lessee actually paid rather than a recomputation.
+- The day-hunt columns/constraints above were added by `2026_06_18_000001_add_day_hunt_booking_fields` (which also reclassifies any legacy `booked` rows with no `lease_id` to `blocked`).
+
+> **RLS note:** despite the header line above, `property_availability` has **no** RLS policy — the migration never runs `ENABLE ROW LEVEL SECURITY` on it. Like `properties`/`property_listings`, ownership for member-portal management is enforced in the service layer via `PropertyService::userCanManageProperty` + `findListingForProperty`, not by the database.
 
 ---
 
@@ -572,7 +601,8 @@ protected $keyType    = 'string';
 protected function casts(): array
 {
     return [
-        'price_per_hunter' => 'decimal:2',
+        'price_per_hunter'        => 'decimal:2',
+        'price_per_hunter_weekly' => 'decimal:2',
         'price_total'      => 'decimal:2',
         'deposit_amount'   => 'decimal:2',
         'auto_renew'       => 'boolean',

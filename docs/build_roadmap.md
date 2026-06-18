@@ -176,14 +176,14 @@ The goal: feature flags, membership tiers, and property listings working — the
 ### 3.2 DB 2 Property Migrations ✅ (2026-05-24)
 
 - [x] `properties` — UUID PK, owner cross-DB ref, slug (unique partial index), address_encrypted (pgp_sym_encrypt), state/county, total_acres, huntable_acres, boundary_geospatial_id, primary_photo_document_id, soft deletes
-- [x] `property_listings` — listing_type CHECK (annual_lease/seasonal_lease/day_hunt/auction), status, season dates, hunter limits, price_per_hunter/price_total, deposit logic, visibility, soft deletes
+- [x] `property_listings` — listing_type CHECK (annual_lease/seasonal_lease/day_hunt/auction), status, season dates, hunter limits, price_per_hunter/price_per_hunter_weekly (day-hunt)/price_total, deposit logic, visibility, soft deletes
 - [x] `property_photos` — document_id cross-DB ref, sort_order, is_primary, soft deletes
 - [x] `property_amenities` — seeded with 26 amenities across 6 categories (accommodation, access, water, stand, food_plot, other)
 - [x] `property_amenity_listings` — pivot table linking amenities to listings
 - [x] `property_species` — species_code CHECK (15 species + other), is_primary flag
 - [x] `property_rules` — rule_text per property, sort_order
 - [x] `property_access_info` — access_info_encrypted (pgp_sym_encrypt), RLS enabled (staff/super_admin at DB level; full lessee auth in PropertyService)
-- [x] `property_availability` — date_start/date_end range blocking (booked/blocked/maintenance)
+- [x] `property_availability` — date_start/date_end range blocking (booked/blocked/maintenance); day-hunt booking calendar adds cost/hunter_count/lease_id/created_by_user_id, a booked⇒lease+cost CHECK, and a btree_gist EXCLUDE preventing overlapping ranges per listing (migration `2026_06_18_000001_add_day_hunt_booking_fields`). Booked rows are written by `LeaseService` activation (`markBooked`) and freed on cancel/terminate (`releaseBooking`); blackouts managed via `replaceBlackouts`. Calendar surfaced in the admin Filament listing actions and the member-portal availability page; per-day + per-week per-hunter quote via `PropertyService::computeDayHuntQuote`
 - [x] `property_views` — append-only view tracking for ETL; `saved_properties` hunter wishlist
 - [x] `php artisan migrate:single property --fresh` — 10/10 zero errors; RLS verified on property_access_info
 
@@ -747,15 +747,16 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
 - [ ] TaxJar integration — `App\Services\Billing\TaxService` — calculates sales tax on marketplace transactions at checkout
 - [ ] Commit: "Stripe Connect payouts and tax integrations"
 
-### 5.6 Admin Billing (Filament)
+### 5.6 Admin Billing (Filament) — ✅ COMPLETE (2026-06-18)
 
-- [ ] `MembershipPlanResource` — admin CRUD for plans and plan version management; creating a new version is the only way to change pricing (immutable existing versions)
-- [ ] `FeatureEntitlementResource` — per-plan entitlement key/value editor
-- [ ] `PromotionalPeriodResource` — full promotion wizard (type, target, benefit, limits, display)
-- [ ] `PromoCodeResource` — code generation with uniqueness guarantee
-- [ ] `InvoiceResource` and `PaymentResource` — read-only billing oversight
-- [ ] `PayoutResource` — payout history and status tracking
-- [ ] Commit: "Filament billing and pricing admin"
+- [x] `MembershipPlanResource` — admin CRUD for plans + "Publish New Version" action (PlanService); prices entered in dollars / stored as cents; read-only version-history relation manager; creating a new version is the only way to change pricing (immutable existing versions)
+- [x] Per-plan entitlement editor — implemented as `EntitlementsRelationManager` on the plan Edit page (per-plan is the natural shape; same-connection) rather than a standalone resource; flushes entitlement cache on mutation
+- [x] `PromotionalPeriodResource` — full promotion editor (type-conditional benefit fields, targeting, window, limits, behavior, display)
+- [x] `PromoCodeResource` — modal CRUD; uppercase-on-blur normalization so the case-insensitive uniqueness rule matches the `LOWER(code)` unique index
+- [x] `InvoiceResource` and `PaymentResource` — read-only billing oversight (List + View, no create/edit/delete)
+- [x] `PayoutResource` — read-only payout history and status tracking
+- [x] All resources gated by `AdminAuth::canManagePricing()` / `canViewBilling()`; admin panel runs under `ah_system` (BYPASSRLS) so oversight reads see all rows. No new RLS migrations or HTTP endpoints required — the integration surface is entitlement-cache invalidation (Valkey Cluster 2). Stripe product/price sync deferred (IDs admin-entered, nullable).
+- [x] Commit: "Filament billing and pricing admin" (PlanService 6a7088f, plans 9479aad, promos 31ea0b1, oversight 935be5c)
 
 ### Phase 5 Milestone
 
@@ -1184,13 +1185,13 @@ The goal: the platform is production-ready — fully administered, security-revi
 
 ## Current Position
 
-Phases 1, 2, 3, 3.9, 3.10, 4.1–4.5 complete as of 2026-06-10. The lease lifecycle is functional end-to-end: hunters apply, admins approve, in-platform e-signature activates the lease. Admin panel covers full platform user management (CustomerUserResource) and full lease application review (LeaseApplicationResource).
+Phases 1, 2, 3, 3.9, 3.10, 4.1–4.6 complete; Phase 5.6 (Admin Billing — Filament) complete as of 2026-06-18. The lease lifecycle is functional end-to-end: hunters apply, admins approve, in-platform e-signature activates the lease. Admin panel covers full platform user management (CustomerUserResource), lease application review (LeaseApplicationResource), and the full pricing/promotions/billing admin (membership plans + plan-version publishing, per-plan entitlements, promotions, promo codes, and read-only invoice/payment/payout oversight).
 
 **Immediate next actions:**
 
-1. **Phase 4.5.5** — Custom Lease Contracts (Dropbox Sign, Ranch+ tier): migrations → `DropboxSignService` → webhook controller + job → `EsignatureService` modification → approval-time upload UI → `dropboxsign:simulate` Artisan command
-2. **Phase 4.6** — Member portal lease dashboard (`/member`): active lease view, gate code decrypt, stand map, QR check-in page, `CheckInService`
-3. **Phase 4.7** — Document generation jobs: `GenerateLeasePdf`, `GenerateQrCode`, `ScanUploadedFile`
+1. **Phase 5.1–5.5** — Stripe billing pipeline (Checkout, Connect onboarding/payouts, webhooks, promotions auto-apply) — deferred pending Stripe keys; admin pricing config (5.6) is now in place to drive it
+2. **Phase 4.7** — Document generation jobs: `GenerateLeasePdf`, `GenerateQrCode`, `ScanUploadedFile`
+3. **Phase 6** — Wildlife & field operations (harvest logging, trail cameras, quotas, CWD)
 
 **Open items:**
 - SEC-024: Configure `TrustProxies` middleware before relying on IP allowlist in production

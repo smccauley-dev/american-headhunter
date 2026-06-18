@@ -103,6 +103,66 @@ class PropertyListingController extends Controller
             ->with('status', 'Listing removed.');
     }
 
+    /**
+     * Day-hunt availability calendar for a single listing — the landowner view of
+     * which dates are open, booked (lease-reserved, with cost), or blacked out.
+     * Only day-hunt listings have a calendar; anything else 404s.
+     */
+    public function availability(string $property, string $listing): Response
+    {
+        $record = $this->authorizeManage($property);
+        $this->authorizeListing($property, $listing);
+
+        $l = $this->properties->findListingForProperty($property, $listing);
+        abort_unless($l->listing_type === 'day_hunt', 404);
+
+        return Inertia::render('Member/Properties/Availability', [
+            'property' => [
+                'id'          => $record->id,
+                'title'       => $record->title,
+                'status'      => $record->status,
+                'state_code'  => $record->state_code,
+                'county'      => $record->county,
+                'total_acres' => $record->total_acres !== null ? (float) $record->total_acres : null,
+            ],
+            'listing'   => $this->present($l),
+            'calendar'  => $this->properties->getAvailabilityCalendar($listing),
+            'blackouts' => $this->properties->getBlackoutRanges($listing),
+            'bookings'  => $this->properties->getBookedRanges($listing),
+        ]);
+    }
+
+    /**
+     * Full-replace the owner blackout ranges for a day-hunt listing. Booked dates
+     * come from leases and are never touched here. An overlap with a booking or
+     * another blackout comes back as a friendly validation error on the page.
+     */
+    public function saveBlackouts(Request $request, string $property, string $listing): RedirectResponse
+    {
+        $this->authorizeManage($property);
+        $this->authorizeListing($property, $listing);
+
+        $l = $this->properties->findListingForProperty($property, $listing);
+        abort_unless($l->listing_type === 'day_hunt', 404);
+
+        $data = $request->validate([
+            'blackouts'              => 'present|array',
+            'blackouts.*.date_start' => 'required|date',
+            'blackouts.*.date_end'   => 'required|date|after_or_equal:blackouts.*.date_start',
+            'blackouts.*.reason'     => ['required', Rule::in(['blocked', 'maintenance'])],
+        ]);
+
+        try {
+            $this->properties->replaceBlackouts($listing, $data['blackouts'], session('auth.user_id'));
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['blackouts' => $e->getMessage()]);
+        }
+
+        return redirect()
+            ->route('member.properties.listings.availability', [$property, $listing])
+            ->with('status', 'Availability updated.');
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private function present(PropertyListing $l): array
@@ -117,7 +177,8 @@ class PropertyListingController extends Controller
             'season_end'       => $l->season_end?->format('Y-m-d'),
             'min_hunters'      => $l->min_hunters,
             'max_hunters'      => $l->max_hunters,
-            'price_per_hunter' => $l->price_per_hunter !== null ? (float) $l->price_per_hunter : null,
+            'price_per_hunter'        => $l->price_per_hunter !== null ? (float) $l->price_per_hunter : null,
+            'price_per_hunter_weekly' => $l->price_per_hunter_weekly !== null ? (float) $l->price_per_hunter_weekly : null,
             'price_total'      => $l->price_total !== null ? (float) $l->price_total : null,
             'deposit_amount'   => $l->deposit_amount !== null ? (float) $l->deposit_amount : null,
             'deposit_percent'  => $l->deposit_percent,
@@ -135,7 +196,8 @@ class PropertyListingController extends Controller
             'season_end'       => 'nullable|date|after_or_equal:season_start',
             'max_hunters'      => 'required|integer|min:1',
             'min_hunters'      => 'nullable|integer|min:1|lte:max_hunters',
-            'price_per_hunter' => 'nullable|numeric|min:0',
+            'price_per_hunter'        => 'nullable|numeric|min:0',
+            'price_per_hunter_weekly' => 'nullable|numeric|min:0',
             'price_total'      => 'nullable|numeric|min:0',
             'deposit_amount'   => 'nullable|numeric|min:0',
             'deposit_percent'  => 'nullable|integer|between:0,100',

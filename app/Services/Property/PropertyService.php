@@ -18,7 +18,9 @@ use App\Models\Property\PropertySpecies;
 use App\Services\BaseService;
 use App\Services\Documents\DocumentService;
 use App\Support\PhoneNumber;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -263,6 +265,296 @@ class PropertyService extends BaseService
                 'reason' => $r->reason,
             ])
             ->all();
+    }
+
+    // ─── Day-hunt booking calendar ────────────────────────────────────────────
+
+    /**
+     * Quote a day-hunt booking: the daily per-hunter rate for each day, with the
+     * discounted weekly rate applied to every full 7-day block and the daily rate
+     * for the remainder. Falls back to 7× the daily rate per week when no weekly
+     * rate is set (i.e. no discount). Dates are inclusive — Aug 5–7 is 3 days.
+     *
+     * @return array{days:int, weeks:int, extra_days:int, hunters:int, per_hunter:float, total:float}
+     */
+    public function quoteDayHunt(string $listingId, Carbon $start, Carbon $end, int $hunters): array
+    {
+        $listing = $this->findListing($listingId);
+
+        if (! $listing) {
+            throw new \RuntimeException("Listing {$listingId} not found.");
+        }
+
+        return $this->computeDayHuntQuote($listing, $start, $end, $hunters);
+    }
+
+    private function computeDayHuntQuote(PropertyListing $listing, Carbon $start, Carbon $end, int $hunters): array
+    {
+        $days  = (int) round($start->diffInDays($end)) + 1; // inclusive bounds
+        $weeks = intdiv($days, 7);
+        $extra = $days % 7;
+
+        $daily  = (float) $listing->price_per_hunter;
+        $weekly = $listing->price_per_hunter_weekly !== null
+            ? (float) $listing->price_per_hunter_weekly
+            : $daily * 7;
+
+        $perHunter = $weeks * $weekly + $extra * $daily;
+        $hunters   = max($hunters, 1);
+
+        return [
+            'days'       => $days,
+            'weeks'      => $weeks,
+            'extra_days' => $extra,
+            'hunters'    => $hunters,
+            'per_hunter' => round($perHunter, 2),
+            'total'      => round($perHunter * $hunters, 2),
+        ];
+    }
+
+    /**
+     * Reserve a date range on a day-hunt listing's calendar when its lease
+     * activates. No-op for non-day-hunt listings. The cost passed is the agreed
+     * lease total (snapshotted), so the calendar shows what the lessee actually
+     * pays rather than a recomputation. The EXCLUDE constraint is the final guard
+     * against double-booking — an overlapping range raises and is handled by the
+     * caller (lease activation treats this write as best-effort).
+     */
+    public function markBooked(
+        string $listingId,
+        Carbon $start,
+        Carbon $end,
+        int $hunters,
+        float $cost,
+        string $leaseId,
+        ?string $createdByUserId = null,
+    ): ?PropertyAvailability {
+        $listing = PropertyListing::on('property')->find($listingId);
+
+        if (! $listing || $listing->listing_type !== 'day_hunt') {
+            return null;
+        }
+
+        $booking = PropertyAvailability::on('property')->create([
+            'listing_id'         => $listingId,
+            'date_start'         => $start->toDateString(),
+            'date_end'           => $end->toDateString(),
+            'reason'             => 'booked',
+            'cost'               => $cost,
+            'hunter_count'       => $hunters > 0 ? $hunters : null,
+            'lease_id'           => $leaseId,
+            'created_by_user_id' => $createdByUserId,
+        ]);
+
+        $this->invalidate("listing:{$listingId}", "property:{$listing->property_id}");
+
+        return $booking;
+    }
+
+    /**
+     * Free any booked date ranges tied to a lease — used when a lease is cancelled
+     * or terminated so the dates become bookable again. Hard delete: the table has
+     * no soft-delete column and a freed date must immediately drop off the calendar.
+     */
+    public function releaseBooking(string $leaseId): void
+    {
+        $rows = PropertyAvailability::on('property')
+            ->where('lease_id', $leaseId)
+            ->where('reason', 'booked')
+            ->get();
+
+        $listingIds = [];
+
+        foreach ($rows as $row) {
+            $listingIds[$row->listing_id] = true;
+            $row->delete();
+        }
+
+        foreach (array_keys($listingIds) as $listingId) {
+            $listing = PropertyListing::on('property')->find($listingId);
+            $this->invalidate("listing:{$listingId}", "property:{$listing?->property_id}");
+        }
+    }
+
+    /**
+     * Blocked / maintenance ranges (owner blackouts — never booked rows) for the
+     * blackout editor. Read replica.
+     *
+     * @return list<array{id:string, date_start:string, date_end:string, reason:string}>
+     */
+    public function getBlackoutRanges(string $listingId): array
+    {
+        return PropertyAvailability::on('property_read')
+            ->where('listing_id', $listingId)
+            ->whereIn('reason', ['blocked', 'maintenance'])
+            ->orderBy('date_start')
+            ->get(['id', 'date_start', 'date_end', 'reason'])
+            ->map(fn (PropertyAvailability $r) => [
+                'id'         => $r->id,
+                'date_start' => $r->date_start->toDateString(),
+                'date_end'   => $r->date_end->toDateString(),
+                'reason'     => $r->reason,
+            ])
+            ->all();
+    }
+
+    /**
+     * Booked ranges (lease-reserved dates, with the agreed cost snapshot) for a
+     * listing — read-only on the landowner calendar; these are created/freed by
+     * lease activation, never edited by hand. Read replica.
+     *
+     * @return list<array{date_start:string, date_end:string, cost:?float, hunter_count:?int, lease_id:?string}>
+     */
+    public function getBookedRanges(string $listingId): array
+    {
+        return PropertyAvailability::on('property_read')
+            ->where('listing_id', $listingId)
+            ->where('reason', 'booked')
+            ->orderBy('date_start')
+            ->get(['date_start', 'date_end', 'cost', 'hunter_count', 'lease_id'])
+            ->map(fn (PropertyAvailability $r) => [
+                'date_start'   => $r->date_start->toDateString(),
+                'date_end'     => $r->date_end->toDateString(),
+                'cost'         => $r->cost !== null ? (float) $r->cost : null,
+                'hunter_count' => $r->hunter_count,
+                'lease_id'     => $r->lease_id,
+            ])
+            ->all();
+    }
+
+    /**
+     * Full-replace a listing's blackout (blocked/maintenance) ranges. Booked rows
+     * are never touched — they come from leases. Throws a friendly RuntimeException
+     * when a range overlaps another range or an existing booking (EXCLUDE guard).
+     *
+     * @param  list<array{date_start:string, date_end:string, reason?:string}>  $ranges
+     */
+    public function replaceBlackouts(string $listingId, array $ranges, ?string $userId = null): void
+    {
+        try {
+            DB::connection('property')->transaction(function () use ($listingId, $ranges, $userId) {
+                PropertyAvailability::on('property')
+                    ->where('listing_id', $listingId)
+                    ->whereIn('reason', ['blocked', 'maintenance'])
+                    ->delete();
+
+                foreach ($ranges as $r) {
+                    $reason = ($r['reason'] ?? 'blocked');
+                    PropertyAvailability::on('property')->create([
+                        'listing_id'         => $listingId,
+                        'date_start'         => $r['date_start'],
+                        'date_end'           => $r['date_end'],
+                        'reason'             => in_array($reason, ['blocked', 'maintenance'], true) ? $reason : 'blocked',
+                        'created_by_user_id' => $userId,
+                    ]);
+                }
+            });
+        } catch (QueryException $e) {
+            if ($this->isOverlapViolation($e)) {
+                throw new \RuntimeException(
+                    'Those dates overlap an existing booking or another blackout. Adjust the ranges so none overlap.'
+                );
+            }
+            throw $e;
+        }
+
+        $listing = PropertyListing::on('property')->find($listingId);
+        $this->invalidate("listing:{$listingId}", "property:{$listing?->property_id}");
+    }
+
+    /** Postgres exclusion-constraint (overlap) violation — SQLSTATE 23P01. */
+    private function isOverlapViolation(QueryException $e): bool
+    {
+        return (string) ($e->errorInfo[0] ?? '') === '23P01'
+            || str_contains($e->getMessage(), 'excl_property_availability_no_overlap');
+    }
+
+    /**
+     * Month-by-month availability grid for a day-hunt listing's season, for the
+     * admin and landowner calendar. Each in-season day is marked available /
+     * booked / blocked / maintenance; cells outside the month or season are
+     * padding. Read replica.
+     *
+     * @return array{
+     *   season_start: ?string,
+     *   season_end: ?string,
+     *   months: list<array{label:string, weeks:list<list<array{day:?int, status:string, title:?string}>>}>,
+     *   totals: array{available:int, booked:int, blocked:int, maintenance:int},
+     * }
+     */
+    public function getAvailabilityCalendar(string $listingId): array
+    {
+        $empty = ['season_start' => null, 'season_end' => null, 'months' => [], 'totals' => ['available' => 0, 'booked' => 0, 'blocked' => 0, 'maintenance' => 0]];
+
+        $listing = PropertyListing::on('property_read')->find($listingId);
+        if (! $listing || ! $listing->season_start || ! $listing->season_end) {
+            return $empty;
+        }
+
+        $start = Carbon::parse($listing->season_start)->startOfDay();
+        $end   = Carbon::parse($listing->season_end)->startOfDay();
+        if ($end->lt($start)) {
+            return $empty;
+        }
+
+        // Seed every in-season day as available, then overlay each range.
+        $status = [];
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            $status[$d->toDateString()] = 'available';
+        }
+
+        foreach (PropertyAvailability::on('property_read')->where('listing_id', $listingId)->get() as $r) {
+            $rs = Carbon::parse($r->date_start)->startOfDay();
+            $re = Carbon::parse($r->date_end)->startOfDay();
+            for ($d = $rs->copy(); $d->lte($re); $d->addDay()) {
+                $key = $d->toDateString();
+                if (array_key_exists($key, $status)) {
+                    $status[$key] = $r->reason; // booked | blocked | maintenance
+                }
+            }
+        }
+
+        $totals = ['available' => 0, 'booked' => 0, 'blocked' => 0, 'maintenance' => 0];
+        foreach ($status as $s) {
+            match ($s) {
+                'available'   => $totals['available']++,
+                'booked'      => $totals['booked']++,
+                'maintenance' => $totals['maintenance']++,
+                default       => $totals['blocked']++,
+            };
+        }
+
+        $months  = [];
+        $cursor  = $start->copy()->startOfMonth();
+        $lastMon = $end->copy()->startOfMonth();
+
+        while ($cursor->lte($lastMon)) {
+            $cells   = [];
+            $firstD  = (int) $cursor->copy()->startOfMonth()->dayOfWeek; // 0 = Sun
+            $inMonth = $cursor->daysInMonth;
+
+            for ($i = 0; $i < $firstD; $i++) {
+                $cells[] = ['day' => null, 'status' => 'pad', 'title' => null];
+            }
+            for ($day = 1; $day <= $inMonth; $day++) {
+                $date = $cursor->copy()->day($day)->toDateString();
+                $s    = $status[$date] ?? 'out';
+                $cells[] = ['day' => $day, 'status' => $s, 'title' => ucfirst($s) . ' — ' . $date];
+            }
+            while (count($cells) % 7 !== 0) {
+                $cells[] = ['day' => null, 'status' => 'pad', 'title' => null];
+            }
+
+            $months[] = ['label' => $cursor->format('F Y'), 'weeks' => array_chunk($cells, 7)];
+            $cursor->addMonth();
+        }
+
+        return [
+            'season_start' => $start->format('M j, Y'),
+            'season_end'   => $end->format('M j, Y'),
+            'months'       => $months,
+            'totals'       => $totals,
+        ];
     }
 
     /**

@@ -28,6 +28,7 @@ class ServiceLayerServiceProvider extends ServiceProvider
         // Platform services
         $this->app->singleton(\App\Services\Platform\FeatureFlagService::class);
         $this->app->singleton(\App\Services\Platform\EntitlementService::class);
+        $this->app->singleton(\App\Services\Platform\PlanService::class);
         $this->app->singleton(\App\Services\Platform\TenantService::class);
 
         // Property services
