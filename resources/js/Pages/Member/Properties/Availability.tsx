@@ -156,9 +156,9 @@ function BlackoutEditor({ property, listing, blackouts }: { property: { id: stri
               <option value="maintenance">Maintenance</option>
             </select>
           </div>
-          <button type="button" onClick={() => removeRow(i)} style={{ ...btn('danger'), padding: '9px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <button type="button" onClick={() => removeRow(i)} style={{ ...btn('danger'), background: ACCENT, color: '#F4ECDC', border: 'none', padding: '9px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <TrashIcon style={{ width: 14, height: 14 }} />
-            Remove
+            Delete
           </button>
         </div>
       ))}
