@@ -167,6 +167,8 @@ Crimson Pro 300 + 400 (+ italics).
 | Page header (`fi-header-heading`) | Fraunces | (Filament default ~1.875rem) | 500 | — | — | `#0a1512` |
 | Section card title (`fi-section-header-heading`) | JetBrains Mono | 13px | 400 | 0.15em | uppercase | `rgba(10,21,18,.7)` |
 | Section description | JetBrains Mono | 9px | — | 0.08em | — | `rgba(10,21,18,.4)` |
+| Table header heading (`fi-ta-header-heading`, e.g. relation managers) | JetBrains Mono | 13px | 400 | 0.15em | uppercase | `rgba(10,21,18,.7)` |
+| Table header description (`fi-ta-header-description`) | JetBrains Mono | 9px | — | 0.08em | — | `rgba(10,21,18,.4)` |
 | Field label (`fi-fo-field-label-content`) | JetBrains Mono | 13px | 400 | 0.12em | uppercase | `rgba(10,21,18,.7)` |
 | **Modal** field label | JetBrains Mono | 10px | — | 0.12em | uppercase | `rgba(10,21,18,.5)` |
 | Helper / hint text | JetBrains Mono | 10px | — | 0.05em | — | `rgba(10,21,18,.4)` |
