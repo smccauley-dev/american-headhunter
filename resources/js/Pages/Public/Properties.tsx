@@ -13,6 +13,7 @@ interface Listing {
     price_per_hunter: string | null
     price_total: string | null
     max_hunters: number | null
+    is_featured: boolean
     property: {
         id: string
         title: string
@@ -456,12 +457,24 @@ function ListingCard({ listing, authenticated }: { listing: Listing; authenticat
                                 </Link>
                             </>
                         ) : (
-                            <Link
-                                href="/get-started"
-                                style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--blaze)' }}
-                            >
-                                Join Now →
-                            </Link>
+                            <>
+                                {/* Featured (advertising) listings stay fully viewable to guests;
+                                    all other detail pages are gated behind sign-up. */}
+                                {listing.is_featured && (
+                                    <Link
+                                        href={`/properties/${listing.property.slug}`}
+                                        style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink)', textDecoration: 'none', padding: '8px 12px', border: '1px solid var(--parch-dim)' }}
+                                    >
+                                        Details
+                                    </Link>
+                                )}
+                                <Link
+                                    href="/get-started"
+                                    style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--blaze)' }}
+                                >
+                                    Join Now →
+                                </Link>
+                            </>
                         )}
                     </div>
                 </div>

@@ -53,6 +53,7 @@ class PropertyController extends Controller
             'price_per_hunter' => $listing->price_per_hunter,
             'price_total'      => $listing->price_total,
             'max_hunters'      => $listing->max_hunters,
+            'is_featured'      => (bool) $listing->is_featured,
             'property' => [
                 'id'             => $listing->property->id,
                 'title'          => $listing->property->title,
@@ -71,7 +72,7 @@ class PropertyController extends Controller
         ]);
     }
 
-    public function show(string $slug): Response
+    public function show(string $slug): Response|\Illuminate\Http\RedirectResponse
     {
         $property = $this->propertyService->findBySlug($slug);
 
@@ -80,6 +81,13 @@ class PropertyController extends Controller
         }
 
         $property->load(['activeListings', 'photos', 'species', 'rules']);
+
+        // Detail pages are gated. Guests may only view properties carrying a
+        // featured (advertising) listing — everything else is sign-up-only, so
+        // the card hides the Details link and the URL itself is protected here.
+        if (! auth()->check() && ! $property->activeListings->contains(fn ($l) => $l->is_featured)) {
+            return redirect('/get-started');
+        }
 
         // Base boundary image only — marker overlays are never exposed publicly
         $boundaryMap = app(PropertyMapService::class)->getBoundaryImage($property->id);
