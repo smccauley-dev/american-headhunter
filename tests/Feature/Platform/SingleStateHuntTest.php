@@ -100,10 +100,7 @@ class SingleStateHuntTest extends TestCase
 
         $user = User::on('identity')->find($this->userId);
 
-        $service = Mockery::mock(EntitlementService::class)->makePartial();
-        $service->shouldReceive('can')
-            ->with(Mockery::type(User::class), Entitlements::SINGLE_STATE_HUNT)
-            ->andReturn(true);
+        $service = $this->serviceWithEntitlements([Entitlements::SINGLE_STATE_HUNT]);
 
         $this->assertSame('TX', $service->restrictedHuntState($user));
         $this->assertTrue($service->canHuntInState($user, 'tx'), 'case-insensitive match to allowed state');
@@ -119,12 +116,43 @@ class SingleStateHuntTest extends TestCase
 
         $user = User::on('identity')->find($this->userId);
 
-        $service = Mockery::mock(EntitlementService::class)->makePartial();
-        $service->shouldReceive('can')
-            ->with(Mockery::type(User::class), Entitlements::SINGLE_STATE_HUNT)
-            ->andReturn(false);
+        $service = $this->serviceWithEntitlements([]);
 
         $this->assertNull($service->restrictedHuntState($user));
         $this->assertTrue($service->canHuntInState($user, 'OK'));
+    }
+
+    public function test_multi_state_hunt_overrides_single_state_restriction(): void
+    {
+        DB::connection('identity')->table('user_profiles')->insert([
+            'user_id'    => $this->userId,
+            'state_code' => 'TX',
+        ]);
+
+        $user = User::on('identity')->find($this->userId);
+
+        // A membership that grants BOTH: multi_state_hunt must win.
+        $service = $this->serviceWithEntitlements([
+            Entitlements::SINGLE_STATE_HUNT,
+            Entitlements::MULTI_STATE_HUNT,
+        ]);
+
+        $this->assertNull($service->restrictedHuntState($user), 'multi_state_hunt lifts the single-state lock');
+        $this->assertTrue($service->canHuntInState($user, 'OK'), 'may hunt out of the original state');
+    }
+
+    /**
+     * A partial EntitlementService whose can() reports only the given keys enabled,
+     * so restrictedHuntState() can be exercised without seeding plans/subscriptions.
+     *
+     * @param  string[]  $enabledKeys
+     */
+    private function serviceWithEntitlements(array $enabledKeys): EntitlementService
+    {
+        $service = Mockery::mock(EntitlementService::class)->makePartial();
+        $service->shouldReceive('can')
+            ->andReturnUsing(fn (User $u, string $key): bool => in_array($key, $enabledKeys, true));
+
+        return $service;
     }
 }

@@ -55,9 +55,16 @@ class EntitlementService extends BaseService
      * first state ever recorded, which never changes even if they later edit their
      * home state. Returns null when the entitlement is off, or when no original
      * state has been recorded yet (cannot restrict to an unknown state).
+     *
+     * The multi_state_hunt entitlement always wins: a membership that includes it
+     * lets the hunter hunt any state, overriding single_state_hunt entirely.
      */
     public function restrictedHuntState(User $user): ?string
     {
+        if ($this->can($user, Entitlements::MULTI_STATE_HUNT)) {
+            return null;
+        }
+
         if (! $this->can($user, Entitlements::SINGLE_STATE_HUNT)) {
             return null;
         }
