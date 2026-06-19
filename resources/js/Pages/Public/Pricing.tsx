@@ -199,7 +199,7 @@ export default function Pricing({ groups }: Props) {
                             </p>
                         </div>
                     ) : (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24, alignItems: 'start' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24, alignItems: 'stretch' }}>
                             {plans.map(plan => (
                                 <PlanCard
                                     key={plan.id}
@@ -227,7 +227,7 @@ function PlanCard({ plan, cycle, authenticated }: { plan: Plan; cycle: Cycle; au
         <div style={{
             background: 'var(--bone)',
             border: plan.is_featured ? `2px solid ${accent}` : '1px solid var(--parch-dim)',
-            display: 'flex', flexDirection: 'column',
+            display: 'flex', flexDirection: 'column', height: '100%',
             boxShadow: plan.is_featured ? '0 8px 24px rgba(10,21,18,0.12)' : 'none',
         }}>
 
