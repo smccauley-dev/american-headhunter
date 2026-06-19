@@ -172,6 +172,7 @@ export default function Properties({ listings, filters }: Props) {
                             <li><a href="/properties" style={{ color: 'var(--blaze)' }}>Find Land</a></li>
                             <li><a href="/auctions">Auctions</a></li>
                             <li><a href="/outfitters">Outfitters</a></li>
+                            <li><a href="/pricing">Pricing</a></li>
                         </ul>
                         <div className="nav-actions">
                             {auth?.authenticated

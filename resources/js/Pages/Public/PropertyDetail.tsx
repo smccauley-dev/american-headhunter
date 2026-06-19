@@ -167,6 +167,7 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                         <li><a href="/properties">Find Land</a></li>
                         <li><a href="/auctions">Auctions</a></li>
                         <li><a href="/outfitters">Outfitters</a></li>
+                        <li><a href="/pricing">Pricing</a></li>
                     </ul>
                     <div className="nav-actions">
                         <Link href="/login" className="nav-link-text">Sign In</Link>

@@ -32,6 +32,10 @@ class MembershipPlan extends BaseModelWithSoftDeletes
         'admin_notes',
         'launched_at',
         'deprecated_at',
+        'header_image_path',
+        'accent_color',
+        'badge_label',
+        'is_featured',
     ];
 
     protected function casts(): array
@@ -46,6 +50,7 @@ class MembershipPlan extends BaseModelWithSoftDeletes
             'is_public'           => 'boolean',
             'is_active'           => 'boolean',
             'is_default_free'     => 'boolean',
+            'is_featured'         => 'boolean',
             'sort_order'          => 'integer',
             'launched_at'         => 'datetime',
             'deprecated_at'       => 'datetime',

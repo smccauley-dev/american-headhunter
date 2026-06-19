@@ -19,6 +19,7 @@ use App\Http\Controllers\Member\PropertyContactController as MemberPropertyConta
 use App\Http\Controllers\Api\MentionController;
 use App\Http\Controllers\Member\SecurityController;
 use App\Http\Controllers\Public\HunterPublicProfileController;
+use App\Http\Controllers\Public\PricingController;
 use App\Http\Controllers\Public\PropertyController;
 use Illuminate\Support\Facades\Route;
 
@@ -26,6 +27,8 @@ Route::get('/', HomeController::class)->name('home');
 
 Route::get('/properties', [PropertyController::class, 'index'])->name('property.index');
 Route::get('/properties/{slug}', [PropertyController::class, 'show'])->name('property.show');
+
+Route::get('/pricing', [PricingController::class, 'index'])->name('pricing.index');
 
 Route::get('/hunters/{username}', [HunterPublicProfileController::class, 'show'])->name('hunter.public');
 

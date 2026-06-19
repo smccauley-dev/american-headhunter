@@ -8,15 +8,20 @@ use App\Filament\Admin\Resources\MembershipPlans\Pages\ListMembershipPlans;
 use App\Filament\Admin\Resources\MembershipPlans\RelationManagers\EntitlementsRelationManager;
 use App\Filament\Admin\Resources\MembershipPlans\RelationManagers\VersionsRelationManager;
 use App\Models\Platform\MembershipPlan;
+use App\Services\Platform\PlanService;
 use App\Support\AdminAuth;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\ColorPicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -69,11 +74,13 @@ class MembershipPlanResource extends Resource
         return AdminAuth::canManagePricing();
     }
 
-    // Plans are referenced by immutable versions and live subscriptions —
-    // deprecate via the Active toggle instead of deleting.
+    // Deletion is a guarded soft-delete: pricing managers may delete, but the
+    // DeleteAction refuses (with a notification) while the plan has live
+    // subscribers. Plans are never hard-deleted — versions and subscription
+    // history keep referencing them.
     public static function canDelete(Model $record): bool
     {
-        return false;
+        return AdminAuth::canManagePricing();
     }
 
     public static function canDeleteAny(): bool
@@ -167,6 +174,33 @@ class MembershipPlanResource extends Resource
                         ->maxLength(100),
                 ]),
 
+            Section::make('Pricing Card')
+                ->description('Controls how this plan is presented on the public pricing page — a header image, an accent color, an optional badge, and whether it is highlighted.')
+                ->columns(2)
+                ->schema([
+                    FileUpload::make('header_image_path')
+                        ->label('Header Image')
+                        ->disk('public')
+                        ->directory('pricing-cards')
+                        ->image()
+                        ->imagePreviewHeight('120')
+                        ->maxSize(2048)
+                        ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                        ->helperText('JPG, PNG or WebP · Max 2 MB · Used as the card banner')
+                        ->visibility('public')
+                        ->columnSpanFull(),
+                    ColorPicker::make('accent_color')
+                        ->label('Accent Color')
+                        ->helperText('Hex color for the card accent. Leave blank to use the blaze default.'),
+                    TextInput::make('badge_label')
+                        ->label('Badge Label')
+                        ->maxLength(40)
+                        ->helperText('Short ribbon text, e.g. "Most Popular". Leave blank for none.'),
+                    Toggle::make('is_featured')
+                        ->label('Featured')
+                        ->helperText('Visually highlight this plan on the pricing page.'),
+                ]),
+
             Section::make('Visibility')
                 ->columns(2)
                 ->schema([
@@ -230,6 +264,28 @@ class MembershipPlanResource extends Resource
             ->filters([])
             ->recordActions([
                 EditAction::make(),
+                DeleteAction::make()
+                    ->requiresConfirmation()
+                    ->modalHeading('Delete Membership Plan')
+                    ->modalDescription('Hides the plan from new signups and the public pricing page. Existing subscribers and version history are unaffected. Refused while the plan has active subscribers.')
+                    ->action(function (MembershipPlan $record): void {
+                        $deleted = app(PlanService::class)->softDeletePlan($record, auth()->id());
+
+                        if (! $deleted) {
+                            Notification::make()
+                                ->title('Cannot delete — plan has active subscribers')
+                                ->body('Turn off the Active toggle to retire it instead.')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->title('Plan deleted')
+                            ->success()
+                            ->send();
+                    }),
             ])
             ->toolbarActions([
                 CreateAction::make()

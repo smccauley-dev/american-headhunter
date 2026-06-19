@@ -19,7 +19,11 @@ use Illuminate\Support\ServiceProvider;
  *                                       with no per-user context)
  *
  * Registered after DatabaseServiceProvider so encryption keys are already in
- * config. No DB::purge is needed: connections are not opened this early in boot.
+ * config. The swap purges every app writer connection: the migrate command
+ * resolves the target connection during console bootstrap (before this provider
+ * boots) using the config default (ah_runtime), so without a purge the owner
+ * swap would land in config but the already-open PDO would keep running DDL as a
+ * non-owner — which RLS-owned tables reject ("must be owner of table ...").
  */
 class RuntimeDatabaseRoleProvider extends ServiceProvider
 {
@@ -30,16 +34,16 @@ class RuntimeDatabaseRoleProvider extends ServiceProvider
         }
 
         if ($this->app->environment('testing')) {
-            ConnectionRole::useOwner();
+            ConnectionRole::useOwner(true);
             return;
         }
 
         if ($this->isSchemaCommand($_SERVER['argv'][1] ?? '')) {
-            ConnectionRole::useOwner();
+            ConnectionRole::useOwner(true);
             return;
         }
 
-        ConnectionRole::useSystem();
+        ConnectionRole::useSystem(true);
     }
 
     private function isSchemaCommand(string $command): bool

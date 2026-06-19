@@ -55,6 +55,7 @@ class NavigationSettings extends Page implements HasForms
         ['label' => 'Find Land',    'href' => '/properties',  'enabled' => true],
         ['label' => 'Auctions',     'href' => '/auctions',     'enabled' => true],
         ['label' => 'Outfitters',   'href' => '/outfitters',   'enabled' => true],
+        ['label' => 'Pricing',      'href' => '/pricing',      'enabled' => true],
         ['label' => 'How It Works', 'href' => '/how-it-works', 'enabled' => true],
     ];
 
