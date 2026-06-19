@@ -1198,6 +1198,9 @@ Phases 1, 2, 3, 3.9, 3.10, 4.1–4.6 complete; Phase 5.6 (Admin Billing — Fila
 - SEC-024: Configure `TrustProxies` middleware before relying on IP allowlist in production
 - SEC-025: Audit role changes on admin user save (pivot table sync not currently logged)
 - Phase 4.9 profile templates: Outfitter, Landowner, Consultant, Seller, Advertiser, Corporate (Hunter template partially built)
+- **Background-check entitlement → lease-application workflow:** Background checks are a *landowner* capability, not a hunter perk. Remove `background_checks_per_year` from the hunter plans. The landowner's `background_check_credits_per_year` entitlement should let a landowner **require (or not require) a background check on an application**, which inserts a new step into the lease-application workflow: when required, the applicant must clear a background check (consuming a landowner credit) before the application can advance to approval/e-signature. Needs: a `require_background_check` flag on the listing/application, the gated workflow step, credit decrement, and status surfacing in both the customer and admin portals.
+- **Entitlement dependency/implication map:** some entitlements should auto-grant others (e.g. club `shared_trail_cams` implies `trail_camera_integration`). Decide on a dependency model so granting the superset entitlement resolves the dependent one without seeding both on every plan.
+- **Outfitter / Consultant / Seller entitlements:** `outfitter_standard`, `consultant_standard`, and `seller_standard` plans exist and are public but have **0 entitlements defined** — no feature catalog has been designed for these three account types yet.
 
 ---
 
