@@ -111,6 +111,8 @@ interface ApplyIndexProps {
     primaryHunter: HunterData;
     savedGuests: SavedGuest[];
     certificationDoc: CertificationDoc | null;
+    canApply: boolean;
+    restrictedState: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -768,7 +770,7 @@ function StepIndicator({ step }: { step: 1 | 2 }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function ApplyIndex({ listing, property, unavailableRanges, primaryHunter, savedGuests, certificationDoc }: ApplyIndexProps) {
+export default function ApplyIndex({ listing, property, unavailableRanges, primaryHunter, savedGuests, certificationDoc, canApply, restrictedState }: ApplyIndexProps) {
     const [step, setStep] = useState<1 | 2>(1);
     const [expandedIndex, setExpandedIndex] = useState<number>(0);
     const [showGuestPicker, setShowGuestPicker] = useState(false);
@@ -1021,6 +1023,24 @@ export default function ApplyIndex({ listing, property, unavailableRanges, prima
             <div style={{ maxWidth: 1200, margin: '0 auto', padding: '64px 40px 80px', display: 'grid', gridTemplateColumns: '1fr 340px', gap: 72, alignItems: 'start' }}>
 
                 <form onSubmit={handleSubmit}>
+                    {!canApply && (
+                        <div style={{
+                            border: '1px solid var(--blaze)',
+                            background: 'rgba(193,75,42,0.06)',
+                            padding: '20px 24px',
+                            marginBottom: 32,
+                        }}>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--blaze)', marginBottom: 8 }}>
+                                Outside your hunting region
+                            </div>
+                            <p style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--ink)', margin: '0 0 14px', lineHeight: 1.5 }}>
+                                Your membership covers hunting in {restrictedState ?? 'your home state'} only, so you can&rsquo;t apply to this {property.state_code} listing. Upgrade to a multi-state plan to hunt anywhere.
+                            </p>
+                            <Link href="/pricing" className="btn-solid" style={{ display: 'inline-block', fontSize: 12 }}>
+                                View memberships →
+                            </Link>
+                        </div>
+                    )}
                     <StepIndicator step={step} />
 
                     {/* ── STEP 1: Application Details ─────────────────── */}
@@ -1273,9 +1293,9 @@ export default function ApplyIndex({ listing, property, unavailableRanges, prima
                             <div style={{ display: 'flex', gap: 16, alignItems: 'center', borderTop: '1px solid #e0dbd2', paddingTop: 32 }}>
                                 <button
                                     type="submit"
-                                    disabled={processing || !data.certification_accepted || blockedPastSeason}
+                                    disabled={processing || !data.certification_accepted || blockedPastSeason || !canApply}
                                     className="btn-solid"
-                                    style={{ opacity: (processing || !data.certification_accepted || blockedPastSeason) ? 0.5 : 1, cursor: (processing || !data.certification_accepted || blockedPastSeason) ? 'not-allowed' : 'pointer' }}
+                                    style={{ opacity: (processing || !data.certification_accepted || blockedPastSeason || !canApply) ? 0.5 : 1, cursor: (processing || !data.certification_accepted || blockedPastSeason || !canApply) ? 'not-allowed' : 'pointer' }}
                                 >
                                     {processing ? 'Submitting…' : 'Submit Application →'}
                                 </button>
