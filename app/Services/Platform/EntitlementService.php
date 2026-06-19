@@ -9,6 +9,7 @@ use App\Models\Platform\FeatureEntitlement;
 use App\Models\Platform\MembershipPlan;
 use App\Models\Platform\PlanVersion;
 use App\Services\BaseService;
+use App\Support\Entitlements;
 
 class EntitlementService extends BaseService
 {
@@ -189,7 +190,7 @@ class EntitlementService extends BaseService
             };
         }
 
-        return ['enabled_keys' => $enabledKeys, 'limits' => $limits, 'values' => $values];
+        return ['enabled_keys' => $this->expandImplied($enabledKeys), 'limits' => $limits, 'values' => $values];
     }
 
     private function parseEntitlements(\Illuminate\Database\Eloquent\Collection $entitlements): array
@@ -208,7 +209,38 @@ class EntitlementService extends BaseService
             };
         }
 
-        return ['enabled_keys' => $enabledKeys, 'limits' => $limits, 'values' => $values];
+        return ['enabled_keys' => $this->expandImplied($enabledKeys), 'limits' => $limits, 'values' => $values];
+    }
+
+    /**
+     * Expand a set of enabled feature keys with their transitive implications
+     * (see Entitlements::IMPLIES). Granting a superset key (e.g. shared_trail_cams)
+     * yields the keys it implies (trail_camera_integration) without both being
+     * seeded on the plan. Order-independent; returns a de-duplicated list.
+     *
+     * @param  string[]  $enabledKeys
+     * @return string[]
+     */
+    private function expandImplied(array $enabledKeys): array
+    {
+        $resolved = [];
+        $stack    = $enabledKeys;
+
+        while ($stack !== []) {
+            $key = array_pop($stack);
+            if (isset($resolved[$key])) {
+                continue;
+            }
+            $resolved[$key] = true;
+
+            foreach (Entitlements::IMPLIES[$key] ?? [] as $implied) {
+                if (! isset($resolved[$implied])) {
+                    $stack[] = $implied;
+                }
+            }
+        }
+
+        return array_keys($resolved);
     }
 
     private function defaultPlanKey(string $accountType): string

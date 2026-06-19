@@ -32,7 +32,7 @@ These are the **launch defaults**. All values below can be changed in the admin 
 |---|---|---|---|
 | **Scout** (Free) | $0 | $0 | Free forever — browse and limited applications |
 | **Sportsman** | $9 | $89 | Primary paid tier |
-| **Outfitter** | $19 | $189 | Premium hunter tier |
+| **Pro** | $19 | $189 | Premium hunter tier |
 | **Veteran** | $0 | $0 | Free via ID.me verification |
 
 ### Landowner Tiers
@@ -64,7 +64,7 @@ These are the **launch defaults**. All values below can be changed in the admin 
 
 ### Hunter Tier Features
 
-| Feature | Scout (Free) | Sportsman | Outfitter | Veteran |
+| Feature | Scout (Free) | Sportsman | Pro | Veteran |
 |---|:-:|:-:|:-:|:-:|
 | Browse all listings | ✓ | ✓ | ✓ | ✓ |
 | Saved searches | 3 | Unlimited | Unlimited | Unlimited |
@@ -282,7 +282,7 @@ The pricing page at `americanheadhunter.com/pricing` **reads from DB 12** at ren
 │   ════════                                        │
 │                                                   │
 │   ┌───────────┐  ┌───────────┐  ┌───────────┐   │
-│   │  SCOUT    │  │SPORTSMAN  │  │ OUTFITTER │   │
+│   │  SCOUT    │  │SPORTSMAN  │  │    PRO    │   │
 │   │    FREE   │  │  $9/mo    │  │ $19/mo    │   │
 │   │           │  │  $89/yr   │  │ $189/yr   │   │
 │   │           │  │           │  │           │   │

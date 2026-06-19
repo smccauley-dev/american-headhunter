@@ -44,5 +44,19 @@ final class Entitlements
     const SHARED_TRAIL_CAMS    = 'shared_trail_cams';
     const GUEST_PASS_TIER      = 'guest_pass_tier';
 
+    /**
+     * Entitlement implications: granting a key automatically grants the keys it
+     * maps to, without seeding both on every plan. Resolution is transitive
+     * (A => B and B => C means A grants both B and C) and applies only to
+     * boolean "enabled" features. Extend this map as cross-feature dependencies
+     * emerge; keys on either side should be constants defined above.
+     *
+     * @var array<string, string[]>
+     */
+    const IMPLIES = [
+        // A club with shared trail cameras necessarily has trail-camera integration.
+        self::SHARED_TRAIL_CAMS => [self::TRAIL_CAMERA_INTEGRATION],
+    ];
+
     private function __construct() {}
 }
