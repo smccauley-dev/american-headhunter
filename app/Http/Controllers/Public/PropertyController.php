@@ -82,10 +82,9 @@ class PropertyController extends Controller
 
         $property->load(['activeListings', 'photos', 'species', 'rules']);
 
-        // Detail pages are gated. Guests may only view properties carrying a
-        // featured (advertising) listing — everything else is sign-up-only, so
-        // the card hides the Details link and the URL itself is protected here.
-        if (! auth()->check() && ! $property->activeListings->contains(fn ($l) => $l->is_featured)) {
+        // Property detail pages are members-only. Guests are redirected to
+        // sign-up — no exceptions, including featured/advertising listings.
+        if (! auth()->check()) {
             return redirect('/get-started');
         }
 
