@@ -81,7 +81,7 @@ class PromoCodeResource extends Resource
                     ->label('Code')
                     ->required()
                     ->maxLength(50)
-                    ->fontFamily('mono')
+                    ->extraInputAttributes(['class' => 'font-mono'])
                     // Uppercase on blur so the case-insensitive uniqueness rule
                     // and the LOWER(code) unique index agree on the value.
                     ->live(onBlur: true)

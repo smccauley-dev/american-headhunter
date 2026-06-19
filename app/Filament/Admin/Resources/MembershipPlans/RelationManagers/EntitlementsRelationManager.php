@@ -46,7 +46,7 @@ class EntitlementsRelationManager extends RelationManager
                 ->label('Feature Key')
                 ->required()
                 ->maxLength(100)
-                ->fontFamily('mono')
+                ->extraInputAttributes(['class' => 'font-mono'])
                 ->helperText('Matches the key checked via EntitlementService, e.g. trail_camera_integration.'),
             Select::make('feature_type')
                 ->label('Type')

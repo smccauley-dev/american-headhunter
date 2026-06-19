@@ -92,7 +92,7 @@ class MembershipPlanResource extends Resource
                         ->label('Plan Key')
                         ->required()
                         ->maxLength(64)
-                        ->fontFamily('mono')
+                        ->extraInputAttributes(['class' => 'font-mono'])
                         ->disabled(fn (string $operation): bool => $operation === 'edit')
                         ->dehydrated(fn (string $operation): bool => $operation === 'create')
                         ->helperText('Lowercase, e.g. hunter_scout. Permanent once created.'),
@@ -155,15 +155,15 @@ class MembershipPlanResource extends Resource
                 ->schema([
                     TextInput::make('stripe_product_id')
                         ->label('Product ID')
-                        ->fontFamily('mono')
+                        ->extraInputAttributes(['class' => 'font-mono'])
                         ->maxLength(100),
                     TextInput::make('stripe_monthly_price_id')
                         ->label('Monthly Price ID')
-                        ->fontFamily('mono')
+                        ->extraInputAttributes(['class' => 'font-mono'])
                         ->maxLength(100),
                     TextInput::make('stripe_annual_price_id')
                         ->label('Annual Price ID')
-                        ->fontFamily('mono')
+                        ->extraInputAttributes(['class' => 'font-mono'])
                         ->maxLength(100),
                 ]),
 
