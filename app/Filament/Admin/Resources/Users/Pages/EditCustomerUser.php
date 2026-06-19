@@ -69,6 +69,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Identity ──────────────────────────────────────────────
                     Tab::make('Identity')
+                        ->icon('heroicon-o-identification')
                         ->schema([
                             Section::make('Account')
                                 ->columns(2)
@@ -120,6 +121,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Roles ─────────────────────────────────────────────────
                     Tab::make('Roles')
+                        ->icon('heroicon-o-key')
                         ->schema([
                             Section::make('Platform Roles')
                                 ->schema([
@@ -140,6 +142,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Contact ───────────────────────────────────────────────
                     Tab::make('Contact')
+                        ->icon('heroicon-o-phone')
                         ->schema([
                             Section::make('Primary Contact')
                                 ->columns(2)
@@ -207,6 +210,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Profile ───────────────────────────────────────────────
                     Tab::make('Profile')
+                        ->icon('heroicon-o-user-circle')
                         ->schema([
                             Section::make('Profile Details')
                                 ->columns(2)
@@ -322,6 +326,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Security ──────────────────────────────────────────────
                     Tab::make('Security')
+                        ->icon('heroicon-o-lock-closed')
                         ->schema([
                             Section::make('Public Profile')
                                 ->columns(2)
@@ -445,6 +450,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Compliance ────────────────────────────────────────────
                     Tab::make('Compliance')
+                        ->icon('heroicon-o-shield-check')
                         ->schema([
                             Section::make('Trust Score')
                                 ->schema([
@@ -536,6 +542,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Admin Notes ───────────────────────────────────────────
                     Tab::make('Admin Notes')
+                        ->icon('heroicon-o-pencil-square')
                         ->schema([
                             Section::make('Staff Notes')
                                 ->schema([
@@ -562,6 +569,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Audit Log ─────────────────────────────────────────────
                     Tab::make('Audit Log')
+                        ->icon('heroicon-o-clock')
                         ->schema([
                             Section::make('Audit Log')
                                 ->schema([
@@ -590,6 +598,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Properties & Leases ───────────────────────────────────
                     Tab::make('Properties & Leases')
+                        ->icon('heroicon-o-home-modern')
                         ->schema([
                             Section::make('Properties Owned')
                                 ->schema([
