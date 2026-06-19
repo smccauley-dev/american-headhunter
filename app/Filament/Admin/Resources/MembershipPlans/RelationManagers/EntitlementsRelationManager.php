@@ -94,7 +94,7 @@ class EntitlementsRelationManager extends RelationManager
                     ->label('Limit')
                     ->state(fn (FeatureEntitlement $record): string => $this->formatValue($record)),
                 IconColumn::make('show_on_pricing')
-                    ->label('Page Display')
+                    ->label('Pricing Page')
                     ->boolean(),
                 TextColumn::make('display_order')
                     ->label('Order')
