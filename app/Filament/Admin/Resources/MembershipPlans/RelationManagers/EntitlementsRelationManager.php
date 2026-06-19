@@ -4,6 +4,7 @@ namespace App\Filament\Admin\Resources\MembershipPlans\RelationManagers;
 
 use App\Models\Platform\FeatureEntitlement;
 use App\Services\Platform\EntitlementService;
+use App\Support\Entitlements;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
@@ -42,12 +43,18 @@ class EntitlementsRelationManager extends RelationManager
     public function form(Schema $schema): Schema
     {
         return $schema->components([
-            TextInput::make('feature_key')
-                ->label('Feature Key')
+            Select::make('feature_key')
+                ->label('Entitlement')
+                ->options(fn (?FeatureEntitlement $record): array => $this->entitlementOptions($record))
+                ->searchable()
                 ->required()
-                ->maxLength(100)
-                ->extraInputAttributes(['class' => 'font-mono'])
-                ->helperText('Matches the key checked via EntitlementService, e.g. trail_camera_integration.'),
+                ->live()
+                ->afterStateUpdated(function ($state, callable $set): void {
+                    if ($type = Entitlements::typeFor((string) $state)) {
+                        $set('feature_type', $type);
+                    }
+                })
+                ->helperText('Only entitlements the platform actually offers are listed. To add a new capability, define it in App\Support\Entitlements first, then wire its gate in code.'),
             Select::make('feature_type')
                 ->label('Type')
                 ->options(self::FEATURE_TYPES)
@@ -141,6 +148,28 @@ class EntitlementsRelationManager extends RelationManager
             $value === null  => '—',
             default          => (string) $value,
         };
+    }
+
+    /**
+     * Catalog options for the entitlement picker, hiding keys already attached to
+     * this plan (the unique (plan_id, feature_key) constraint forbids duplicates).
+     * When editing a row whose key predates the catalog, surface it so the Select
+     * isn't blank.
+     */
+    private function entitlementOptions(?FeatureEntitlement $record): array
+    {
+        $used = $this->getOwnerRecord()->entitlements()
+            ->when($record, fn ($q) => $q->whereKeyNot($record->getKey()))
+            ->pluck('feature_key')
+            ->all();
+
+        $options = Entitlements::groupedOptions($used);
+
+        if ($record && Entitlements::typeFor($record->feature_key) === null) {
+            $options['Uncatalogued'][$record->feature_key] = $record->feature_key;
+        }
+
+        return $options;
     }
 
     private function flushEntitlementCache(): void
