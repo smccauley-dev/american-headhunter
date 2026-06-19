@@ -896,9 +896,15 @@ class AdminPanelProvider extends PanelProvider
         }
 
         /* Toggle with afterContent text beside the switch — stop the switch
-           wrapper from filling the row so the caption sits right next to it. */
-        .ah-toggle-inline .fi-fo-field-content {
+           wrapper (and the caption wrapper) from filling the row so the
+           caption sits right next to the switch instead of far right. */
+        .ah-toggle-inline .fi-fo-field-content-ctn {
+            justify-content: flex-start !important;
+        }
+        .ah-toggle-inline .fi-fo-field-content-ctn > * {
+            flex: 0 0 auto !important;
             width: auto !important;
+            margin-inline: 0 !important;
         }
 
         /* File upload — match the member frontend's branded parchment FilePond skin.
