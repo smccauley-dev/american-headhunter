@@ -46,7 +46,6 @@ class EntitlementsRelationManager extends RelationManager
             Select::make('feature_key')
                 ->label('Entitlement')
                 ->options(fn (?FeatureEntitlement $record): array => $this->entitlementOptions($record))
-                ->searchable()
                 ->required()
                 ->live()
                 ->afterStateUpdated(function ($state, callable $set): void {

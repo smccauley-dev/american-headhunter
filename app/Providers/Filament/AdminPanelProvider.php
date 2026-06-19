@@ -895,60 +895,6 @@ class AdminPanelProvider extends PanelProvider
             color: #0a1512 !important;
         }
 
-        /* Searchable Select dropdown — match the native TYPE select: white body,
-           squared corners, thin border, no soft/offset shadow, no row dividers. */
-        .fi-select-input .fi-dropdown-panel,
-        .fi-select-input-options-ctn {
-            box-shadow: none !important;
-            border-radius: 0 !important;
-        }
-        .fi-select-input .fi-dropdown-panel {
-            background-color: #ffffff !important;
-            border: 1px solid #0a1512 !important;
-            overflow: hidden !important;
-        }
-        .fi-select-input-search-ctn,
-        .fi-select-input-search-ctn input {
-            background-color: #ffffff !important;
-        }
-        .fi-select-input-options-ctn > *,
-        .fi-select-input-option-group > * {
-            border-top-color: transparent !important;
-        }
-
-        /* Group headings (HUNTER / LANDOWNER / CLUB) — dark ink band, bold label */
-        .fi-select-input-option-group,
-        .fi-select-input-option-group > .fi-dropdown-header {
-            background-color: #0a1512 !important;
-            border: none !important;
-            box-shadow: none !important;
-        }
-        .fi-select-input-option-group > .fi-dropdown-header {
-            color: #c9b896 !important;
-            font-family: 'JetBrains Mono', Menlo, monospace !important;
-            font-size: 10px !important;
-            font-weight: 700 !important;
-            letter-spacing: 0.14em !important;
-            text-transform: uppercase !important;
-        }
-
-        /* Options — squared, normal weight, grey+white highlight like the native select */
-        .fi-select-input-option,
-        .fi-select-input-option .fi-select-input-option-label {
-            font-weight: 400 !important;
-            border-radius: 0 !important;
-        }
-        .fi-select-input-option:hover,
-        .fi-select-input-option[aria-selected='true'] {
-            background-color: #808080 !important;
-        }
-        .fi-select-input-option:hover,
-        .fi-select-input-option:hover .fi-select-input-option-label,
-        .fi-select-input-option[aria-selected='true'],
-        .fi-select-input-option[aria-selected='true'] .fi-select-input-option-label {
-            color: #ffffff !important;
-        }
-
         /* File upload — match the member frontend's branded parchment FilePond skin.
            Filament's own FilePond draws a white .filepond--panel-root *inside* the
            .fi-fo-file-upload-input-ctn wrapper, so styling the wrapper alone leaves
