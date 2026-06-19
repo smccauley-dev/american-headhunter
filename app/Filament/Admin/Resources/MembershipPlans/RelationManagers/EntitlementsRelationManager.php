@@ -87,6 +87,7 @@ class EntitlementsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            ->description('Entitlements define what this plan unlocks — feature switches, numeric limits, and values that gate access across the platform. Add capabilities from the catalog; each one only takes effect where its gate is wired in code.')
             ->defaultSort('display_order')
             ->columns([
                 TextColumn::make('display_label')
