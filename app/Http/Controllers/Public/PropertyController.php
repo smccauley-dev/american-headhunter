@@ -82,9 +82,10 @@ class PropertyController extends Controller
 
         $property->load(['activeListings', 'photos', 'species', 'rules']);
 
-        // Property detail pages are members-only. Guests are redirected to
-        // sign-up — no exceptions, including featured/advertising listings.
-        if (! auth()->check()) {
+        // Detail pages are members-only EXCEPT for featured (advertising)
+        // listings, which guests may view. A guest hitting a non-featured
+        // property's URL is redirected to sign-up.
+        if (! auth()->check() && ! $property->activeListings->contains(fn ($l) => $l->is_featured)) {
             return redirect('/get-started');
         }
 
