@@ -77,7 +77,8 @@ class EntitlementsRelationManager extends RelationManager
                 ->default(0),
             Toggle::make('show_on_pricing')
                 ->label('Show on Pricing Page')
-                ->extraFieldWrapperAttributes(['style' => 'margin-top: 1.9rem !important;']),
+                ->inline(false)
+                ->afterContent('Disable / Enable'),
         ]);
     }
 
