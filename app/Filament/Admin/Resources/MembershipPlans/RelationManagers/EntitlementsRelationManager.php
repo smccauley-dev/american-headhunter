@@ -96,6 +96,9 @@ class EntitlementsRelationManager extends RelationManager
                 IconColumn::make('show_on_pricing')
                     ->label('Page Display')
                     ->boolean(),
+                TextColumn::make('display_order')
+                    ->label('Order')
+                    ->alignCenter(),
             ])
             ->recordActions([
                 EditAction::make()
