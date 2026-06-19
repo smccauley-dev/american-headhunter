@@ -1065,6 +1065,7 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Check In/Out')
+                            ->icon('heroicon-o-map-pin')
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Field Check-In Log')
@@ -1079,6 +1080,7 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Managers')
+                            ->icon('heroicon-o-user-group')
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Active Managers')
@@ -1094,6 +1096,7 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Contacts')
+                            ->icon('heroicon-o-phone')
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Landowner & Managers')
