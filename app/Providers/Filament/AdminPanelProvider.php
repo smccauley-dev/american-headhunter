@@ -699,7 +699,15 @@ class AdminPanelProvider extends PanelProvider
             margin-top: 8px !important;
         }
 
-        /* Table header (e.g. relation managers) — match section card chrome */
+        /* Table header (e.g. relation managers) — match section card chrome:
+           same vertical breathing room + inset divider as .fi-section-header. */
+        .fi-ta-header {
+            padding-block: 1.25rem !important;
+            background-image: linear-gradient(#a89874, #a89874) !important;
+            background-position: center bottom !important;
+            background-size: calc(100% - 48px) 1px !important;
+            background-repeat: no-repeat !important;
+        }
         .fi-ta-header-heading {
             font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 13px !important;

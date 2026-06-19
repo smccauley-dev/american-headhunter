@@ -169,6 +169,8 @@ Crimson Pro 300 + 400 (+ italics).
 | Section description | JetBrains Mono | 9px | — | 0.08em | — | `rgba(10,21,18,.4)` |
 | Table header heading (`fi-ta-header-heading`, e.g. relation managers) | JetBrains Mono | 13px | 400 | 0.15em | uppercase | `rgba(10,21,18,.7)` |
 | Table header description (`fi-ta-header-description`) | JetBrains Mono | 9px | — | 0.08em | — | `rgba(10,21,18,.4)` |
+
+The table header container (`.fi-ta-header`) mirrors `.fi-section-header`: `padding-block: 1.25rem` plus the inset `#a89874` divider (`calc(100% - 48px)` wide, bottom-aligned), so a relation-manager tab (e.g. a plan's **Entitlements** tab) reads identically to a form `Section` card tab.
 | Field label (`fi-fo-field-label-content`) | JetBrains Mono | 13px | 400 | 0.12em | uppercase | `rgba(10,21,18,.7)` |
 | **Modal** field label | JetBrains Mono | 10px | — | 0.12em | uppercase | `rgba(10,21,18,.5)` |
 | Helper / hint text | JetBrains Mono | 10px | — | 0.05em | — | `rgba(10,21,18,.4)` |
