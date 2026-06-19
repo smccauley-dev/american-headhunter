@@ -6,6 +6,7 @@ use App\Models\Platform\FeatureEntitlement;
 use App\Services\Platform\EntitlementService;
 use App\Support\Entitlements;
 use Filament\Actions\BulkActionGroup;
+use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -102,6 +103,11 @@ class EntitlementsRelationManager extends RelationManager
                 TextColumn::make('display_order')
                     ->label('Order')
                     ->alignCenter(),
+            ])
+            ->headerActions([
+                CreateAction::make()
+                    ->label('Add Entitlement')
+                    ->after(fn () => $this->flushEntitlementCache()),
             ])
             ->recordActions([
                 EditAction::make()
