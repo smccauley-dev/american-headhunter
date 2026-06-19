@@ -563,9 +563,11 @@ class AdminPanelProvider extends PanelProvider
             text-transform: uppercase !important;
             color: rgba(10, 21, 18, 0.7) !important;
         }
+        .fi-section .fi-section-header-description,
         .fi-section-header-description {
             font-family: 'JetBrains Mono', Menlo, monospace !important;
-            font-size: 10px !important;
+            font-size: 9px !important;
+            line-height: 1.5 !important;
             letter-spacing: 0.08em !important;
             color: rgba(10, 21, 18, 0.4) !important;
         }
