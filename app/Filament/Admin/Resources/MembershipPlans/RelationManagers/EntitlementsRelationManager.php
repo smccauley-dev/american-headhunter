@@ -36,7 +36,7 @@ class EntitlementsRelationManager extends RelationManager
 
     public function form(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(2)->components([
             Select::make('feature_key')
                 ->label('Entitlement')
                 ->options(fn (?FeatureEntitlement $record): array => $this->entitlementOptions($record))
@@ -48,26 +48,34 @@ class EntitlementsRelationManager extends RelationManager
                     }
                 })
                 ->helperText('Only entitlements the platform actually offers are listed. To add a new capability, define it in App\Support\Entitlements first, then wire its gate in code.'),
+            TextInput::make('display_label')
+                ->label('Display Label')
+                ->maxLength(150)
+                ->helperText('Shown on the pricing page.'),
             Hidden::make('feature_type'),
             Toggle::make('bool_value')
                 ->label('Enabled')
+                ->helperText('Whether this on/off feature is granted to the plan.')
+                ->inline(false)
+                ->afterContent('Granted to plan')
+                ->extraFieldWrapperAttributes(['class' => 'ah-toggle-inline'])
+                ->columnSpanFull()
                 ->visible(fn (Get $get): bool => $get('feature_type') === 'boolean'),
             TextInput::make('int_value')
                 ->label('Limit')
                 ->numeric()
                 ->helperText('-1 = unlimited.')
+                ->columnSpanFull()
                 ->visible(fn (Get $get): bool => $get('feature_type') === 'integer'),
             TextInput::make('string_value')
                 ->label('Value')
                 ->maxLength(255)
+                ->columnSpanFull()
                 ->visible(fn (Get $get): bool => $get('feature_type') === 'string'),
             KeyValue::make('json_value')
                 ->label('JSON Value')
+                ->columnSpanFull()
                 ->visible(fn (Get $get): bool => $get('feature_type') === 'json'),
-            TextInput::make('display_label')
-                ->label('Display Label')
-                ->maxLength(150)
-                ->helperText('Shown on the pricing page.'),
             Textarea::make('display_description')
                 ->label('Display Description')
                 ->rows(2)
