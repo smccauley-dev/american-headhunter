@@ -23,6 +23,7 @@ final class Entitlements
     const EARLY_LISTING_ACCESS_HOURS    = 'early_listing_access_hours';
     const TRUST_BADGE_LEVEL             = 'trust_badge_level';
     const CONCIERGE_MESSAGING           = 'concierge_messaging';
+    const SINGLE_STATE_HUNT             = 'single_state_hunt';
 
     // Landowner entitlements
     const CUSTOM_LEASE_TEMPLATE              = 'custom_lease_template';
