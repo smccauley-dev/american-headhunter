@@ -269,6 +269,7 @@ class MembershipPlanResource extends Resource
                 TextColumn::make('account_type')
                     ->label('Type')
                     ->badge()
+                    ->sortable()
                     ->formatStateUsing(fn (string $state): string => self::ACCOUNT_TYPES[$state] ?? $state),
                 TextColumn::make('display_name')
                     ->label('Name')
@@ -283,10 +284,12 @@ class MembershipPlanResource extends Resource
                     ->placeholder('—'),
                 IconColumn::make('is_public')
                     ->label('Public')
-                    ->boolean(),
+                    ->boolean()
+                    ->sortable(),
                 IconColumn::make('is_active')
                     ->label('Active')
-                    ->boolean(),
+                    ->boolean()
+                    ->sortable(),
                 TextColumn::make('updated_at')
                     ->dateTime('M j, Y H:i')
                     ->sortable()
