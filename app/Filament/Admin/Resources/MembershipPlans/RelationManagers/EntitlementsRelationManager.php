@@ -76,7 +76,8 @@ class EntitlementsRelationManager extends RelationManager
                 ->numeric()
                 ->default(0),
             Toggle::make('show_on_pricing')
-                ->label('Show on Pricing Page'),
+                ->label('Show on Pricing Page')
+                ->inline(false),
         ]);
     }
 
