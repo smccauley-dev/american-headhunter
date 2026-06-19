@@ -569,7 +569,7 @@ class AdminPanelProvider extends PanelProvider
             font-size: 9px !important;
             line-height: 1.5 !important;
             letter-spacing: 0.08em !important;
-            color: rgba(10, 21, 18, 0.4) !important;
+            color: #0a1512 !important;
         }
         .fi-section-content {
             background-color: transparent !important;
@@ -716,15 +716,14 @@ class AdminPanelProvider extends PanelProvider
             text-transform: uppercase !important;
             color: rgba(10, 21, 18, 0.7) !important;
         }
-        /* Two-class selector (0,2,0) so it outranks the broad `.fi-main p`
-           ink-color rule (0,1,1) below — otherwise the description renders
-           full-dark instead of the muted section-description tone. */
+        /* Two-class selector (0,2,0) so size/spacing outrank the broad
+           `.fi-main p` rule (0,1,1) below; color matches it (#0a1512). */
         .fi-ta-header .fi-ta-header-description {
             font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 9px !important;
             line-height: 1.5 !important;
             letter-spacing: 0.08em !important;
-            color: rgba(10, 21, 18, 0.4) !important;
+            color: #0a1512 !important;
         }
 
         /* Column header row */
