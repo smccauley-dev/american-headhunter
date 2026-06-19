@@ -895,6 +895,30 @@ class AdminPanelProvider extends PanelProvider
             color: #0a1512 !important;
         }
 
+        /* Searchable Select dropdown — drop the hard inner shadow, keep a clean ink border */
+        .fi-dropdown-panel:has(.fi-select-input-options-ctn),
+        .fi-select-input-options-ctn {
+            box-shadow: none !important;
+        }
+        .fi-dropdown-panel:has(.fi-select-input-options-ctn) {
+            background-color: #f4ecdc !important;
+            border: 1px solid #0a1512 !important;
+            border-radius: 0 !important;
+        }
+
+        /* Option group headings (Hunter / Landowner / Club) — light grey band */
+        .fi-select-input-option-group {
+            background-color: #e9e2d2 !important;
+            color: rgba(10, 21, 18, 0.6) !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
+            font-size: 10px !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.12em !important;
+            text-transform: uppercase !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+
         /* File upload — match the member frontend's branded parchment FilePond skin.
            Filament's own FilePond draws a white .filepond--panel-root *inside* the
            .fi-fo-file-upload-input-ctn wrapper, so styling the wrapper alone leaves
