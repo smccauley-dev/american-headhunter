@@ -6,10 +6,10 @@ use App\Models\Platform\FeatureEntitlement;
 use App\Services\Platform\EntitlementService;
 use App\Support\Entitlements;
 use Filament\Actions\BulkActionGroup;
-use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -33,13 +33,6 @@ class EntitlementsRelationManager extends RelationManager
 
     protected static ?string $title = 'Entitlements';
 
-    public const FEATURE_TYPES = [
-        'boolean' => 'Boolean (on/off)',
-        'integer' => 'Integer (limit)',
-        'string'  => 'String',
-        'json'    => 'JSON',
-    ];
-
     public function form(Schema $schema): Schema
     {
         return $schema->components([
@@ -54,11 +47,7 @@ class EntitlementsRelationManager extends RelationManager
                     }
                 })
                 ->helperText('Only entitlements the platform actually offers are listed. To add a new capability, define it in App\Support\Entitlements first, then wire its gate in code.'),
-            Select::make('feature_type')
-                ->label('Type')
-                ->options(self::FEATURE_TYPES)
-                ->required()
-                ->live(),
+            Hidden::make('feature_type'),
             Toggle::make('bool_value')
                 ->label('Enabled')
                 ->visible(fn (Get $get): bool => $get('feature_type') === 'boolean'),
@@ -117,11 +106,6 @@ class EntitlementsRelationManager extends RelationManager
                 TextColumn::make('display_order')
                     ->label('Order')
                     ->alignCenter(),
-            ])
-            ->headerActions([
-                CreateAction::make()
-                    ->label('Add Entitlement')
-                    ->after(fn () => $this->flushEntitlementCache()),
             ])
             ->recordActions([
                 EditAction::make()
