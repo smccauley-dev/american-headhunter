@@ -1016,6 +1016,11 @@ class PropertyFormV2
                                                     ->label('Auto Renew')
                                                     ->default(false)
                                                     ->inline(false),
+                                                Toggle::make('is_featured')
+                                                    ->label('Featured (Home Page)')
+                                                    ->helperText('Show this listing as a special advertising listing on the public home page — fully viewable without signing in.')
+                                                    ->default(false)
+                                                    ->inline(false),
                                                 DatePicker::make('season_start')
                                                     ->label('Season Start'),
                                                 DatePicker::make('season_end')

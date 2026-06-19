@@ -22,8 +22,7 @@ class HomeController extends Controller
         $cardCount = (int) $t->getSetting('home.hero_card_count', '1');
 
         try {
-            $page     = $this->propertyService->searchListings(['per_page' => max(6, $cardCount + 5)]);
-            $listings = collect($page->items())->map(function ($listing) {
+            $listings = $this->propertyService->featuredListings(max(6, $cardCount + 5))->map(function ($listing) {
                 $docId = $listing->property?->primary_photo_document_id;
                 $listing->property?->setAttribute(
                     'primary_photo_url',
