@@ -291,7 +291,7 @@ const SOCIAL_PLATFORMS: SocialPlatform[] = [
 const NAV_ITEMS = [
   { label: 'My Leases',    href: '/member/myleases',  key: 'leases' },
   { label: 'My Profile',   href: '/member/profile',   key: 'profile' },
-  { label: 'Membership',   href: '/member/membership', key: 'membership' },
+  { label: 'My Membership', href: '/member/membership', key: 'membership' },
   { label: 'Find Property', href: '/properties',       key: 'properties' },
   { label: 'Settings',     href: '/member/settings',  key: 'settings' },
 ]
@@ -430,6 +430,24 @@ interface PropertySummary {
   primary_photo_url: string | null
 }
 
+interface Membership {
+  plan_key: string
+  display_name: string
+  tagline: string | null
+  account_type: string
+  accent_color: string | null
+  is_free: boolean
+  source: 'free' | 'subscription' | 'promotion'
+  status: string
+  status_label: string
+  monthly_price: string | null
+  annual_price: string | null
+  currency: string
+  renews_at: string | null
+  trial_ends_at: string | null
+  cancelled_at: string | null
+}
+
 interface Props {
   user: UserData
   profile: ProfileData
@@ -442,6 +460,7 @@ interface Props {
     suggested_username: string
   }
   leases: LeaseSummary[]
+  membership: Membership
   initial_tab: 'about' | 'leases'
   // Null for account types without a CMS profile template (e.g. landowner);
   // the component falls back to DEFAULT_TEMPLATE.
@@ -703,7 +722,7 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, activity, security, leases, initial_tab, template, properties }: Props) {
+export default function HunterProfile({ user, profile, photos, activity, security, leases, membership, initial_tab, template, properties }: Props) {
   // Landowner accounts reuse this profile shell but swap the hunting-specific
   // modules (gear, hunting prefs) for a "My Properties" blade.
   const isLandowner = user.account_type === 'landowner'
@@ -734,7 +753,10 @@ export default function HunterProfile({ user, profile, photos, activity, securit
   const tabList = [...orderedTabs, 'security'] as
     ('about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security')[]
   const [editing, setEditing]               = useState(false)
-  const [tab, setTab]                       = useState<'about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security' | 'leases'>(initial_tab ?? 'about')
+  const [tab, setTab]                       = useState<'about' | 'contact' | 'social' | 'photos' | 'gear' | 'activity' | 'security' | 'leases' | 'membership'>(initial_tab ?? 'about')
+  // 'leases' and 'membership' are full-width panels that replace the profile
+  // section UI (tab bar + edit actions) rather than render inside it.
+  const isFullPanel = tab === 'leases' || tab === 'membership'
   const [saving, setSaving]                 = useState(false)
   const avatarPondRef                       = useRef<any>(null)
 
@@ -1004,14 +1026,16 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               {/* ── Navigation blades ──────────────────────────────────── */}
               <div style={{ borderTop: '1px solid #e5ddd0', margin: '0 16px 4px' }}>
                 {NAV_ITEMS.map(item => {
-                  // 'leases' and 'profile' switch the right-hand panel in place
-                  // (same Inertia page); the rest are real page links.
-                  const isPanel = item.key === 'leases' || item.key === 'profile'
+                  // 'leases', 'membership' and 'profile' switch the right-hand
+                  // panel in place (same Inertia page); the rest are real links.
+                  const isPanel = item.key === 'leases' || item.key === 'membership' || item.key === 'profile'
                   const active = item.key === 'leases'
                     ? tab === 'leases'
-                    : item.key === 'profile'
-                      ? tab !== 'leases'
-                      : false
+                    : item.key === 'membership'
+                      ? tab === 'membership'
+                      : item.key === 'profile'
+                        ? !isFullPanel
+                        : false
                   const itemStyle: React.CSSProperties = {
                     display: 'flex',
                     alignItems: 'center',
@@ -1034,7 +1058,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                     <button
                       key={item.key}
                       type="button"
-                      onClick={() => setTab(item.key === 'leases' ? 'leases' : 'about')}
+                      onClick={() => setTab(item.key === 'leases' ? 'leases' : item.key === 'membership' ? 'membership' : 'about')}
                       style={{ ...itemStyle, borderTop: 'none', borderRight: 'none', borderBottom: 'none', borderRadius: 0, margin: 0, appearance: 'none' }}
                     >
                       {item.label}
@@ -1248,8 +1272,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   </div>
                 </div>
 
-                {/* Action buttons — profile editing only, not on the leases tab */}
-                <div style={{ display: tab === 'leases' ? 'none' : 'flex', gap: '8px' }}>
+                {/* Action buttons — profile editing only, not on full-width panels */}
+                <div style={{ display: isFullPanel ? 'none' : 'flex', gap: '8px' }}>
                   {editing ? (
                     <>
                       <button
@@ -1283,8 +1307,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
               {/* Tabs + content */}
               <div style={fieldCard}>
                 <DashedInset />
-                {/* Tab bar — profile sections only; the leases view replaces it */}
-                <div style={{ display: tab === 'leases' ? 'none' : 'flex', borderBottom: '1px solid #e5ddd0', margin: '14px 16px 0', padding: '0 12px' }}>
+                {/* Tab bar — profile sections only; full-width panels replace it */}
+                <div style={{ display: isFullPanel ? 'none' : 'flex', borderBottom: '1px solid #e5ddd0', margin: '14px 16px 0', padding: '0 12px' }}>
                   {tabList.map(t => {
                     const visKey = t as 'about' | 'contact' | 'social' | 'gear' | 'photos'
                     const hasVis = t === 'about' || t === 'contact' || t === 'social' || t === 'gear' || t === 'photos'
@@ -1375,6 +1399,8 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                     <ActivityTab events={activity.events} />
                   ) : tab === 'leases' ? (
                     <LeasesTab leases={leases} />
+                  ) : tab === 'membership' ? (
+                    <MembershipTab membership={membership} />
                   ) : (
                     <SecurityTab
                       mfa={security.mfa}
@@ -1514,6 +1540,111 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
         >
           View Lease
         </a>
+      </div>
+    </div>
+  )
+}
+
+// ── My Membership tab ─────────────────────────────────────────────────────────
+
+function MembershipTab({ membership }: { membership: Membership }) {
+  // Status pill palette — mirrors the lease card's status styling vocabulary.
+  const palette: Record<string, { bg: string; color: string; border: string }> = {
+    active:   { bg: 'rgba(74,124,89,0.2)',  color: '#7bbd8e', border: '1px solid rgba(74,124,89,0.5)' },
+    trialing: { bg: 'rgba(184,147,74,0.18)', color: '#d8b15e', border: '1px solid rgba(184,147,74,0.5)' },
+    promo:    { bg: 'rgba(200,76,33,0.18)',  color: '#e08a5f', border: '1px solid rgba(200,76,33,0.5)' },
+    past_due: { bg: 'rgba(176,58,46,0.2)',   color: '#e0897f', border: '1px solid rgba(176,58,46,0.5)' },
+    free:     { bg: 'rgba(168,152,116,0.18)', color: '#c2b48f', border: '1px solid rgba(168,152,116,0.5)' },
+  }
+  const pill = palette[membership.status] ?? palette.free
+
+  const priceLabel = membership.is_free
+    ? 'Free'
+    : membership.monthly_price && membership.monthly_price !== '0.00'
+      ? `$${membership.monthly_price}/mo`
+      : membership.annual_price && membership.annual_price !== '0.00'
+        ? `$${membership.annual_price}/yr`
+        : 'Free'
+
+  const renewLabel = membership.source === 'promotion' ? 'Promo Ends' : 'Renews'
+
+  const cells = [
+    { label: 'Price', value: priceLabel },
+    { label: 'Billing', value: membership.status_label },
+    { label: renewLabel, value: membership.renews_at ?? '—' },
+  ]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ border: '1px solid #d4c9b0', background: '#FBF7EE' }}>
+        {/* Dark header strip */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', background: 'var(--ah-ink)' }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '17px', color: '#F4ECDC', lineHeight: 1.1 }}>
+              {membership.display_name}
+            </div>
+            {membership.tagline && (
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.08em', color: '#9aa890', marginTop: '4px' }}>
+                {membership.tagline}
+              </div>
+            )}
+          </div>
+          <span style={{
+            fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase',
+            padding: '4px 10px', borderRadius: '2px',
+            background: pill.bg, color: pill.color, border: pill.border,
+          }}>
+            {membership.status_label}
+          </span>
+        </div>
+
+        {/* Detail grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1px', background: '#e5ddd0' }}>
+          {cells.map(cell => (
+            <div key={cell.label} style={{ background: '#FBF7EE', padding: '12px 18px' }}>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874', marginBottom: '4px' }}>
+                {cell.label}
+              </div>
+              <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '15px', color: 'var(--ah-ink)' }}>
+                {cell.value}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {membership.status === 'trialing' && membership.trial_ends_at && (
+          <div style={{ padding: '8px 18px', background: 'rgba(184,147,74,0.1)', borderTop: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: '#9a7b2e' }}>
+            Trial ends {membership.trial_ends_at}.
+          </div>
+        )}
+
+        {membership.status === 'past_due' && (
+          <div style={{ padding: '8px 18px', background: 'rgba(176,58,46,0.08)', borderTop: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: '#b03a2e' }}>
+            Payment is past due — update your billing to keep your benefits.
+          </div>
+        )}
+
+        {membership.cancelled_at && (
+          <div style={{ padding: '8px 18px', background: 'rgba(200,76,33,0.07)', borderTop: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: 'var(--ah-accent)' }}>
+            Cancels {membership.cancelled_at} — access continues until then.
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: '8px', padding: '14px 18px', borderTop: '1px solid #e5ddd0' }}>
+          <a
+            href="/pricing"
+            style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: membership.is_free ? 'var(--ah-accent)' : 'var(--ah-ink)', color: membership.is_free ? '#fff' : '#F4ECDC', textDecoration: 'none' }}
+          >
+            {membership.is_free ? 'Upgrade Membership' : 'Change Plan'}
+          </a>
+          <a
+            href="/pricing"
+            style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: 'var(--ah-ink)', border: '1px solid #d4c9b0', textDecoration: 'none' }}
+          >
+            Compare Plans
+          </a>
+        </div>
       </div>
     </div>
   )

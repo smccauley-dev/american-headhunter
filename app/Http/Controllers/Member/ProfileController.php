@@ -12,6 +12,7 @@ use App\Models\Lease\CheckIn;
 use App\Models\Wildlife\HarvestLog;
 use App\Services\Documents\DocumentService;
 use App\Services\Lease\LeaseService;
+use App\Services\Platform\EntitlementService;
 use App\Services\Platform\ProfileTemplateService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\Request;
@@ -28,7 +29,7 @@ class ProfileController extends Controller
 {
     public function __construct(private readonly DocumentService $documents) {}
 
-    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, string $initialTab = 'about'): Response
+    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, EntitlementService $entitlements, string $initialTab = 'about'): Response
     {
         $userId  = session('auth.user_id');
         $user    = User::findOrFail($userId);
@@ -108,6 +109,7 @@ class ProfileController extends Controller
             'activity'    => $this->buildActivityProps($userId),
             'security'    => $this->buildSecurityProps($userId),
             'leases'      => $leaseService->getLeaseSummariesForLessee($userId),
+            'membership'  => $entitlements->currentMembership($user),
             'initial_tab' => $initialTab,
             'template'    => $isLandowner ? null : $templates->getPublishedConfig('hunter'),
         ];

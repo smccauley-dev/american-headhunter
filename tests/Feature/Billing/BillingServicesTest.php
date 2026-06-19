@@ -239,4 +239,50 @@ class BillingServicesTest extends TestCase
 
         $this->assertSame($expected, $this->entitlements()->limit($user, 'saved_searches_limit'));
     }
+
+    public function test_current_membership_falls_back_to_free_tier(): void
+    {
+        $user = $this->makeUser('hunter');
+
+        $membership = $this->entitlements()->currentMembership($user);
+
+        $this->assertSame('hunter_scout', $membership['plan_key']);
+        $this->assertSame('free', $membership['source']);
+        $this->assertSame('free', $membership['status']);
+        $this->assertTrue($membership['is_free']);
+        $this->assertNull($membership['renews_at']);
+    }
+
+    public function test_current_membership_uses_locked_price_but_live_name(): void
+    {
+        $user      = $this->makeUser('hunter');
+        // Locked version carries a stale name + its own price; identity should come
+        // from the live plan (Scout) while the price stays grandfathered.
+        $versionId = (string) Str::uuid();
+        DB::connection('platform')->table('plan_versions')->insert([
+            'id'                    => $versionId,
+            'plan_id'               => $this->scoutPlanId,
+            'version_number'        => random_int(100000, 999999),
+            'plan_key'              => 'hunter_legacy',
+            'display_name'          => 'Legacy Name',
+            'monthly_price_cents'   => 1299,
+            'annual_price_cents'    => 0,
+            'entitlements_snapshot' => json_encode([]),
+            'superseded_at'         => now(),
+            'effective_from'        => now(),
+            'created_at'            => now(),
+        ]);
+        $this->versionIds[] = $versionId;
+
+        $this->trackSub($this->subscriptions()->start($user->id, $versionId));
+
+        $membership = $this->entitlements()->currentMembership($user);
+
+        $this->assertSame('subscription', $membership['source']);
+        $this->assertSame('active', $membership['status']);
+        $this->assertSame('hunter_scout', $membership['plan_key'], 'identity follows the live plan, not the locked version');
+        $this->assertSame('12.99', $membership['monthly_price'], 'price stays grandfathered to the version');
+        $this->assertFalse($membership['is_free']);
+        $this->assertNotNull($membership['renews_at']);
+    }
 }

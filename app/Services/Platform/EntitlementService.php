@@ -85,6 +85,139 @@ class EntitlementService extends BaseService
     }
 
     /**
+     * Resolve the membership a user is currently on — the plan identity behind
+     * their entitlements, for display on the profile / account pages.
+     *
+     * Mirrors buildEntitlementList()'s precedence (promotion claim → active
+     * subscription → default free tier) but returns the plan's identity and
+     * billing state rather than its feature list. Prices come from the locked
+     * plan VERSION for paying/promo members (grandfathered) and from the live
+     * plan for free-tier members.
+     *
+     * @return array{
+     *   plan_key:string, display_name:string, tagline:?string, account_type:string,
+     *   accent_color:?string, is_free:bool, source:string, status:string,
+     *   status_label:string, monthly_price:?string, annual_price:?string,
+     *   currency:string, renews_at:?string, trial_ends_at:?string, cancelled_at:?string
+     * }
+     */
+    public function currentMembership(User $user): array
+    {
+        $claim = $this->activePromotionClaim($user->id);
+        if ($claim && $claim->granted_plan_version_id) {
+            $membership = $this->membershipFromVersion($claim->granted_plan_version_id);
+            if ($membership !== null) {
+                return array_merge($membership, [
+                    'source'       => 'promotion',
+                    'status'       => 'promo',
+                    'status_label' => 'Promotional',
+                    'renews_at'    => $this->formatMembershipDate($claim->expires_at),
+                ]);
+            }
+        }
+
+        $subscription = $this->activeSubscription($user->id);
+        if ($subscription && $subscription->plan_version_id) {
+            $membership = $this->membershipFromVersion($subscription->plan_version_id);
+            if ($membership !== null) {
+                return array_merge($membership, [
+                    'source'        => 'subscription',
+                    'status'        => $subscription->status,
+                    'status_label'  => match ($subscription->status) {
+                        'trialing' => 'Trial',
+                        'past_due' => 'Past Due',
+                        default    => 'Active',
+                    },
+                    'renews_at'     => $this->formatMembershipDate($subscription->current_period_end),
+                    'trial_ends_at' => $this->formatMembershipDate($subscription->trial_ends_at),
+                    'cancelled_at'  => $this->formatMembershipDate($subscription->cancelled_at),
+                ]);
+            }
+        }
+
+        return $this->freeTierMembership($user->account_type);
+    }
+
+    /**
+     * Build the membership identity from a locked plan version (paying / promo
+     * members), joining to the parent plan for the tagline, account type, and
+     * accent color the version does not carry. Returns null if the version is gone.
+     */
+    private function membershipFromVersion(string $planVersionId): ?array
+    {
+        $version = PlanVersion::on('platform')->find($planVersionId);
+        if (! $version) {
+            return null;
+        }
+
+        $plan = MembershipPlan::on('platform')->find($version->plan_id);
+
+        // Identity (name/key) follows the LIVE plan — a rename is branding, not a
+        // pricing change — while price stays grandfathered to the locked version.
+        return [
+            'plan_key'      => $plan?->plan_key ?? $version->plan_key,
+            'display_name'  => $plan?->display_name ?? $version->display_name,
+            'tagline'       => $plan?->tagline,
+            'account_type'  => $plan?->account_type ?? '',
+            'accent_color'  => $plan?->accent_color,
+            'is_free'       => (int) $version->monthly_price_cents === 0 && (int) $version->annual_price_cents === 0,
+            'monthly_price' => $this->formatMoney($version->monthly_price_cents),
+            'annual_price'  => $this->formatMoney($version->annual_price_cents),
+            'currency'      => $plan?->currency ?? 'USD',
+            'trial_ends_at' => null,
+            'cancelled_at'  => null,
+        ];
+    }
+
+    /**
+     * The default free-tier membership for an account type — used when a user has
+     * no active subscription or promotion. Reads the live plan (not a version)
+     * since free-tier members are never grandfathered to a locked version.
+     */
+    private function freeTierMembership(string $accountType): array
+    {
+        $plan = MembershipPlan::on('platform')
+            ->where('plan_key', $this->defaultPlanKey($accountType))
+            ->first();
+
+        return [
+            'plan_key'      => $plan?->plan_key ?? $this->defaultPlanKey($accountType),
+            'display_name'  => $plan?->display_name ?? 'Free',
+            'tagline'       => $plan?->tagline,
+            'account_type'  => $accountType,
+            'accent_color'  => $plan?->accent_color,
+            'is_free'       => true,
+            'source'        => 'free',
+            'status'        => 'free',
+            'status_label'  => 'Free',
+            'monthly_price' => $this->formatMoney($plan?->monthly_price_cents ?? 0),
+            'annual_price'  => $this->formatMoney($plan?->annual_price_cents ?? 0),
+            'currency'      => $plan?->currency ?? 'USD',
+            'renews_at'     => null,
+            'trial_ends_at' => null,
+            'cancelled_at'  => null,
+        ];
+    }
+
+    private function formatMoney(?int $cents): ?string
+    {
+        if ($cents === null) {
+            return null;
+        }
+
+        return number_format($cents / 100, 2);
+    }
+
+    private function formatMembershipDate(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return \Illuminate\Support\Carbon::parse($value)->format('M j, Y');
+    }
+
+    /**
      * Invalidate a user's entitlement cache.
      * Call whenever: subscription changes, promo activates/expires, plan version updates.
      */
