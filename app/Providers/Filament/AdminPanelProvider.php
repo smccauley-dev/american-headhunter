@@ -928,17 +928,14 @@ class AdminPanelProvider extends PanelProvider
             text-transform: uppercase !important;
         }
 
-        /* Options — squared, normal weight, dark highlight on hover/selection */
+        /* Options — squared corners, normal weight, subtle parchment hover */
         .fi-select-input-option,
         .fi-select-input-option .fi-select-input-option-label {
             font-weight: 400 !important;
             border-radius: 0 !important;
         }
-        .fi-select-input-option:hover,
-        .fi-select-input-option:focus,
-        .fi-select-input-option[aria-selected='true'] {
-            background-color: #0a1512 !important;
-            color: #f4ecdc !important;
+        .fi-select-input-option:hover {
+            background-color: #efe7d6 !important;
         }
 
         /* File upload — match the member frontend's branded parchment FilePond skin.
