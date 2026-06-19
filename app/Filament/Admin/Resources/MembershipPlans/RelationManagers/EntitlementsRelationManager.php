@@ -78,7 +78,8 @@ class EntitlementsRelationManager extends RelationManager
             Toggle::make('show_on_pricing')
                 ->label('Show on Pricing Page')
                 ->inline(false)
-                ->afterContent('Disable / Enable'),
+                ->afterContent('Enabled Pricing')
+                ->extraFieldWrapperAttributes(['class' => 'ah-toggle-inline']),
         ]);
     }
 

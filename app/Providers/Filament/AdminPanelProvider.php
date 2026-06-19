@@ -895,6 +895,12 @@ class AdminPanelProvider extends PanelProvider
             color: #0a1512 !important;
         }
 
+        /* Toggle with afterContent text beside the switch — stop the switch
+           wrapper from filling the row so the caption sits right next to it. */
+        .ah-toggle-inline .fi-fo-field-content {
+            width: auto !important;
+        }
+
         /* File upload — match the member frontend's branded parchment FilePond skin.
            Filament's own FilePond draws a white .filepond--panel-root *inside* the
            .fi-fo-file-upload-input-ctn wrapper, so styling the wrapper alone leaves
