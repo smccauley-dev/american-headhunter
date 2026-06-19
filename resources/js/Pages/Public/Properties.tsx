@@ -457,24 +457,15 @@ function ListingCard({ listing, authenticated }: { listing: Listing; authenticat
                                 </Link>
                             </>
                         ) : (
-                            <>
-                                {/* Featured (advertising) listings stay fully viewable to guests;
-                                    all other detail pages are gated behind sign-up. */}
-                                {listing.is_featured && (
-                                    <Link
-                                        href={`/properties/${listing.property.slug}`}
-                                        style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink)', textDecoration: 'none', padding: '8px 12px', border: '1px solid var(--parch-dim)' }}
-                                    >
-                                        Details
-                                    </Link>
-                                )}
-                                <Link
-                                    href="/get-started"
-                                    style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--blaze)' }}
-                                >
-                                    Join Now →
-                                </Link>
-                            </>
+                            // In the search list, guests never get a Details button — only
+                            // Join Now. (Featured listings stay viewable via the home page
+                            // and their direct detail URL, just not from here.)
+                            <Link
+                                href="/get-started"
+                                style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--blaze)' }}
+                            >
+                                Join Now →
+                            </Link>
                         )}
                     </div>
                 </div>
