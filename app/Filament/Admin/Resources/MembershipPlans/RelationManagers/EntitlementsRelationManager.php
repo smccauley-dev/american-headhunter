@@ -85,27 +85,17 @@ class EntitlementsRelationManager extends RelationManager
         return $table
             ->defaultSort('display_order')
             ->columns([
-                TextColumn::make('feature_key')
-                    ->label('Key')
-                    ->searchable()
-                    ->fontFamily('mono'),
-                TextColumn::make('feature_type')
-                    ->label('Type')
-                    ->badge()
-                    ->formatStateUsing(fn (string $state): string => ucfirst($state)),
-                TextColumn::make('value')
-                    ->label('Value')
-                    ->state(fn (FeatureEntitlement $record): string => $this->formatValue($record)),
                 TextColumn::make('display_label')
-                    ->label('Label')
+                    ->label('Entitlement Name')
+                    ->searchable()
                     ->limit(40)
                     ->placeholder('—'),
+                TextColumn::make('value')
+                    ->label('Limit')
+                    ->state(fn (FeatureEntitlement $record): string => $this->formatValue($record)),
                 IconColumn::make('show_on_pricing')
-                    ->label('On Pricing')
+                    ->label('Page Display')
                     ->boolean(),
-                TextColumn::make('display_order')
-                    ->label('Order')
-                    ->alignCenter(),
             ])
             ->recordActions([
                 EditAction::make()
