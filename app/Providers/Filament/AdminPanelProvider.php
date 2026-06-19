@@ -919,6 +919,12 @@ class AdminPanelProvider extends PanelProvider
             box-shadow: none !important;
         }
 
+        /* Option labels — keep normal weight even for the selected option */
+        .fi-select-input-option,
+        .fi-select-input-option .fi-select-input-option-label {
+            font-weight: 400 !important;
+        }
+
         /* File upload — match the member frontend's branded parchment FilePond skin.
            Filament's own FilePond draws a white .filepond--panel-root *inside* the
            .fi-fo-file-upload-input-ctn wrapper, so styling the wrapper alone leaves
