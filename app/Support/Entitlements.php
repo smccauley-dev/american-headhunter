@@ -118,7 +118,7 @@ final class Entitlements
             if (in_array($key, $exclude, true)) {
                 continue;
             }
-            $options[$def['group']][$key] = "{$def['label']} — {$key}";
+            $options[$def['group']][$key] = $def['label'];
         }
 
         return $options;
