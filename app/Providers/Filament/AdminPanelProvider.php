@@ -895,34 +895,50 @@ class AdminPanelProvider extends PanelProvider
             color: #0a1512 !important;
         }
 
-        /* Searchable Select dropdown — drop the hard inner shadow, keep a clean ink border */
-        .fi-dropdown-panel:has(.fi-select-input-options-ctn),
+        /* Searchable Select dropdown — match the platform's native select chrome:
+           squared corners, thin ink border, no soft/offset shadow. */
+        .fi-select-input .fi-dropdown-panel,
         .fi-select-input-options-ctn {
             box-shadow: none !important;
-        }
-        .fi-dropdown-panel:has(.fi-select-input-options-ctn) {
-            background-color: #f4ecdc !important;
-            border: 1px solid #0a1512 !important;
             border-radius: 0 !important;
         }
+        .fi-select-input .fi-dropdown-panel {
+            background-color: #faf7f2 !important;
+            border: 1px solid #0a1512 !important;
+            overflow: hidden !important;
+        }
+        .fi-select-input-search-ctn,
+        .fi-select-input-search-ctn input {
+            background-color: #faf7f2 !important;
+        }
 
-        /* Option group headings (Hunter / Landowner / Club) — light grey band */
-        .fi-select-input-option-group {
-            background-color: #e9e2d2 !important;
-            color: rgba(10, 21, 18, 0.6) !important;
-            font-family: 'JetBrains Mono', Menlo, monospace !important;
-            font-size: 10px !important;
-            font-weight: 600 !important;
-            letter-spacing: 0.12em !important;
-            text-transform: uppercase !important;
+        /* Group headings (HUNTER / LANDOWNER / CLUB) — dark ink band, bold label */
+        .fi-select-input-option-group,
+        .fi-select-input-option-group > .fi-dropdown-header {
+            background-color: #0a1512 !important;
             border: none !important;
             box-shadow: none !important;
         }
+        .fi-select-input-option-group > .fi-dropdown-header {
+            color: #c9b896 !important;
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
+            font-size: 10px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.14em !important;
+            text-transform: uppercase !important;
+        }
 
-        /* Option labels — keep normal weight even for the selected option */
+        /* Options — squared, normal weight, dark highlight on hover/selection */
         .fi-select-input-option,
         .fi-select-input-option .fi-select-input-option-label {
             font-weight: 400 !important;
+            border-radius: 0 !important;
+        }
+        .fi-select-input-option:hover,
+        .fi-select-input-option:focus,
+        .fi-select-input-option[aria-selected='true'] {
+            background-color: #0a1512 !important;
+            color: #f4ecdc !important;
         }
 
         /* File upload — match the member frontend's branded parchment FilePond skin.
