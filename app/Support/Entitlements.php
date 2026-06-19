@@ -23,6 +23,7 @@ final class Entitlements
     const EARLY_LISTING_ACCESS_HOURS    = 'early_listing_access_hours';
     const TRUST_BADGE_LEVEL             = 'trust_badge_level';
     const CONCIERGE_MESSAGING           = 'concierge_messaging';
+    const SINGLE_STATE_HUNT             = 'single_state_hunt';
 
     // Landowner entitlements
     const CUSTOM_LEASE_TEMPLATE              = 'custom_lease_template';
@@ -81,6 +82,7 @@ final class Entitlements
         self::EARLY_LISTING_ACCESS_HOURS    => ['label' => 'Early listing access (hours)',    'type' => 'integer', 'group' => 'Hunter'],
         self::TRUST_BADGE_LEVEL             => ['label' => 'Trust badge level',               'type' => 'string',  'group' => 'Hunter'],
         self::CONCIERGE_MESSAGING           => ['label' => 'Concierge messaging',             'type' => 'boolean', 'group' => 'Hunter'],
+        self::SINGLE_STATE_HUNT             => ['label' => 'Single-state hunting only',       'type' => 'boolean', 'group' => 'Hunter'],
 
         // Landowner
         self::CUSTOM_LEASE_TEMPLATE             => ['label' => 'Custom lease template',             'type' => 'boolean', 'group' => 'Landowner'],

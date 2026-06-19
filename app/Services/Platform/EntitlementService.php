@@ -48,6 +48,36 @@ class EntitlementService extends BaseService
     }
 
     /**
+     * The single state a hunter is locked to, or null if they are unrestricted.
+     *
+     * When the single_state_hunt entitlement is active, hunting is limited to the
+     * hunter's ORIGINAL residence state (user_profiles.original_state_code) — the
+     * first state ever recorded, which never changes even if they later edit their
+     * home state. Returns null when the entitlement is off, or when no original
+     * state has been recorded yet (cannot restrict to an unknown state).
+     */
+    public function restrictedHuntState(User $user): ?string
+    {
+        if (! $this->can($user, Entitlements::SINGLE_STATE_HUNT)) {
+            return null;
+        }
+
+        return $user->profile?->original_state_code;
+    }
+
+    /**
+     * Whether a single-state-restricted hunter may hunt in the given state.
+     * Unrestricted hunters (entitlement off, or no recorded original state) may
+     * hunt anywhere. Comparison is case-insensitive on the two-letter code.
+     */
+    public function canHuntInState(User $user, string $stateCode): bool
+    {
+        $allowed = $this->restrictedHuntState($user);
+
+        return $allowed === null || strcasecmp($allowed, $stateCode) === 0;
+    }
+
+    /**
      * Invalidate a user's entitlement cache.
      * Call whenever: subscription changes, promo activates/expires, plan version updates.
      */
