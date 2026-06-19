@@ -374,7 +374,6 @@ const TYPE_BADGE_COLOR: Record<string, string> = {
 }
 
 function ListingCard({ listing, authenticated }: { listing: Listing; authenticated: boolean }) {
-    const applyHref = authenticated ? `/apply/${listing.id}` : '/get-started'
     const acres = listing.property.huntable_acres ?? listing.property.total_acres
 
     return (
@@ -441,18 +440,29 @@ function ListingCard({ listing, authenticated }: { listing: Listing; authenticat
                         )}
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
-                        <Link
-                            href={`/properties/${listing.property.slug}`}
-                            style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink)', textDecoration: 'none', padding: '8px 12px', border: '1px solid var(--parch-dim)' }}
-                        >
-                            Details
-                        </Link>
-                        <Link
-                            href={applyHref}
-                            style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--ink)' }}
-                        >
-                            Apply →
-                        </Link>
+                        {authenticated ? (
+                            <>
+                                <Link
+                                    href={`/properties/${listing.property.slug}`}
+                                    style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink)', textDecoration: 'none', padding: '8px 12px', border: '1px solid var(--parch-dim)' }}
+                                >
+                                    Details
+                                </Link>
+                                <Link
+                                    href={`/apply/${listing.id}`}
+                                    style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--ink)' }}
+                                >
+                                    Apply →
+                                </Link>
+                            </>
+                        ) : (
+                            <Link
+                                href="/get-started"
+                                style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--blaze)' }}
+                            >
+                                Join Now →
+                            </Link>
+                        )}
                     </div>
                 </div>
             </div>
