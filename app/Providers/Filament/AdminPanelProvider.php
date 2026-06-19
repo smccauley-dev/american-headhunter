@@ -716,7 +716,10 @@ class AdminPanelProvider extends PanelProvider
             text-transform: uppercase !important;
             color: rgba(10, 21, 18, 0.7) !important;
         }
-        .fi-ta-header-description {
+        /* Two-class selector (0,2,0) so it outranks the broad `.fi-main p`
+           ink-color rule (0,1,1) below — otherwise the description renders
+           full-dark instead of the muted section-description tone. */
+        .fi-ta-header .fi-ta-header-description {
             font-family: 'JetBrains Mono', Menlo, monospace !important;
             font-size: 9px !important;
             line-height: 1.5 !important;
