@@ -900,6 +900,7 @@ class AdminPanelProvider extends PanelProvider
            caption sits right next to the switch instead of far right. */
         .ah-toggle-inline .fi-fo-field-content-ctn {
             justify-content: flex-start !important;
+            margin-top: 0.4rem !important;
         }
         .ah-toggle-inline .fi-fo-field-content-ctn > * {
             flex: 0 0 auto !important;
