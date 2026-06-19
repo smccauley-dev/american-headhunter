@@ -2,6 +2,7 @@
 
 namespace App\Services\Lease;
 
+use App\Exceptions\OutOfStateHuntException;
 use App\Models\Documents\Document;
 use App\Models\Identity\HunterCredentials;
 use App\Models\Identity\User;
@@ -15,6 +16,7 @@ use App\Models\Property\Property;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
 use App\Services\Documents\DocumentService;
+use App\Services\Platform\EntitlementService;
 use App\Services\Platform\LegalService;
 use App\Services\Property\PropertyService;
 use Carbon\Carbon;
@@ -33,6 +35,7 @@ class ApplicationService extends BaseService
         private readonly LegalService      $legalService,
         private readonly LeaseService      $leaseService,
         private readonly EsignatureService $esignatureService,
+        private readonly EntitlementService $entitlementService,
     ) {}
 
     // ── Read ──────────────────────────────────────────────────────────────────
@@ -66,6 +69,11 @@ class ApplicationService extends BaseService
      */
     public function submit(array $attributes, array $hunters = []): LeaseApplication
     {
+        $this->assertApplicantMayHuntListing(
+            $attributes['applicant_user_id'] ?? null,
+            $attributes['listing_id'] ?? null,
+        );
+
         $attributes['desired_hunters'] = count($hunters) ?: ($attributes['desired_hunters'] ?? 1);
 
         $application = LeaseApplication::create(array_merge(
@@ -633,6 +641,34 @@ class ApplicationService extends BaseService
             }
         }
         return $ids;
+    }
+
+    /**
+     * Authoritative single-state gate. If the applicant's membership locks them
+     * to one state (single_state_hunt, and not overridden by multi_state_hunt),
+     * a listing outside that state is rejected. This is the backstop behind the
+     * UI's disabled Apply button — every application funnels through submit(), so
+     * the gate cannot be bypassed by hitting the endpoint directly. Listings with
+     * no resolvable state, or hunters with no recorded original state, are allowed
+     * (cannot restrict against an unknown).
+     */
+    private function assertApplicantMayHuntListing(?string $applicantUserId, ?string $listingId): void
+    {
+        if (! $applicantUserId || ! $listingId) {
+            return;
+        }
+
+        $state = $this->propertyService->findListing($listingId)?->property?->state_code;
+        if (! $state) {
+            return;
+        }
+
+        $user = User::on('identity')->find($applicantUserId);
+        if (! $user || $this->entitlementService->canHuntInState($user, $state)) {
+            return;
+        }
+
+        throw new OutOfStateHuntException($state, $this->entitlementService->restrictedHuntState($user));
     }
 
     private function buildListingSnapshot(?string $listingId): array

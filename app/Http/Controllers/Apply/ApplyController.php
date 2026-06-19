@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Apply;
 
+use App\Exceptions\OutOfStateHuntException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Apply\SubmitApplicationRequest;
 use App\Models\Identity\HunterCredentials;
@@ -114,21 +115,26 @@ class ApplyController extends Controller
             }
         }
 
-        $certDoc     = $this->legalService->getActiveCertification();
-        $application = $this->applicationService->submitAtomically(
-            userId:     $userId,
-            attributes: [
-                'listing_id'        => $listingId,
-                'applicant_user_id' => $userId,
-                'application_type'  => $request->application_type,
-                'message'           => $request->message,
-                'proposed_start'    => $request->proposed_start,
-                'proposed_end'      => $request->proposed_end,
-            ],
-            hunters:  $hunters,
-            certDoc:  $certDoc,
-            request:  $request,
-        );
+        $certDoc = $this->legalService->getActiveCertification();
+
+        try {
+            $application = $this->applicationService->submitAtomically(
+                userId:     $userId,
+                attributes: [
+                    'listing_id'        => $listingId,
+                    'applicant_user_id' => $userId,
+                    'application_type'  => $request->application_type,
+                    'message'           => $request->message,
+                    'proposed_start'    => $request->proposed_start,
+                    'proposed_end'      => $request->proposed_end,
+                ],
+                hunters:  $hunters,
+                certDoc:  $certDoc,
+                request:  $request,
+            );
+        } catch (OutOfStateHuntException $e) {
+            return redirect()->back()->withInput()->withErrors(['state' => $e->getMessage()]);
+        }
 
         return redirect()->route('apply.status', $application->id)
             ->with('success', 'Your application has been submitted. The landowner will be in touch.');
