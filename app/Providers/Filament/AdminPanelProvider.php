@@ -699,6 +699,23 @@ class AdminPanelProvider extends PanelProvider
             margin-top: 8px !important;
         }
 
+        /* Table header (e.g. relation managers) — match section card chrome */
+        .fi-ta-header-heading {
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
+            font-size: 13px !important;
+            font-weight: 400 !important;
+            letter-spacing: 0.15em !important;
+            text-transform: uppercase !important;
+            color: rgba(10, 21, 18, 0.7) !important;
+        }
+        .fi-ta-header-description {
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
+            font-size: 9px !important;
+            line-height: 1.5 !important;
+            letter-spacing: 0.08em !important;
+            color: rgba(10, 21, 18, 0.4) !important;
+        }
+
         /* Column header row */
         .fi-ta-content-ctn .fi-ta-content-header {
             background-color: rgba(10, 21, 18, 0.04) !important;
