@@ -244,6 +244,61 @@ class StripeService
     }
 
     /**
+     * Reconcile the invoice projection (Phase 5.7) — the daily backstop for any
+     * missed or out-of-order webhook. Re-pulls subscription invoices created in
+     * the lookback window and upserts them via the shared projector; refund totals
+     * are read authoritatively from the matching charges (cumulative
+     * amount_refunded), so this also self-heals a missed charge.refunded and
+     * backfills stripe_payment_intent_id. Returns the number of rows upserted.
+     */
+    public function reconcileInvoiceProjections(StripeInvoiceProjector $projector, int $lookbackDays = 45): int
+    {
+        $cutoff = now()->subDays($lookbackDays)->timestamp;
+
+        // Refund + charged totals keyed by PaymentIntent for the window (one
+        // paginated sweep). amount_refunded on a charge is cumulative, so a charge
+        // in-window always reports the authoritative refunded total.
+        $refundedByPi = [];
+        $chargedByPi  = [];
+        foreach (Charge::all(['created' => ['gte' => $cutoff], 'limit' => 100])->autoPagingIterator() as $charge) {
+            $pi = $charge->payment_intent ?? null;
+            if (! $pi) {
+                continue;
+            }
+            $refundedByPi[$pi] = ($refundedByPi[$pi] ?? 0) + (int) ($charge->amount_refunded ?? 0);
+            $chargedByPi[$pi]  = ($chargedByPi[$pi] ?? 0) + (int) ($charge->amount ?? 0);
+        }
+
+        $count = 0;
+        $invoices = Invoice::all([
+            'created' => ['gte' => $cutoff],
+            'limit'   => 100,
+            'expand'  => ['data.payments'],
+        ]);
+
+        foreach ($invoices->autoPagingIterator() as $invoice) {
+            $payload = $invoice->toArray();
+            if (! isset($payload['parent']['subscription_details'])) {
+                continue; // subscription invoices only
+            }
+
+            $pi = $this->invoicePaymentIntentId($invoice);
+
+            // Only pass refund totals when the backing charge is in-window (and
+            // thus authoritative); otherwise leave whatever the webhook set.
+            $refund = ($pi !== null && isset($refundedByPi[$pi]))
+                ? ['refunded_cents' => $refundedByPi[$pi], 'charged_cents' => $chargedByPi[$pi] ?? 0]
+                : null;
+
+            if ($projector->upsert($payload, $pi, $refund)) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
      * Retrieve an invoice from Stripe and resolve its PaymentIntent id. The
      * webhook projection (Phase 5.7) calls this at invoice.paid time to capture
      * the PI on the local row, so a later charge.refunded — which carries no
