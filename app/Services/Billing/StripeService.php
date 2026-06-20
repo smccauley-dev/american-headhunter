@@ -11,6 +11,7 @@ use Stripe\Event;
 use Stripe\Invoice;
 use Stripe\Price;
 use Stripe\Product;
+use Stripe\Refund;
 use Stripe\SetupIntent;
 use Stripe\Stripe;
 use Stripe\Subscription as StripeSubscription;
@@ -193,15 +194,55 @@ class StripeService
         $invoices = Invoice::all(['customer' => $customerId, 'limit' => $limit]);
 
         return collect($invoices->data)->map(fn (Invoice $inv) => [
-            'id'         => $inv->id,
-            'number'     => $inv->number,
-            'date'       => $inv->created ? date('M j, Y', $inv->created) : null,
-            'amount'     => number_format((($inv->amount_paid ?: $inv->amount_due) ?? 0) / 100, 2),
-            'currency'   => strtoupper((string) $inv->currency),
-            'status'     => $inv->status, // paid | open | void | draft | uncollectible
-            'hosted_url' => $inv->hosted_invoice_url,
-            'pdf_url'    => $inv->invoice_pdf,
+            'id'           => $inv->id,
+            'number'       => $inv->number,
+            'date'         => $inv->created ? date('M j, Y', $inv->created) : null,
+            'amount'       => number_format((($inv->amount_paid ?: $inv->amount_due) ?? 0) / 100, 2),
+            'amount_cents' => (int) (($inv->amount_paid ?: $inv->amount_due) ?? 0),
+            'currency'     => strtoupper((string) $inv->currency),
+            'status'       => $inv->status, // paid | open | void | draft | uncollectible
+            'hosted_url'   => $inv->hosted_invoice_url,
+            'pdf_url'      => $inv->invoice_pdf,
         ])->all();
+    }
+
+    /**
+     * Refund a paid invoice through Stripe (the source of truth — there is no
+     * local invoices table). The invoice's PaymentIntent (or legacy charge) is
+     * refunded; a null amount refunds the full remaining balance, a cents amount
+     * issues a partial refund. The optional reason maps to Stripe's enum and an
+     * optional note rides in refund metadata. Returns the Stripe Refund.
+     *
+     * @param 'duplicate'|'fraudulent'|'requested_by_customer'|null $reason
+     * @throws \RuntimeException when the invoice has no captured payment to refund
+     */
+    public function refundInvoice(string $invoiceId, ?int $amountCents = null, ?string $reason = null, ?string $note = null): Refund
+    {
+        $invoice = Invoice::retrieve($invoiceId);
+
+        $params = [];
+        if (! empty($invoice->payment_intent)) {
+            $params['payment_intent'] = $invoice->payment_intent;
+        } elseif (! empty($invoice->charge)) {
+            $params['charge'] = $invoice->charge;
+        } else {
+            throw new \RuntimeException("Invoice {$invoice->number} has no captured payment to refund.");
+        }
+
+        if ($amountCents !== null) {
+            $params['amount'] = $amountCents;
+        }
+        if ($reason !== null && $reason !== '') {
+            $params['reason'] = $reason; // duplicate | fraudulent | requested_by_customer
+        }
+
+        $metadata = ['invoice_id' => $invoiceId];
+        if ($note !== null && $note !== '') {
+            $metadata['note'] = $note;
+        }
+        $params['metadata'] = $metadata;
+
+        return Refund::create($params);
     }
 
     /**

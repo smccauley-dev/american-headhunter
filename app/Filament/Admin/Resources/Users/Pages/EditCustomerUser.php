@@ -152,6 +152,7 @@ class EditCustomerUser extends EditRecord
 
                             Section::make('Invoices')
                                 ->description('Billing history — each renewal is an invoice. Documents are hosted by Stripe.')
+                                ->headerActions($this->refundActions())
                                 ->schema([
                                     Placeholder::make('membership_invoices')
                                         ->hiddenLabel()
@@ -1494,6 +1495,160 @@ class EditCustomerUser extends EditRecord
                     } catch (\Throwable $e) {
                         report($e);
                         Notification::make()->danger()->title('Could not enable membership')->body($e->getMessage())->send();
+                    }
+                }),
+        ];
+    }
+
+    /**
+     * Paid (refundable) Stripe invoices for this user, keyed by invoice id with a
+     * human label. Drives the refund modal's invoice picker. Returns [] when the
+     * account has no Stripe customer or Stripe is unreachable.
+     *
+     * @return array<string,string>
+     */
+    private function refundableInvoiceOptions(): array
+    {
+        try {
+            $customerId = Subscription::query()
+                ->where('user_id', $this->getRecord()->id)
+                ->whereNotNull('stripe_customer_id')
+                ->latest('created_at')
+                ->value('stripe_customer_id');
+
+            if (! $customerId) {
+                return [];
+            }
+
+            return collect(app(StripeService::class)->listInvoices($customerId))
+                ->filter(fn (array $i) => ($i['status'] ?? null) === 'paid' && (int) ($i['amount_cents'] ?? 0) > 0)
+                ->mapWithKeys(fn (array $i) => [
+                    $i['id'] => "INVOICE: {$i['number']} — {$i['date']} — \${$i['amount']} {$i['currency']}",
+                ])
+                ->all();
+        } catch (\Throwable $e) {
+            report($e);
+            return [];
+        }
+    }
+
+    /**
+     * Section header action to refund a paid invoice through Stripe. Refunds move
+     * real money, so the control requires pricing authority and is fully audited.
+     * A full or partial amount is supported, and the admin may optionally schedule
+     * cancellation at period end in the same step.
+     */
+    private function refundActions(): array
+    {
+        if (! AdminAuth::canManagePricing()) {
+            return [];
+        }
+
+        return [
+            Action::make('refund_invoice')
+                ->label('Issue Refund')
+                ->icon('heroicon-o-receipt-refund')
+                ->color('danger')
+                ->visible(fn () => ! empty($this->refundableInvoiceOptions()))
+                ->modalHeading('Issue Refund')
+                ->modalDescription('Refunds a paid invoice through Stripe. Leave the amount blank to refund the full invoice, or enter an amount for a partial refund.')
+                ->form([
+                    Select::make('invoice_id')
+                        ->label('Invoice')
+                        ->options(fn () => $this->refundableInvoiceOptions())
+                        ->required(),
+                    TextInput::make('amount')
+                        ->label('Refund Amount')
+                        ->numeric()
+                        ->prefix('$')
+                        ->minValue(0.01)
+                        ->helperText('Leave blank to refund the full invoice amount.'),
+                    Select::make('reason')
+                        ->label('Reason')
+                        ->options([
+                            'requested_by_customer' => 'Requested by customer',
+                            'duplicate'             => 'Duplicate',
+                            'fraudulent'            => 'Fraudulent',
+                        ])
+                        ->default('requested_by_customer')
+                        ->required(),
+                    Textarea::make('note')
+                        ->label('Internal Note')
+                        ->rows(2)
+                        ->helperText('Optional — stored on the Stripe refund metadata and the audit record.'),
+                    Toggle::make('also_cancel')
+                        ->label('Also schedule cancellation at period end')
+                        ->helperText('Disables the membership at the end of the current paid period (reversible via Enable).'),
+                ])
+                ->action(function (array $data) {
+                    $record = $this->getRecord();
+                    try {
+                        $amountCents = filled($data['amount'] ?? null)
+                            ? (int) round(((float) $data['amount']) * 100)
+                            : null;
+
+                        $refund = app(StripeService::class)->refundInvoice(
+                            $data['invoice_id'],
+                            $amountCents,
+                            $data['reason'] ?? null,
+                            ($data['note'] ?? '') ?: null,
+                        );
+
+                        $sub = $this->currentSubscription();
+                        app(AuditService::class)->log(
+                            eventType:      'invoice.refunded',
+                            sourceDatabase: 'ah_billing',
+                            tableName:      'subscriptions',
+                            recordId:       $sub?->id ?? $record->id,
+                            userId:         Auth::id(),
+                            ipAddress:      request()->ip(),
+                            userAgent:      request()->userAgent(),
+                            actionSummary:  sprintf(
+                                'Admin refunded %s on invoice %s for %s (%s)',
+                                $amountCents !== null ? '$' . number_format($amountCents / 100, 2) : 'full amount',
+                                $data['invoice_id'],
+                                $record->email,
+                                $data['reason'] ?? 'n/a',
+                            ),
+                            newValues:      [
+                                'refund_id'  => $refund->id,
+                                'invoice_id' => $data['invoice_id'],
+                                'amount'     => $amountCents !== null ? number_format($amountCents / 100, 2) : 'full',
+                                'reason'     => $data['reason'] ?? null,
+                                'note'       => ($data['note'] ?? '') ?: null,
+                            ],
+                        );
+
+                        // Optional cancellation — mirrors the Disable action.
+                        if (! empty($data['also_cancel']) && $sub && ! $sub->cancelled_at) {
+                            $cancelAt = $sub->current_period_end;
+                            if ($sub->stripe_subscription_id) {
+                                $stripeSub = app(StripeService::class)->cancelSubscriptionAtPeriodEnd($sub->stripe_subscription_id);
+                                $ts        = $stripeSub->cancel_at ?? $stripeSub->current_period_end ?? null;
+                                $cancelAt  = $ts ? \Carbon\Carbon::createFromTimestamp($ts) : ($sub->current_period_end ?? now());
+                            }
+
+                            $sub->cancelled_at = $cancelAt ?: now();
+                            $sub->save();
+
+                            app(EntitlementService::class)->invalidateForUser($record->id);
+                            app(AuditService::class)->log(
+                                eventType:      'subscription.cancel_scheduled',
+                                sourceDatabase: 'ah_billing',
+                                tableName:      'subscriptions',
+                                recordId:       $sub->id,
+                                userId:         Auth::id(),
+                                ipAddress:      request()->ip(),
+                                userAgent:      request()->userAgent(),
+                                actionSummary:  "Admin scheduled cancellation at period end (with refund) for {$record->email}",
+                                newValues:      ['cancelled_at' => $sub->cancelled_at?->toDateString()],
+                            );
+                        }
+
+                        Notification::make()->success()->title('Refund issued')->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Could not issue refund')->body($e->getMessage())->send();
                     }
                 }),
         ];
