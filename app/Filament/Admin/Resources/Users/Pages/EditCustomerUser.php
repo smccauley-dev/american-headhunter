@@ -4,17 +4,22 @@ namespace App\Filament\Admin\Resources\Users\Pages;
 
 use App\Filament\Admin\Concerns\HasEditPageScaffold;
 use App\Filament\Admin\Resources\Users\CustomerUserResource;
+use App\Models\Billing\Subscription;
 use App\Models\Identity\BackgroundCheckResult;
 use App\Models\Identity\IdentityVerification;
 use App\Models\Identity\OfacScreeningResult;
 use App\Models\Identity\Role;
 use App\Models\Identity\UserAdminNote;
 use App\Models\Identity\UserProfile;
+use App\Models\Platform\MembershipPlan;
 use App\Services\Audit\AuditService;
 use App\Services\Auth\MfaService;
+use App\Services\Billing\StripeService;
+use App\Services\Billing\SubscriptionService;
 use App\Services\Documents\DocumentService;
 use App\Services\Identity\UserService;
 use App\Services\Lease\LeaseService;
+use App\Services\Platform\EntitlementService;
 use App\Services\Platform\MfaFactorService;
 use App\Services\Property\PropertyService;
 use App\Support\AdminAuth;
@@ -535,6 +540,99 @@ class EditCustomerUser extends EditRecord
                                             } catch (\Throwable $e) {
                                                 report($e);
                                                 return 'Unavailable.';
+                                            }
+                                        }),
+                                ]),
+                        ]),
+
+                    // ── Membership ────────────────────────────────────────────
+                    Tab::make('Membership')
+                        ->icon('heroicon-o-credit-card')
+                        ->schema([
+                            Section::make('Current Membership')
+                                ->headerActions($this->membershipActions())
+                                ->schema([
+                                    Placeholder::make('membership_summary')
+                                        ->hiddenLabel()
+                                        ->content(function () {
+                                            try {
+                                                $record = $this->getRecord();
+                                                $m      = app(EntitlementService::class)->currentMembership($record);
+                                                $sub    = $this->currentSubscription();
+
+                                                return view('filament.admin.users.membership', [
+                                                    'm'   => $m,
+                                                    'sub' => $sub,
+                                                ]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Membership unavailable.';
+                                            }
+                                        }),
+                                ]),
+
+                            Section::make('Invoices')
+                                ->description('Billing history — each renewal is an invoice. Documents are hosted by Stripe.')
+                                ->schema([
+                                    Placeholder::make('membership_invoices')
+                                        ->hiddenLabel()
+                                        ->content(function () {
+                                            try {
+                                                $customerId = Subscription::query()
+                                                    ->where('user_id', $this->getRecord()->id)
+                                                    ->whereNotNull('stripe_customer_id')
+                                                    ->latest('created_at')
+                                                    ->value('stripe_customer_id');
+
+                                                if (! $customerId) {
+                                                    return 'No billing history — this account has no Stripe-billed membership.';
+                                                }
+
+                                                $invoices = app(StripeService::class)->listInvoices($customerId);
+
+                                                if (empty($invoices)) {
+                                                    return 'No invoices found for this account.';
+                                                }
+
+                                                return view('filament.admin.users.membership-invoices', ['invoices' => $invoices]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Invoices unavailable.';
+                                            }
+                                        }),
+                                ]),
+
+                            Section::make('Membership Activity')
+                                ->description('Audit trail of subscription changes — created, plan changes, cancellations, resumes.')
+                                ->schema([
+                                    Placeholder::make('membership_audit')
+                                        ->hiddenLabel()
+                                        ->content(function () {
+                                            try {
+                                                $subIds = Subscription::query()
+                                                    ->where('user_id', $this->getRecord()->id)
+                                                    ->pluck('id')
+                                                    ->all();
+
+                                                if (empty($subIds)) {
+                                                    return 'No membership activity.';
+                                                }
+
+                                                $events = \App\Models\Audit\AuditLog::on('audit')
+                                                    ->where('table_name', 'subscriptions')
+                                                    ->whereIn('record_id', $subIds)
+                                                    ->orderByDesc('occurred_at')
+                                                    ->limit(50)
+                                                    ->get();
+
+                                                if ($events->isEmpty()) {
+                                                    return 'No membership activity.';
+                                                }
+
+                                                return view('filament.admin.users.audit-log', ['events' => $events]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Membership activity unavailable.';
                                             }
                                         }),
                                 ]),
@@ -1164,6 +1262,265 @@ class EditCustomerUser extends EditRecord
             report($e);
             return false;
         }
+    }
+
+    // ── Membership controls ────────────────────────────────────────────────────
+
+    /**
+     * The user's current subscription (active/trialing/past_due), or null. Stripe
+     * identifiers are $hidden on the model for serialization only — they remain
+     * readable as PHP attributes, which the controls below rely on.
+     */
+    private function currentSubscription(): ?Subscription
+    {
+        try {
+            return app(SubscriptionService::class)->activeFor($this->getRecord()->id);
+        } catch (\Throwable $e) {
+            report($e);
+            return null;
+        }
+    }
+
+    /**
+     * Paid plan options for this user's account type, keyed by plan_key. Free /
+     * default plans are excluded — those aren't memberships an admin "adds".
+     */
+    private function paidPlanOptions(): array
+    {
+        return MembershipPlan::on('platform')
+            ->where('account_type', $this->getRecord()->account_type)
+            ->where('is_active', true)
+            ->where(fn ($q) => $q->where('monthly_price_cents', '>', 0)->orWhere('annual_price_cents', '>', 0))
+            ->orderBy('sort_order')
+            ->get()
+            ->mapWithKeys(fn ($p) => [$p->plan_key => $p->display_name])
+            ->all();
+    }
+
+    /**
+     * Section header actions for membership management. All four mutate billing
+     * state, so they require pricing authority and are fully audited (the service
+     * methods audit with the admin as actor; inline schedule/resume audit here).
+     */
+    private function membershipActions(): array
+    {
+        if (! AdminAuth::canManagePricing()) {
+            return [];
+        }
+
+        return [
+            // Add — grant a membership to a user who has none. Comp by default
+            // (no Stripe); an existing Stripe subscription created out-of-band may
+            // be linked by id.
+            Action::make('add_membership')
+                ->label('Add Membership')
+                ->icon('heroicon-o-plus-circle')
+                ->color('primary')
+                ->visible(fn () => ! $this->currentSubscription())
+                ->modalHeading('Add Membership')
+                ->modalDescription('Grants a membership directly. Leave the Stripe fields blank for a complimentary (unbilled) membership, or link an existing Stripe subscription created out-of-band.')
+                ->form([
+                    Select::make('plan_key')
+                        ->label('Plan')
+                        ->options(fn () => $this->paidPlanOptions())
+                        ->required(),
+                    Select::make('interval')
+                        ->label('Billing Interval')
+                        ->options(['monthly' => 'Monthly', 'annual' => 'Annual'])
+                        ->default('monthly')
+                        ->required(),
+                    TextInput::make('trial_days')
+                        ->label('Trial Days')
+                        ->numeric()
+                        ->minValue(0)
+                        ->helperText('Optional — start the membership in a trial for this many days.'),
+                    TextInput::make('stripe_subscription_id')
+                        ->label('Stripe Subscription ID')
+                        ->placeholder('sub_…')
+                        ->helperText('Optional — link an existing Stripe subscription. Blank = complimentary.'),
+                    TextInput::make('stripe_customer_id')
+                        ->label('Stripe Customer ID')
+                        ->placeholder('cus_…'),
+                ])
+                ->action(function (array $data) {
+                    $record = $this->getRecord();
+                    try {
+                        $version = app(SubscriptionService::class)->currentVersionForPlan($data['plan_key']);
+                        $sub = app(SubscriptionService::class)->start($record->id, $version->id, [
+                            'interval'               => $data['interval'] ?? 'monthly',
+                            'trial_days'             => filled($data['trial_days'] ?? null) ? (int) $data['trial_days'] : null,
+                            'stripe_subscription_id' => ($data['stripe_subscription_id'] ?? '') ?: null,
+                            'stripe_customer_id'     => ($data['stripe_customer_id'] ?? '') ?: null,
+                        ]);
+
+                        // start() audits subscription.created with the member as actor;
+                        // record the admin grant separately for actor attribution.
+                        app(AuditService::class)->log(
+                            eventType:      'subscription.admin_granted',
+                            sourceDatabase: 'ah_billing',
+                            tableName:      'subscriptions',
+                            recordId:       $sub->id,
+                            userId:         Auth::id(),
+                            ipAddress:      request()->ip(),
+                            userAgent:      request()->userAgent(),
+                            actionSummary:  "Admin added membership ({$data['plan_key']}) for {$record->email}",
+                            newValues:      ['plan_key' => $data['plan_key'], 'plan_version_id' => $version->id],
+                        );
+
+                        Notification::make()->success()->title('Membership added')->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Could not add membership')->body($e->getMessage())->send();
+                    }
+                }),
+
+            // Upgrade / downgrade — switch to a different paid plan. Stripe-billed
+            // subscriptions are changed in Stripe (immediate, prorated, interval
+            // preserved); swapVersion mirrors the lock locally + audits.
+            Action::make('change_plan')
+                ->label('Upgrade / Downgrade')
+                ->icon('heroicon-o-arrows-up-down')
+                ->color('warning')
+                ->visible(fn () => (bool) $this->currentSubscription())
+                ->modalHeading('Change Membership Plan')
+                ->modalDescription('Switches the membership to a different plan. For Stripe-billed members the change is immediate and prorated, preserving the billing interval.')
+                ->form([
+                    Select::make('plan_key')
+                        ->label('New Plan')
+                        ->options(fn () => $this->paidPlanOptions())
+                        ->required(),
+                ])
+                ->action(function (array $data) {
+                    $record = $this->getRecord();
+                    $sub    = $this->currentSubscription();
+                    try {
+                        if (! $sub) {
+                            throw new \RuntimeException('No active membership to change.');
+                        }
+
+                        $plan = MembershipPlan::on('platform')
+                            ->where('plan_key', $data['plan_key'])
+                            ->where('is_active', true)
+                            ->first();
+
+                        if (! $plan) {
+                            throw new \RuntimeException('That plan is not available.');
+                        }
+                        if ($plan->account_type !== $record->account_type) {
+                            throw new \RuntimeException('That plan is for a different account type.');
+                        }
+
+                        $version = app(SubscriptionService::class)->currentVersionForPlan($plan->plan_key);
+                        if ($version->id === $sub->plan_version_id) {
+                            throw new \RuntimeException('User is already on that plan.');
+                        }
+
+                        if ($sub->stripe_subscription_id) {
+                            app(StripeService::class)->changeSubscriptionPlan($sub->stripe_subscription_id, $plan, $version->id);
+                        }
+
+                        // swapVersion audits subscription.plan_changed with the admin
+                        // as actor and invalidates the entitlement cache.
+                        app(SubscriptionService::class)->swapVersion($sub, $version->id, Auth::id());
+
+                        Notification::make()->success()->title('Plan changed')->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Could not change plan')->body($e->getMessage())->send();
+                    }
+                }),
+
+            // Disable — schedule cancellation at the end of the paid period. The
+            // member keeps access until then; reversible via Enable.
+            Action::make('disable_membership')
+                ->label('Disable')
+                ->icon('heroicon-o-no-symbol')
+                ->color('danger')
+                ->requiresConfirmation()
+                ->modalHeading('Disable Membership')
+                ->modalDescription('Schedules cancellation at the end of the current paid period. The member keeps access until then; you can re-enable before it ends.')
+                ->visible(fn () => ($s = $this->currentSubscription()) && ! $s->cancelled_at)
+                ->action(function () {
+                    $record = $this->getRecord();
+                    $sub    = $this->currentSubscription();
+                    try {
+                        if (! $sub) {
+                            throw new \RuntimeException('No active membership to disable.');
+                        }
+
+                        $cancelAt = $sub->current_period_end;
+                        if ($sub->stripe_subscription_id) {
+                            $stripeSub = app(StripeService::class)->cancelSubscriptionAtPeriodEnd($sub->stripe_subscription_id);
+                            $ts        = $stripeSub->cancel_at ?? $stripeSub->current_period_end ?? null;
+                            $cancelAt  = $ts ? \Carbon\Carbon::createFromTimestamp($ts) : ($sub->current_period_end ?? now());
+                        }
+
+                        $sub->cancelled_at = $cancelAt ?: now();
+                        $sub->save();
+
+                        app(EntitlementService::class)->invalidateForUser($record->id);
+                        app(AuditService::class)->log(
+                            eventType:      'subscription.cancel_scheduled',
+                            sourceDatabase: 'ah_billing',
+                            tableName:      'subscriptions',
+                            recordId:       $sub->id,
+                            userId:         Auth::id(),
+                            ipAddress:      request()->ip(),
+                            userAgent:      request()->userAgent(),
+                            actionSummary:  "Admin scheduled cancellation at period end for {$record->email}",
+                            newValues:      ['cancelled_at' => $sub->cancelled_at?->toDateString()],
+                        );
+
+                        Notification::make()->warning()->title('Membership scheduled to cancel')->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Could not disable membership')->body($e->getMessage())->send();
+                    }
+                }),
+
+            // Enable — undo a scheduled cancellation; the membership keeps renewing.
+            Action::make('enable_membership')
+                ->label('Enable')
+                ->icon('heroicon-o-check-circle')
+                ->color('success')
+                ->requiresConfirmation()
+                ->modalHeading('Enable Membership')
+                ->modalDescription('Cancels the scheduled cancellation — the membership keeps renewing.')
+                ->visible(fn () => ($s = $this->currentSubscription()) && $s->cancelled_at)
+                ->action(function () {
+                    $record = $this->getRecord();
+                    $sub    = $this->currentSubscription();
+                    try {
+                        if (! $sub || ! $sub->cancelled_at) {
+                            throw new \RuntimeException('There is no scheduled cancellation to undo.');
+                        }
+
+                        if ($sub->stripe_subscription_id) {
+                            app(StripeService::class)->resumeSubscription($sub->stripe_subscription_id);
+                        }
+
+                        $sub->cancelled_at = null;
+                        $sub->save();
+
+                        app(EntitlementService::class)->invalidateForUser($record->id);
+                        app(AuditService::class)->log(
+                            eventType:      'subscription.resumed',
+                            sourceDatabase: 'ah_billing',
+                            tableName:      'subscriptions',
+                            recordId:       $sub->id,
+                            userId:         Auth::id(),
+                            ipAddress:      request()->ip(),
+                            userAgent:      request()->userAgent(),
+                            actionSummary:  "Admin re-enabled membership for {$record->email}",
+                        );
+
+                        Notification::make()->success()->title('Membership re-enabled')->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Could not enable membership')->body($e->getMessage())->send();
+                    }
+                }),
+        ];
     }
 
     private function formatServiceRange(mixed $start, mixed $end): ?string
