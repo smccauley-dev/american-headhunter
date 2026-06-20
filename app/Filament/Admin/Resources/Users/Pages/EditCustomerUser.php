@@ -129,6 +129,7 @@ class EditCustomerUser extends EditRecord
                         ->icon('heroicon-o-credit-card')
                         ->schema([
                             Section::make('Current Membership')
+                                ->description("The member's active plan, billing source, and renewal status. Use the controls to add, change, disable, or re-enable a membership.")
                                 ->headerActions($this->membershipActions())
                                 ->schema([
                                     Placeholder::make('membership_summary')
