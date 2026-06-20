@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\PropertyContactController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\PropertyMapController;
 use App\Http\Controllers\Api\RecoveryController;
+use App\Http\Controllers\Api\StripeWebhookController;
 use Illuminate\Support\Facades\Route;
 
 $propertyRoutes = function () {
@@ -51,6 +52,11 @@ Route::prefix('v1/auth')->middleware('db.system')->group(function () {
 // Dropbox Sign webhook — no auth, HMAC-verified internally
 Route::post('/webhooks/dropbox-sign', [DropboxSignWebhookController::class, 'handle'])
     ->name('webhooks.dropbox-sign');
+
+// Stripe webhook — no auth, signature-verified internally; dispatches to the
+// priority queue where the worker runs under the trusted ah_system role.
+Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handle'])
+    ->name('webhooks.stripe');
 
 // Lease signing — mobile API
 Route::prefix('v1/leases')
