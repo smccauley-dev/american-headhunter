@@ -244,6 +244,19 @@ class StripeService
     }
 
     /**
+     * Retrieve an invoice from Stripe and resolve its PaymentIntent id. The
+     * webhook projection (Phase 5.7) calls this at invoice.paid time to capture
+     * the PI on the local row, so a later charge.refunded — which carries no
+     * invoice back-reference under the dahlia API — can be mapped to the invoice.
+     */
+    public function invoicePaymentIntentIdFor(string $invoiceId): ?string
+    {
+        $invoice = Invoice::retrieve(['id' => $invoiceId, 'expand' => ['payments']]);
+
+        return $this->invoicePaymentIntentId($invoice);
+    }
+
+    /**
      * Resolve the PaymentIntent id backing an invoice. Recent API versions moved
      * the payment off the top-level invoice.payment_intent/charge fields onto the
      * invoice.payments list; this reads that first, then falls back to the legacy

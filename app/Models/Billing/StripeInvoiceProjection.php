@@ -20,6 +20,7 @@ class StripeInvoiceProjection extends BaseModelWithSoftDeletes
         'stripe_invoice_id',
         'stripe_subscription_id',
         'stripe_customer_id',
+        'stripe_payment_intent_id',
         'number',
         'status',
         'amount_cents',
@@ -39,6 +40,7 @@ class StripeInvoiceProjection extends BaseModelWithSoftDeletes
         'stripe_invoice_id',
         'stripe_subscription_id',
         'stripe_customer_id',
+        'stripe_payment_intent_id',
     ];
 
     protected function casts(): array

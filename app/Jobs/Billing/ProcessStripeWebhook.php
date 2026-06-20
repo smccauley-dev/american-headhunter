@@ -4,6 +4,7 @@ namespace App\Jobs\Billing;
 
 use App\Models\Billing\Payment;
 use App\Models\Billing\StripeAccount;
+use App\Models\Billing\StripeInvoiceProjection;
 use App\Models\Billing\Subscription;
 use App\Services\Audit\AuditService;
 use App\Services\Billing\StripeService;
@@ -63,7 +64,12 @@ class ProcessStripeWebhook implements ShouldQueue
             'checkout.session.completed'    => $this->checkoutCompleted($subscriptions, $stripe),
             'customer.subscription.updated' => $this->subscriptionUpdated($entitlements, $audit),
             'customer.subscription.deleted' => $this->subscriptionDeleted($entitlements, $audit),
-            'invoice.payment_failed'        => $this->invoicePaymentFailed($entitlements, $audit),
+            'invoice.created',
+            'invoice.finalized',
+            'invoice.paid',
+            'invoice.voided'                => $this->upsertInvoiceProjection($stripe),
+            'invoice.payment_failed'        => $this->invoicePaymentFailed($entitlements, $audit, $stripe),
+            'charge.refunded'               => $this->chargeRefunded(),
             'payment_intent.succeeded'      => $this->paymentIntentSucceeded($audit),
             'account.updated'               => $this->accountUpdated($audit),
             default                         => Log::info('StripeWebhook: unhandled event type', ['type' => $this->eventType]),
@@ -218,9 +224,13 @@ class ProcessStripeWebhook implements ShouldQueue
         );
     }
 
-    private function invoicePaymentFailed(EntitlementService $entitlements, AuditService $audit): void
+    private function invoicePaymentFailed(EntitlementService $entitlements, AuditService $audit, StripeService $stripe): void
     {
-        $stripeSubId = $this->object['subscription'] ?? null;
+        // Mirror the (unpaid) invoice locally regardless of how the subscription
+        // resolves below.
+        $this->upsertInvoiceProjection($stripe);
+
+        $stripeSubId = $this->invoiceSubscriptionDetails()['subscription'] ?? null;
         if (! $stripeSubId) {
             Log::info('StripeWebhook: invoice.payment_failed without subscription');
             return;
@@ -317,5 +327,121 @@ class ProcessStripeWebhook implements ShouldQueue
                 'payouts_enabled' => $account->payouts_enabled,
             ],
         );
+    }
+
+    /**
+     * Read the subscription metadata Stripe nests on a subscription invoice. The
+     * dahlia API moved the subscription id and our checkout metadata off the
+     * top-level invoice onto invoice.parent.subscription_details.
+     *
+     * @return array<string,mixed>|null null when the invoice isn't subscription-backed
+     */
+    private function invoiceSubscriptionDetails(): ?array
+    {
+        $details = $this->object['parent']['subscription_details'] ?? null;
+
+        return is_array($details) ? $details : null;
+    }
+
+    /**
+     * Upsert the local projection of a Stripe SUBSCRIPTION invoice (Phase 5.7) so
+     * the admin invoice list and member billing history can read from DB 4 instead
+     * of calling Stripe per render. Only subscription invoices are mirrored — the
+     * subscriber + plan version ride in parent.subscription_details.metadata. On a
+     * paid invoice we also capture the PaymentIntent (the only point it exists) so
+     * a later charge.refunded can map back to this row. Stripe stays the source of
+     * truth; the daily reconcile job is the backstop for any event we miss.
+     */
+    private function upsertInvoiceProjection(StripeService $stripe): void
+    {
+        $invoiceId = $this->object['id'] ?? null;
+        if (! $invoiceId) {
+            return;
+        }
+
+        $details = $this->invoiceSubscriptionDetails();
+        if (! $details) {
+            return; // a one-off invoice — out of scope for the subscription projection
+        }
+
+        $stripeSubId      = $details['subscription'] ?? null;
+        $subscriberUserId = $details['metadata']['user_id'] ?? null;
+
+        // Fall back to the local subscription if Stripe didn't echo our metadata.
+        if (! $subscriberUserId && $stripeSubId) {
+            $subscriberUserId = Subscription::where('stripe_subscription_id', $stripeSubId)->value('user_id');
+        }
+        if (! $subscriberUserId) {
+            Log::info('StripeWebhook: invoice projection skipped — no subscriber', ['invoice' => $invoiceId]);
+            return;
+        }
+
+        $status = $this->object['status'] ?? 'draft';
+
+        $attributes = [
+            'subscriber_user_id'     => $subscriberUserId,
+            'stripe_subscription_id' => $stripeSubId,
+            'stripe_customer_id'     => $this->object['customer'] ?? null,
+            'number'                 => $this->object['number'] ?? null,
+            'status'                 => $status,
+            'amount_cents'           => (int) (($this->object['amount_paid'] ?? 0) ?: ($this->object['amount_due'] ?? 0)),
+            'currency'               => strtoupper((string) ($this->object['currency'] ?? 'usd')),
+            'period_start'           => $this->timestampOrNull($this->object['period_start'] ?? null),
+            'period_end'             => $this->timestampOrNull($this->object['period_end'] ?? null),
+            'hosted_invoice_url'     => $this->object['hosted_invoice_url'] ?? null,
+            'invoice_pdf'            => $this->object['invoice_pdf'] ?? null,
+            'stripe_created_at'      => $this->timestampOrNull($this->object['created'] ?? null),
+        ];
+
+        // Best-effort PI capture once the invoice is paid — a Stripe hiccup here
+        // must not fail the projection write (the reconcile job will backfill it).
+        if ($status === 'paid') {
+            try {
+                $pi = $stripe->invoicePaymentIntentIdFor($invoiceId);
+                if ($pi) {
+                    $attributes['stripe_payment_intent_id'] = $pi;
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        StripeInvoiceProjection::updateOrCreate(
+            ['stripe_invoice_id' => $invoiceId],
+            $attributes,
+        );
+    }
+
+    /**
+     * Reflect a refund on the projected invoice. The dahlia API strips the invoice
+     * reference from both the charge and its PaymentIntent, so we map by the PI we
+     * captured on the row at payment time.
+     */
+    private function chargeRefunded(): void
+    {
+        $paymentIntent = $this->object['payment_intent'] ?? null;
+        if (! $paymentIntent) {
+            return;
+        }
+
+        $projection = StripeInvoiceProjection::where('stripe_payment_intent_id', $paymentIntent)->first();
+        if (! $projection) {
+            Log::info('StripeWebhook: charge.refunded has no projected invoice', ['payment_intent' => $paymentIntent]);
+            return;
+        }
+
+        $charged  = (int) ($this->object['amount'] ?? 0);
+        $refunded = (int) ($this->object['amount_refunded'] ?? 0);
+
+        $projection->amount_refunded_cents = $refunded;
+        $projection->refund_status = $refunded <= 0
+            ? 'none'
+            : ($charged > 0 && $refunded >= $charged ? 'full' : 'partial');
+        $projection->save();
+    }
+
+    private function timestampOrNull(?int $timestamp): ?Carbon
+    {
+        return $timestamp ? Carbon::createFromTimestamp($timestamp) : null;
     }
 }
