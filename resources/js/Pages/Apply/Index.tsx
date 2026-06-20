@@ -818,9 +818,15 @@ export default function ApplyIndex({ listing, property, unavailableRanges, prima
     });
 
     function updateHunter(index: number, field: keyof HunterData, value: unknown) {
-        const hunters = [...data.hunters];
-        hunters[index] = { ...hunters[index], [field]: value };
-        setData('hunters', hunters);
+        // Functional updater — never read `data.hunters` from this closure. FilePond
+        // binds its onupdatefiles callback once at mount, so the file-upload path
+        // would otherwise merge a file into a stale (empty) hunters snapshot and wipe
+        // every field the user typed afterward. Merging against `prev` is always current.
+        setData(prev => {
+            const hunters = [...prev.hunters];
+            hunters[index] = { ...hunters[index], [field]: value };
+            return { ...prev, hunters };
+        });
     }
 
     function addBlankHunter() {
