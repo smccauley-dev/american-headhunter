@@ -20,6 +20,7 @@
             <th style="{{ $ths }}">Date</th>
             <th style="{{ $ths }}">Amount</th>
             <th style="{{ $ths }}">Status</th>
+            <th style="{{ $ths }}">Refund</th>
             <th style="{{ $ths }}">Links</th>
         </tr>
     </thead>
@@ -34,6 +35,18 @@
                     <span style="display:inline-block;padding:0.1rem 0.5rem;border-radius:9999px;font-size:0.68rem;font-weight:600;text-transform:uppercase;color:{{ $ic }};background:{{ $ibg }};">
                         {{ $inv['status'] ?? '—' }}
                     </span>
+                </td>
+                <td style="{{ $tds }}white-space:nowrap;">
+                    @php $rs = $inv['refund_status'] ?? 'none'; @endphp
+                    @if ($rs === 'none')
+                        <span style="color:#9ca3af;">—</span>
+                    @else
+                        @php [$rc, $rbg] = $rs === 'full' ? ['#991b1b', '#fee2e2'] : ['#92400e', '#fef3c7']; @endphp
+                        <span style="display:inline-block;padding:0.1rem 0.5rem;border-radius:9999px;font-size:0.68rem;font-weight:600;text-transform:uppercase;color:{{ $rc }};background:{{ $rbg }};">
+                            {{ $rs === 'full' ? 'Refunded' : 'Partial' }}
+                        </span>
+                        <span style="color:#6b7280;font-size:0.78rem;margin-left:0.35rem;">${{ $inv['refunded'] }} {{ $inv['currency'] }}</span>
+                    @endif
                 </td>
                 <td style="{{ $tds }}white-space:nowrap;">
                     @if (! empty($inv['hosted_url']))

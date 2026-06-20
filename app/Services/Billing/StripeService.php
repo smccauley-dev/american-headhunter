@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\Billing\Subscription;
 use App\Models\Identity\User;
 use App\Models\Platform\MembershipPlan;
+use Stripe\Charge;
 use Stripe\Checkout\Session;
 use Stripe\Customer;
 use Stripe\Event;
@@ -191,19 +192,73 @@ class StripeService
      */
     public function listInvoices(string $customerId, int $limit = 24): array
     {
-        $invoices = Invoice::all(['customer' => $customerId, 'limit' => $limit]);
+        // Expand payments so each invoice exposes its PaymentIntent id — recent
+        // Stripe API versions dropped the top-level invoice.charge/payment_intent.
+        $invoices = Invoice::all([
+            'customer' => $customerId,
+            'limit'    => $limit,
+            'expand'   => ['data.payments'],
+        ]);
 
-        return collect($invoices->data)->map(fn (Invoice $inv) => [
-            'id'           => $inv->id,
-            'number'       => $inv->number,
-            'date'         => $inv->created ? date('M j, Y', $inv->created) : null,
-            'amount'       => number_format((($inv->amount_paid ?: $inv->amount_due) ?? 0) / 100, 2),
-            'amount_cents' => (int) (($inv->amount_paid ?: $inv->amount_due) ?? 0),
-            'currency'     => strtoupper((string) $inv->currency),
-            'status'       => $inv->status, // paid | open | void | draft | uncollectible
-            'hosted_url'   => $inv->hosted_invoice_url,
-            'pdf_url'      => $inv->invoice_pdf,
-        ])->all();
+        // Refund totals keyed by PaymentIntent id, fetched in a single charges
+        // call (charges carry amount_refunded + payment_intent) so the refund
+        // column costs one extra request instead of one per invoice. If it fails,
+        // the column degrades to "—" and the invoice list still renders.
+        $refundedByPi = [];
+        try {
+            $charges = Charge::all(['customer' => $customerId, 'limit' => 100]);
+            foreach ($charges->data as $charge) {
+                $pi = $charge->payment_intent ?? null;
+                if ($pi) {
+                    $refundedByPi[$pi] = ($refundedByPi[$pi] ?? 0) + (int) ($charge->amount_refunded ?? 0);
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return collect($invoices->data)->map(function (Invoice $inv) use ($refundedByPi) {
+            $amountCents = (int) (($inv->amount_paid ?: $inv->amount_due) ?? 0);
+
+            $piId = $this->invoicePaymentIntentId($inv);
+            $refundedCents = $piId !== null ? ($refundedByPi[$piId] ?? 0) : 0;
+            $refundStatus  = $refundedCents <= 0
+                ? 'none'
+                : ($amountCents > 0 && $refundedCents >= $amountCents ? 'full' : 'partial');
+
+            return [
+                'id'             => $inv->id,
+                'number'         => $inv->number,
+                'date'           => $inv->created ? date('M j, Y', $inv->created) : null,
+                'amount'         => number_format($amountCents / 100, 2),
+                'amount_cents'   => $amountCents,
+                'currency'       => strtoupper((string) $inv->currency),
+                'status'         => $inv->status, // paid | open | void | draft | uncollectible
+                'refund_status'  => $refundStatus, // none | partial | full
+                'refunded'       => number_format($refundedCents / 100, 2),
+                'refunded_cents' => $refundedCents,
+                'hosted_url'     => $inv->hosted_invoice_url,
+                'pdf_url'        => $inv->invoice_pdf,
+            ];
+        })->all();
+    }
+
+    /**
+     * Resolve the PaymentIntent id backing an invoice. Recent API versions moved
+     * the payment off the top-level invoice.payment_intent/charge fields onto the
+     * invoice.payments list; this reads that first, then falls back to the legacy
+     * fields. Returns null when the invoice has no captured payment yet.
+     */
+    private function invoicePaymentIntentId(Invoice $invoice): ?string
+    {
+        foreach (($invoice->payments->data ?? []) as $payment) {
+            $candidate = $payment->payment->payment_intent ?? null;
+            if ($candidate) {
+                return $candidate;
+            }
+        }
+
+        return ! empty($invoice->payment_intent) ? (string) $invoice->payment_intent : null;
     }
 
     /**
@@ -218,11 +273,13 @@ class StripeService
      */
     public function refundInvoice(string $invoiceId, ?int $amountCents = null, ?string $reason = null, ?string $note = null): Refund
     {
-        $invoice = Invoice::retrieve($invoiceId);
+        $invoice = Invoice::retrieve(['id' => $invoiceId, 'expand' => ['payments']]);
+
+        $paymentIntent = $this->invoicePaymentIntentId($invoice);
 
         $params = [];
-        if (! empty($invoice->payment_intent)) {
-            $params['payment_intent'] = $invoice->payment_intent;
+        if ($paymentIntent) {
+            $params['payment_intent'] = $paymentIntent;
         } elseif (! empty($invoice->charge)) {
             $params['charge'] = $invoice->charge;
         } else {
