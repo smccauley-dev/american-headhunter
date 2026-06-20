@@ -448,6 +448,17 @@ interface Membership {
   cancelled_at: string | null
 }
 
+interface InvoiceItem {
+  id: string
+  number: string | null
+  date: string | null
+  amount: string
+  currency: string
+  status: string | null
+  hosted_url: string | null
+  pdf_url: string | null
+}
+
 interface Props {
   user: UserData
   profile: ProfileData
@@ -461,6 +472,8 @@ interface Props {
   }
   leases: LeaseSummary[]
   membership: Membership
+  // Stripe-hosted invoices for the member's billing history (empty for free plans).
+  invoices: InvoiceItem[]
   // Set after returning from Stripe Checkout: 'success' | 'cancel'.
   checkout: string | null
   initial_tab: 'about' | 'leases' | 'membership'
@@ -724,7 +737,7 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, activity, security, leases, membership, checkout, initial_tab, template, properties }: Props) {
+export default function HunterProfile({ user, profile, photos, activity, security, leases, membership, invoices, checkout, initial_tab, template, properties }: Props) {
   // Landowner accounts reuse this profile shell but swap the hunting-specific
   // modules (gear, hunting prefs) for a "My Properties" blade.
   const isLandowner = user.account_type === 'landowner'
@@ -1402,7 +1415,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   ) : tab === 'leases' ? (
                     <LeasesTab leases={leases} />
                   ) : tab === 'membership' ? (
-                    <MembershipTab membership={membership} checkout={checkout} />
+                    <MembershipTab membership={membership} checkout={checkout} invoices={invoices} />
                   ) : (
                     <SecurityTab
                       mfa={security.mfa}
@@ -1549,7 +1562,27 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
 
 // ── My Membership tab ─────────────────────────────────────────────────────────
 
-function MembershipTab({ membership, checkout }: { membership: Membership; checkout: string | null }) {
+function MembershipTab({ membership, checkout, invoices }: { membership: Membership; checkout: string | null; invoices: InvoiceItem[] }) {
+  const [busy, setBusy] = useState(false)
+
+  // A paid subscription can be cancelled (and a scheduled cancel resumed) until
+  // its period ends; free/promo plans have nothing to cancel here.
+  const canManage = membership.source === 'subscription' && !membership.is_free
+  const scheduledToCancel = !!membership.cancelled_at
+
+  function cancelMembership() {
+    if (busy) return
+    if (!confirm('Cancel your membership? You keep full access until the end of the current billing period, and you can resume anytime before then.')) return
+    setBusy(true)
+    router.post('/member/membership/cancel', {}, { preserveScroll: true, onFinish: () => setBusy(false) })
+  }
+
+  function resumeMembership() {
+    if (busy) return
+    setBusy(true)
+    router.post('/member/membership/resume', {}, { preserveScroll: true, onFinish: () => setBusy(false) })
+  }
+
   // Status pill palette — mirrors the lease card's status styling vocabulary.
   const palette: Record<string, { bg: string; color: string; border: string }> = {
     active:   { bg: 'rgba(74,124,89,0.2)',  color: '#7bbd8e', border: '1px solid rgba(74,124,89,0.5)' },
@@ -1656,8 +1689,65 @@ function MembershipTab({ membership, checkout }: { membership: Membership; check
           >
             Compare Plans
           </a>
+          {canManage && (
+            scheduledToCancel ? (
+              <button
+                type="button"
+                onClick={resumeMembership}
+                disabled={busy}
+                style={{ marginLeft: 'auto', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: '#3f6b4d', border: '1px solid rgba(74,124,89,0.5)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 }}
+              >
+                {busy ? 'Working…' : 'Resume Membership'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={cancelMembership}
+                disabled={busy}
+                style={{ marginLeft: 'auto', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: '#b03a2e', border: '1px solid rgba(176,58,46,0.4)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 }}
+              >
+                {busy ? 'Working…' : 'Cancel Membership'}
+              </button>
+            )
+          )}
         </div>
       </div>
+
+      {invoices.length > 0 && (
+        <div style={{ border: '1px solid #d4c9b0', background: '#FBF7EE' }}>
+          <div style={{ padding: '12px 18px', borderBottom: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874' }}>
+            Billing History
+          </div>
+          {invoices.map(inv => (
+            <div
+              key={inv.id}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 18px', borderBottom: '1px solid #f0eadd' }}
+            >
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: 'var(--ah-ink)', minWidth: '92px' }}>
+                {inv.date ?? '—'}
+              </div>
+              <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '14px', color: 'var(--ah-ink)', minWidth: '90px' }}>
+                ${inv.amount} {inv.currency}
+              </div>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: inv.status === 'paid' ? '#3f6b4d' : '#9a7b2e' }}>
+                {inv.status ?? '—'}
+              </div>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '14px' }}>
+                {inv.hosted_url && (
+                  <a href={inv.hosted_url} target="_blank" rel="noopener noreferrer" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ah-ink)', textDecoration: 'none', borderBottom: '1px solid var(--ah-accent)' }}>
+                    View
+                  </a>
+                )}
+                {inv.pdf_url && (
+                  <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ah-ink)', textDecoration: 'none', borderBottom: '1px solid var(--ah-accent)' }}>
+                    PDF
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

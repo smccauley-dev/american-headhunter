@@ -166,6 +166,19 @@ class ProcessStripeWebhook implements ShouldQueue
         if (! empty($this->object['current_period_end'])) {
             $sub->current_period_end = Carbon::createFromTimestamp($this->object['current_period_end']);
         }
+
+        // A scheduled cancel (cancel_at_period_end) keeps the subscription active
+        // until the period ends; we record the date so the member sees "Cancels …".
+        // Clearing the flag (Resume) wipes that date again.
+        if (! empty($this->object['cancel_at_period_end'])) {
+            $cancelAt = $this->object['cancel_at'] ?? $this->object['current_period_end'] ?? null;
+            if ($cancelAt && empty($sub->cancelled_at)) {
+                $sub->cancelled_at = Carbon::createFromTimestamp($cancelAt);
+            }
+        } elseif ($sub->status !== 'cancelled') {
+            $sub->cancelled_at = null;
+        }
+
         if ($sub->status === 'cancelled' && empty($sub->cancelled_at)) {
             $sub->cancelled_at = now();
         }

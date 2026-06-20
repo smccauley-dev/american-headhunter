@@ -9,6 +9,7 @@ use App\Http\Controllers\Member\LeaseApplicationController as MemberLeaseApplica
 use App\Http\Controllers\Member\LeaseDocumentController;
 use App\Http\Controllers\Member\LeaseSignController;
 use App\Http\Controllers\Member\MemberController;
+use App\Http\Controllers\Member\MembershipController;
 use App\Http\Controllers\Member\ProfileController;
 use App\Http\Controllers\Member\PropertyController as MemberPropertyController;
 use App\Http\Controllers\Member\PropertyDetailController as MemberPropertyDetailController;
@@ -181,6 +182,8 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::get('/myleases', [ProfileController::class, 'show'])->defaults('initialTab', 'leases')->name('myleases');
     Route::get('/membership', [ProfileController::class, 'show'])->defaults('initialTab', 'membership')->name('membership');
     Route::post('/membership/checkout', [CheckoutController::class, 'create'])->name('membership.checkout')->middleware('throttle:10,1');
+    Route::post('/membership/cancel', [MembershipController::class, 'cancel'])->name('membership.cancel')->middleware('throttle:10,1');
+    Route::post('/membership/resume', [MembershipController::class, 'resume'])->name('membership.resume')->middleware('throttle:10,1');
     Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->name('profile.avatar.upload');
     Route::post('/profile/photos', [ProfileController::class, 'uploadPhoto'])->name('profile.photos.upload');

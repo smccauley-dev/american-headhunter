@@ -162,4 +162,59 @@ class ProcessStripeWebhookTest extends TestCase
         $this->dispatch('customer.subscription.deleted', ['id' => 'sub_unknown_' . Str::random(8)]);
         $this->assertTrue(true);
     }
+
+    // ── customer.subscription.updated — scheduled cancel round-trip ──────────────
+
+    public function test_subscription_updated_records_scheduled_cancel(): void
+    {
+        $userId = $this->newUserId();
+        $subId  = 'sub_' . Str::random(14);
+
+        $sub = app(SubscriptionService::class)->start($userId, $this->versionId, [
+            'stripe_subscription_id' => $subId,
+            'stripe_customer_id'     => 'cus_sched',
+            'status'                 => 'active',
+        ]);
+        $this->subscriptionIds[] = $sub->id;
+
+        $cancelAt = now()->addDays(20)->timestamp;
+        $this->dispatch('customer.subscription.updated', [
+            'id'                   => $subId,
+            'status'               => 'active',
+            'cancel_at_period_end' => true,
+            'cancel_at'            => $cancelAt,
+            'current_period_end'   => $cancelAt,
+        ]);
+
+        $sub->refresh();
+        $this->assertSame('active', $sub->status, 'a scheduled cancel keeps the subscription active');
+        $this->assertNotNull($sub->cancelled_at, 'the scheduled cancel date is recorded');
+        $this->assertSame($cancelAt, $sub->cancelled_at->timestamp);
+    }
+
+    public function test_subscription_updated_clears_cancel_on_resume(): void
+    {
+        $userId = $this->newUserId();
+        $subId  = 'sub_' . Str::random(14);
+
+        $sub = app(SubscriptionService::class)->start($userId, $this->versionId, [
+            'stripe_subscription_id' => $subId,
+            'stripe_customer_id'     => 'cus_resume',
+            'status'                 => 'active',
+        ]);
+        $sub->cancelled_at = now()->addDays(10);
+        $sub->save();
+        $this->subscriptionIds[] = $sub->id;
+
+        // Stripe fires .updated with the flag cleared when the member resumes.
+        $this->dispatch('customer.subscription.updated', [
+            'id'                   => $subId,
+            'status'               => 'active',
+            'cancel_at_period_end' => false,
+        ]);
+
+        $sub->refresh();
+        $this->assertSame('active', $sub->status);
+        $this->assertNull($sub->cancelled_at, 'resuming clears the scheduled cancel date');
+    }
 }

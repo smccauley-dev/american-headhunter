@@ -8,9 +8,11 @@ use App\Models\Platform\MembershipPlan;
 use Stripe\Checkout\Session;
 use Stripe\Customer;
 use Stripe\Event;
+use Stripe\Invoice;
 use Stripe\Price;
 use Stripe\Product;
 use Stripe\Stripe;
+use Stripe\Subscription as StripeSubscription;
 use Stripe\Webhook;
 
 /**
@@ -157,5 +159,47 @@ class StripeService
                 ],
             ],
         ]);
+    }
+
+    /**
+     * Schedule a subscription to cancel at the end of the current paid period
+     * (the member keeps access through what they've already paid for). Stripe
+     * then fires customer.subscription.updated now and .deleted at period end.
+     * Returns the updated Stripe subscription so the caller can read cancel_at.
+     */
+    public function cancelSubscriptionAtPeriodEnd(string $stripeSubscriptionId): StripeSubscription
+    {
+        return StripeSubscription::update($stripeSubscriptionId, ['cancel_at_period_end' => true]);
+    }
+
+    /**
+     * Undo a scheduled cancellation — the subscription keeps renewing.
+     */
+    public function resumeSubscription(string $stripeSubscriptionId): StripeSubscription
+    {
+        return StripeSubscription::update($stripeSubscriptionId, ['cancel_at_period_end' => false]);
+    }
+
+    /**
+     * List a customer's invoices, shaped for display. Each row links to Stripe's
+     * hosted invoice page and PDF — Stripe stays the source of truth and hosts
+     * the documents, so nothing is stored locally.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function listInvoices(string $customerId, int $limit = 24): array
+    {
+        $invoices = Invoice::all(['customer' => $customerId, 'limit' => $limit]);
+
+        return collect($invoices->data)->map(fn (Invoice $inv) => [
+            'id'         => $inv->id,
+            'number'     => $inv->number,
+            'date'       => $inv->created ? date('M j, Y', $inv->created) : null,
+            'amount'     => number_format((($inv->amount_paid ?: $inv->amount_due) ?? 0) / 100, 2),
+            'currency'   => strtoupper((string) $inv->currency),
+            'status'     => $inv->status, // paid | open | void | draft | uncollectible
+            'hosted_url' => $inv->hosted_invoice_url,
+            'pdf_url'    => $inv->invoice_pdf,
+        ])->all();
     }
 }
