@@ -595,6 +595,7 @@ class PropertyService extends BaseService
      *   max_acres?: float,
      *   min_price?: float,
      *   max_price?: float,
+     *   restricted_state?: ?string,
      *   page?: int,
      *   per_page?: int,
      * } $filters
@@ -611,6 +612,16 @@ class PropertyService extends BaseService
             ->where('properties.status', 'active')
             ->whereNull('properties.deleted_at')
             ->where('property_listings.visibility', 'public');
+
+        // Home-state gate: a single-state-restricted member sees only listings in
+        // their locked state, plus featured listings anywhere (advertising). Applied
+        // before user filters so it can never be widened by a state_code filter.
+        if (! empty($filters['restricted_state'])) {
+            $query->where(function ($q) use ($filters) {
+                $q->where('properties.state_code', $filters['restricted_state'])
+                  ->orWhere('property_listings.is_featured', true);
+            });
+        }
 
         if (! empty($filters['state_code'])) {
             $query->where('properties.state_code', $filters['state_code']);

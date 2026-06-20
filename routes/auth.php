@@ -31,7 +31,9 @@ Route::get('/mfa/verify', [MfaController::class, 'show'])->name('auth.mfa.verify
 Route::post('/mfa/verify', [MfaController::class, 'verify'])->name('auth.mfa.verify.submit')->middleware('throttle:10,1');
 Route::post('/mfa/resend', [MfaController::class, 'resend'])->name('auth.mfa.resend')->middleware('throttle:3,1');
 
-Route::middleware('auth.session')->group(function () {
+// allow-pending: this is the post-signup waiting room, so a pending_verification
+// account (not yet active) must be able to see the notice, resend, and log out.
+Route::middleware('auth.session:allow-pending')->group(function () {
     Route::get('/email/verify', [AuthController::class, 'showVerifyEmailNotice'])->name('auth.verify-email.notice');
     Route::post('/email/verify/resend', [AuthController::class, 'resendVerification'])->name('auth.verify-email.resend');
 
