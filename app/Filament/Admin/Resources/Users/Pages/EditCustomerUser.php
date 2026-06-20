@@ -42,6 +42,7 @@ use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
@@ -57,6 +58,10 @@ class EditCustomerUser extends EditRecord
 
     /** Audit Log time window in days; 0 = all time (wired to the window pills). */
     public int $auditLogDays = 7;
+
+    /** Per-request memo of the customer's Stripe invoices — shared by the invoice
+     *  list and the refund action so a single render hits Stripe at most once. */
+    private ?array $invoicesMemo = null;
 
     /** Switch the Audit Log time window and reset to the first page. */
     public function setAuditWindow(int $days): void
@@ -267,7 +272,7 @@ class EditCustomerUser extends EditRecord
                                                     return 'No billing history — this account has no Stripe-billed membership.';
                                                 }
 
-                                                $invoices = app(StripeService::class)->listInvoices($customerId);
+                                                $invoices = $this->customerInvoices($customerId);
 
                                                 if (empty($invoices)) {
                                                     return 'No invoices found for this account.';
@@ -1368,6 +1373,32 @@ class EditCustomerUser extends EditRecord
     }
 
     /**
+     * The customer's Stripe invoices, fetched once per render (in-request memo)
+     * and Valkey-cached for 2 minutes. listInvoices() is two Stripe round-trips
+     * and is read by both the invoice list and the refund action — without this
+     * the edit page made ~4 synchronous Stripe calls on every load/interaction.
+     */
+    private function customerInvoices(string $customerId): array
+    {
+        if ($this->invoicesMemo !== null) {
+            return $this->invoicesMemo;
+        }
+
+        return $this->invoicesMemo = Cache::store('valkey')->remember(
+            "admin_invoices:{$customerId}",
+            now()->addMinutes(2),
+            fn () => app(StripeService::class)->listInvoices($customerId),
+        );
+    }
+
+    /** Drop the cached invoice list after an admin action that mutates it. */
+    private function invalidateInvoiceCache(string $customerId): void
+    {
+        Cache::store('valkey')->forget("admin_invoices:{$customerId}");
+        $this->invoicesMemo = null;
+    }
+
+    /**
      * Paid plan options for this user's account type, keyed by plan_key. Free /
      * default plans are excluded — those aren't memberships an admin "adds".
      */
@@ -1629,7 +1660,7 @@ class EditCustomerUser extends EditRecord
                 return [];
             }
 
-            return collect(app(StripeService::class)->listInvoices($customerId))
+            return collect($this->customerInvoices($customerId))
                 ->filter(fn (array $i) => ($i['status'] ?? null) === 'paid' && (int) ($i['amount_cents'] ?? 0) > 0)
                 ->mapWithKeys(fn (array $i) => [
                     $i['id'] => "INVOICE: {$i['number']} — {$i['date']} — \${$i['amount']} {$i['currency']}",
@@ -1752,6 +1783,12 @@ class EditCustomerUser extends EditRecord
                                 actionSummary:  "Admin scheduled cancellation at period end (with refund) for {$record->email}",
                                 newValues:      ['cancelled_at' => $sub->cancelled_at?->toDateString()],
                             );
+                        }
+
+                        // Refund changes the invoice's refund status — drop the
+                        // cached list so the column reflects it immediately.
+                        if ($sub?->stripe_customer_id) {
+                            $this->invalidateInvoiceCache($sub->stripe_customer_id);
                         }
 
                         Notification::make()->success()->title('Refund issued')->send();
