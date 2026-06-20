@@ -140,7 +140,7 @@ class EditCustomerUser extends EditRecord
         }
 
         $actions[] = Action::make('export_audit_csv')
-            ->label('Export Full Audit (CSV)')
+            ->label('Export Full Audit')
             ->icon('heroicon-o-arrow-down-tray')
             ->button()
             ->size(\Filament\Support\Enums\Size::Small)
@@ -820,7 +820,7 @@ class EditCustomerUser extends EditRecord
                                 ->headerActions($this->auditWindowActions())
                                 ->schema([
                                     Placeholder::make('audit_log')
-                                        ->label('')
+                                        ->hiddenLabel()
                                         ->content(function () {
                                             try {
                                                 // Audit events are keyed by record_id. User-level events use the
