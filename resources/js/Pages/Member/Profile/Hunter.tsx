@@ -1752,6 +1752,9 @@ function MembershipTab({ membership, checkout, billing, invoices }: { membership
               key={inv.id}
               style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 18px', borderBottom: '1px solid #f0eadd' }}
             >
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: 700, letterSpacing: '.04em', color: 'var(--ah-ink)', minWidth: '150px' }}>
+                INVOICE: {inv.number ?? '—'}
+              </div>
               <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: 'var(--ah-ink)', minWidth: '92px' }}>
                 {inv.date ?? '—'}
               </div>
