@@ -52,6 +52,9 @@ class EditCustomerUser extends EditRecord
 
     protected static string $resource = CustomerUserResource::class;
 
+    /** Current page of the Audit Log tab (wired to the Prev/Next controls). */
+    public int $auditLogPage = 1;
+
     public function getHeading(): string|\Illuminate\Contracts\Support\Htmlable
     {
         $name = trim(
@@ -734,17 +737,29 @@ class EditCustomerUser extends EditRecord
                                                         ->all(),
                                                 );
 
-                                                $events = \App\Models\Audit\AuditLog::on('audit')
-                                                    ->whereIn('record_id', $recordIds)
-                                                    ->orderByDesc('occurred_at')
-                                                    ->limit(50)
-                                                    ->get();
+                                                $perPage = 15;
+                                                $base = \App\Models\Audit\AuditLog::on('audit')
+                                                    ->whereIn('record_id', $recordIds);
 
-                                                if ($events->isEmpty()) {
+                                                $total = (clone $base)->count();
+                                                if ($total === 0) {
                                                     return 'No audit events for this user.';
                                                 }
 
-                                                return view('filament.admin.users.audit-log', ['events' => $events]);
+                                                $lastPage = (int) max(1, ceil($total / $perPage));
+                                                $page     = min(max(1, $this->auditLogPage), $lastPage);
+
+                                                $events = $base->orderByDesc('occurred_at')
+                                                    ->forPage($page, $perPage)
+                                                    ->get();
+
+                                                return view('filament.admin.users.audit-log', [
+                                                    'events'      => $events,
+                                                    'currentPage' => $page,
+                                                    'lastPage'    => $lastPage,
+                                                    'total'       => $total,
+                                                    'perPage'     => $perPage,
+                                                ]);
                                             } catch (\Throwable $e) {
                                                 report($e);
                                                 return 'Audit log unavailable.';

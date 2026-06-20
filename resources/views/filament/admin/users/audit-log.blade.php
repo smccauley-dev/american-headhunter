@@ -26,6 +26,7 @@
     $dtds = 'padding:0.2rem 0.5rem;border-bottom:1px solid #f9fafb;'
           . 'font-size:0.75rem;vertical-align:middle;';
 @endphp
+<div>
 <table style="width:100%;border-collapse:collapse;">
     <thead>
         <tr>
@@ -70,3 +71,33 @@
         @endforeach
     </tbody>
 </table>
+
+@isset($lastPage)
+    @if ($lastPage > 1)
+        @php
+            $from = ($currentPage - 1) * $perPage + 1;
+            $to   = min($currentPage * $perPage, $total);
+            $btn  = 'display:inline-flex;align-items:center;padding:0.3rem 0.7rem;font-size:0.78rem;font-weight:600;'
+                  . 'border:1px solid #e5e7eb;border-radius:0.375rem;background:#fff;color:#374151;cursor:pointer;';
+            $btnOff = 'display:inline-flex;align-items:center;padding:0.3rem 0.7rem;font-size:0.78rem;font-weight:600;'
+                    . 'border:1px solid #f3f4f6;border-radius:0.375rem;background:#f9fafb;color:#d1d5db;cursor:not-allowed;';
+        @endphp
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding-top:0.75rem;">
+            <span style="font-size:0.78rem;color:#9ca3af;">Showing {{ $from }}–{{ $to }} of {{ $total }}</span>
+            <div style="display:flex;align-items:center;gap:0.6rem;">
+                @if ($currentPage > 1)
+                    <button type="button" wire:click="$set('auditLogPage', {{ $currentPage - 1 }})" style="{{ $btn }}">‹ Prev</button>
+                @else
+                    <button type="button" disabled style="{{ $btnOff }}">‹ Prev</button>
+                @endif
+                <span style="font-size:0.78rem;color:#6b7280;white-space:nowrap;">Page {{ $currentPage }} of {{ $lastPage }}</span>
+                @if ($currentPage < $lastPage)
+                    <button type="button" wire:click="$set('auditLogPage', {{ $currentPage + 1 }})" style="{{ $btn }}">Next ›</button>
+                @else
+                    <button type="button" disabled style="{{ $btnOff }}">Next ›</button>
+                @endif
+            </div>
+        </div>
+    @endif
+@endisset
+</div>
