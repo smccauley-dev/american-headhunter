@@ -36,6 +36,19 @@ class StripeSyncPlansTest extends TestCase
                 'stripe_annual_price_id'  => $p->stripe_annual_price_id,
             ];
         }
+
+        // Start from a clean slate so the command mints fresh ids through the
+        // mock. A prior live `stripe:sync-plans` may have left real Stripe price
+        // ids persisted, which the idempotent "kept" path would otherwise
+        // preserve — making the assertions order- / DB-state-dependent. The real
+        // values are restored from $snapshot in tearDown.
+        DB::connection('platform')->table('membership_plans')
+            ->where('is_active', true)
+            ->update([
+                'stripe_product_id'       => null,
+                'stripe_monthly_price_id' => null,
+                'stripe_annual_price_id'  => null,
+            ]);
     }
 
     protected function tearDown(): void
