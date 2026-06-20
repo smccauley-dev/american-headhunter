@@ -119,6 +119,37 @@ class EditCustomerUser extends EditRecord
         }, $filename, ['Content-Type' => 'text/csv']);
     }
 
+    /**
+     * Audit Log section header buttons: the time-window selector (active window
+     * filled, the rest muted) followed by the full-history CSV export. Native
+     * Filament actions so they inherit the panel theme and sit inline with the
+     * section title.
+     */
+    private function auditWindowActions(): array
+    {
+        $windows = [3 => '3 days', 7 => '7 days', 15 => '15 days', 30 => '30 days', 0 => 'All'];
+
+        $actions = [];
+        foreach ($windows as $value => $label) {
+            $actions[] = Action::make("audit_window_{$value}")
+                ->label($label)
+                ->button()
+                ->size(\Filament\Support\Enums\Size::Small)
+                ->color(fn () => $this->auditLogDays === $value ? 'primary' : 'gray')
+                ->action(fn () => $this->setAuditWindow($value));
+        }
+
+        $actions[] = Action::make('export_audit_csv')
+            ->label('Export Full Audit (CSV)')
+            ->icon('heroicon-o-arrow-down-tray')
+            ->button()
+            ->size(\Filament\Support\Enums\Size::Small)
+            ->color('success')
+            ->action(fn () => $this->exportAuditCsv());
+
+        return $actions;
+    }
+
     public function getHeading(): string|\Illuminate\Contracts\Support\Htmlable
     {
         $name = trim(
@@ -785,6 +816,8 @@ class EditCustomerUser extends EditRecord
                         ->icon('heroicon-o-clock')
                         ->schema([
                             Section::make('Audit Log')
+                                ->description('Account and membership activity. Pick a time window to keep the view focused, or export the complete history.')
+                                ->headerActions($this->auditWindowActions())
                                 ->schema([
                                     Placeholder::make('audit_log')
                                         ->label('')

@@ -1,6 +1,7 @@
 {{-- Audit event table with before/after diffs.
      $events = collection of AuditLog models (current page, within the window)
-     $days   = active time window in days (0 = all time) --}}
+     $days   = active time window in days (0 = all time)
+     The window selector + CSV export live in the section header actions. --}}
 @php
     $boolFields = [
         'is_veteran', 'is_first_responder',
@@ -27,29 +28,8 @@
           . 'border-bottom:1px solid #e5e7eb;';
     $dtds = 'padding:0.2rem 0.5rem;border-bottom:1px solid #f9fafb;'
           . 'font-size:0.75rem;vertical-align:middle;';
-
-    // Window pill options: value (days) => label. 0 = all time.
-    $windows = [3 => '3 days', 7 => '7 days', 15 => '15 days', 30 => '30 days', 0 => 'All'];
-
-    $pillOn  = 'display:inline-flex;align-items:center;padding:0.3rem 0.7rem;font-size:0.78rem;font-weight:600;'
-             . 'border:1px solid #1d4ed8;border-radius:0.375rem;background:#1d4ed8;color:#fff;cursor:pointer;';
-    $pillOff = 'display:inline-flex;align-items:center;padding:0.3rem 0.7rem;font-size:0.78rem;font-weight:600;'
-             . 'border:1px solid #e5e7eb;border-radius:0.375rem;background:#fff;color:#374151;cursor:pointer;';
-    $exportBtn = 'display:inline-flex;align-items:center;gap:0.35rem;padding:0.3rem 0.8rem;font-size:0.78rem;font-weight:600;'
-               . 'border:1px solid #059669;border-radius:0.375rem;background:#059669;color:#fff;cursor:pointer;';
 @endphp
 <div>
-    {{-- Window filter + export controls — always visible, even with no events. --}}
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding-bottom:0.85rem;">
-        <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
-            <span style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#9ca3af;margin-right:0.25rem;">Show</span>
-            @foreach ($windows as $value => $label)
-                <button type="button" wire:click="setAuditWindow({{ $value }})" style="{{ ($days ?? 7) === $value ? $pillOn : $pillOff }}">{{ $label }}</button>
-            @endforeach
-        </div>
-        <button type="button" wire:click="exportAuditCsv" style="{{ $exportBtn }}">⤓ Export Full Audit (CSV)</button>
-    </div>
-
     @if ($total === 0)
         <p style="font-size:0.85rem;color:#9ca3af;padding:1rem 0;">
             @if (($days ?? 0) > 0)
@@ -109,25 +89,32 @@
                 @php
                     $from = ($currentPage - 1) * $perPage + 1;
                     $to   = min($currentPage * $perPage, $total);
-                    $btn  = 'display:inline-flex;align-items:center;padding:0.3rem 0.7rem;font-size:0.78rem;font-weight:600;'
-                          . 'border:1px solid #e5e7eb;border-radius:0.375rem;background:#fff;color:#374151;cursor:pointer;';
-                    $btnOff = 'display:inline-flex;align-items:center;padding:0.3rem 0.7rem;font-size:0.78rem;font-weight:600;'
-                            . 'border:1px solid #f3f4f6;border-radius:0.375rem;background:#f9fafb;color:#d1d5db;cursor:not-allowed;';
                 @endphp
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding-top:0.75rem;">
-                    <span style="font-size:0.78rem;color:#9ca3af;">Showing {{ $from }}–{{ $to }} of {{ $total }}</span>
-                    <div style="display:flex;align-items:center;gap:0.6rem;">
-                        @if ($currentPage > 1)
-                            <button type="button" wire:click="$set('auditLogPage', {{ $currentPage - 1 }})" style="{{ $btn }}">‹ Prev</button>
-                        @else
-                            <button type="button" disabled style="{{ $btnOff }}">‹ Prev</button>
-                        @endif
-                        <span style="font-size:0.78rem;color:#6b7280;white-space:nowrap;">Page {{ $currentPage }} of {{ $lastPage }}</span>
-                        @if ($currentPage < $lastPage)
-                            <button type="button" wire:click="$set('auditLogPage', {{ $currentPage + 1 }})" style="{{ $btn }}">Next ›</button>
-                        @else
-                            <button type="button" disabled style="{{ $btnOff }}">Next ›</button>
-                        @endif
+                <div class="fi-pagination" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding-top:1rem;">
+                    <span class="fi-pagination-overview" style="font-size:0.8rem;color:#6b7280;">
+                        Showing {{ $from }}–{{ $to }} of {{ $total }}
+                    </span>
+                    <div style="display:flex;align-items:center;gap:0.75rem;">
+                        <x-filament::button
+                            size="sm"
+                            color="gray"
+                            icon="heroicon-m-chevron-left"
+                            :disabled="$currentPage <= 1"
+                            wire:click="$set('auditLogPage', {{ $currentPage - 1 }})"
+                        >
+                            Previous
+                        </x-filament::button>
+                        <span style="font-size:0.8rem;color:#6b7280;white-space:nowrap;">Page {{ $currentPage }} of {{ $lastPage }}</span>
+                        <x-filament::button
+                            size="sm"
+                            color="gray"
+                            icon="heroicon-m-chevron-right"
+                            icon-position="after"
+                            :disabled="$currentPage >= $lastPage"
+                            wire:click="$set('auditLogPage', {{ $currentPage + 1 }})"
+                        >
+                            Next
+                        </x-filament::button>
                     </div>
                 </div>
             @endif
