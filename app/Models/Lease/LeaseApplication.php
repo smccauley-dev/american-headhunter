@@ -66,7 +66,7 @@ class LeaseApplication extends BaseModelWithSoftDeletes
 
     public function getApplicant(): ?\App\Models\Identity\User
     {
-        return app(\App\Services\Identity\UserService::class)->find($this->applicant_user_id);
+        return app(\App\Services\Identity\UserService::class)->findById($this->applicant_user_id);
     }
 
     // ── Scopes ────────────────────────────────────────────────────────────────

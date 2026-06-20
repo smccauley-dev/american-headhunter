@@ -46,7 +46,7 @@ class Club extends BaseModelWithSoftDeletes
 
     public function getOwner(): ?\App\Models\Identity\User
     {
-        return app(\App\Services\Identity\UserService::class)->find($this->owner_user_id);
+        return app(\App\Services\Identity\UserService::class)->findById($this->owner_user_id);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

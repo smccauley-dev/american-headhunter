@@ -86,12 +86,12 @@ class Lease extends BaseModelWithSoftDeletes
 
     public function getLessee(): ?\App\Models\Identity\User
     {
-        return app(\App\Services\Identity\UserService::class)->find($this->lessee_user_id);
+        return app(\App\Services\Identity\UserService::class)->findById($this->lessee_user_id);
     }
 
     public function getLessor(): ?\App\Models\Identity\User
     {
-        return app(\App\Services\Identity\UserService::class)->find($this->lessor_user_id);
+        return app(\App\Services\Identity\UserService::class)->findById($this->lessor_user_id);
     }
 
     // ── Scopes ────────────────────────────────────────────────────────────────

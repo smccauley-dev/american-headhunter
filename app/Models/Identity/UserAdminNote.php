@@ -34,6 +34,6 @@ class UserAdminNote extends BaseModel
     // Cross-DB: resolved via UserService
     public function getAuthor(): ?\App\Models\Identity\User
     {
-        return app(\App\Services\Identity\UserService::class)->find($this->author_user_id);
+        return app(\App\Services\Identity\UserService::class)->findById($this->author_user_id);
     }
 }

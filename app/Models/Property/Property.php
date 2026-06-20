@@ -89,7 +89,7 @@ class Property extends BaseModelWithSoftDeletes
     // Cross-DB: resolved via UserService — do not use Eloquent belongsTo
     public function getOwner(): ?\App\Models\Identity\User
     {
-        return app(\App\Services\Identity\UserService::class)->find($this->owner_user_id);
+        return app(\App\Services\Identity\UserService::class)->findById($this->owner_user_id);
     }
 
     // Cross-DB: resolved via GeospatialService — do not use Eloquent belongsTo
