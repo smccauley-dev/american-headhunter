@@ -55,6 +55,70 @@ class EditCustomerUser extends EditRecord
     /** Current page of the Audit Log tab (wired to the Prev/Next controls). */
     public int $auditLogPage = 1;
 
+    /** Audit Log time window in days; 0 = all time (wired to the window pills). */
+    public int $auditLogDays = 7;
+
+    /** Switch the Audit Log time window and reset to the first page. */
+    public function setAuditWindow(int $days): void
+    {
+        $this->auditLogDays = max(0, $days);
+        $this->auditLogPage = 1;
+    }
+
+    /** Audit record ids for this user — their own id plus any subscription ids. */
+    private function auditRecordIds(): array
+    {
+        return array_merge(
+            [$this->getRecord()->id],
+            Subscription::query()
+                ->where('user_id', $this->getRecord()->id)
+                ->pluck('id')
+                ->all(),
+        );
+    }
+
+    /**
+     * Stream the user's COMPLETE audit history (all time, ignoring the window) as
+     * a CSV download. Uses a lazy cursor so the full log never lands in memory.
+     */
+    public function exportAuditCsv(): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $record    = $this->getRecord();
+        $recordIds = $this->auditRecordIds();
+        $filename  = 'audit-' . $record->id . '-' . now()->format('Ymd-His') . '.csv';
+
+        return response()->streamDownload(function () use ($recordIds) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, [
+                'Occurred At', 'Event Type', 'Source DB', 'Table', 'Record ID',
+                'Actor User ID', 'IP Address', 'User Agent', 'Summary',
+                'Old Values', 'New Values',
+            ]);
+
+            \App\Models\Audit\AuditLog::on('audit')
+                ->whereIn('record_id', $recordIds)
+                ->orderByDesc('occurred_at')
+                ->cursor()
+                ->each(function ($e) use ($out) {
+                    fputcsv($out, [
+                        $e->occurred_at?->toIso8601String(),
+                        $e->event_type,
+                        $e->source_database,
+                        $e->table_name,
+                        $e->record_id,
+                        $e->user_id,
+                        $e->ip_address,
+                        $e->user_agent,
+                        $e->action_summary,
+                        $e->old_values ? json_encode($e->old_values) : '',
+                        $e->new_values ? json_encode($e->new_values) : '',
+                    ]);
+                });
+
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv']);
+    }
+
     public function getHeading(): string|\Illuminate\Contracts\Support\Htmlable
     {
         $name = trim(
@@ -729,29 +793,24 @@ class EditCustomerUser extends EditRecord
                                                 // Audit events are keyed by record_id. User-level events use the
                                                 // user id; subscription events (membership activity) use the
                                                 // subscription id — include both so this is the full picture.
-                                                $recordIds = array_merge(
-                                                    [$this->getRecord()->id],
-                                                    Subscription::query()
-                                                        ->where('user_id', $this->getRecord()->id)
-                                                        ->pluck('id')
-                                                        ->all(),
-                                                );
+                                                $recordIds = $this->auditRecordIds();
 
                                                 $perPage = 15;
+                                                $days    = $this->auditLogDays;
+
                                                 $base = \App\Models\Audit\AuditLog::on('audit')
                                                     ->whereIn('record_id', $recordIds);
-
-                                                $total = (clone $base)->count();
-                                                if ($total === 0) {
-                                                    return 'No audit events for this user.';
+                                                if ($days > 0) {
+                                                    $base->where('occurred_at', '>=', now()->subDays($days));
                                                 }
 
-                                                $lastPage = (int) max(1, ceil($total / $perPage));
+                                                $total    = (clone $base)->count();
+                                                $lastPage = (int) max(1, ceil(max($total, 1) / $perPage));
                                                 $page     = min(max(1, $this->auditLogPage), $lastPage);
 
-                                                $events = $base->orderByDesc('occurred_at')
-                                                    ->forPage($page, $perPage)
-                                                    ->get();
+                                                $events = $total > 0
+                                                    ? $base->orderByDesc('occurred_at')->forPage($page, $perPage)->get()
+                                                    : collect();
 
                                                 return view('filament.admin.users.audit-log', [
                                                     'events'      => $events,
@@ -759,6 +818,7 @@ class EditCustomerUser extends EditRecord
                                                     'lastPage'    => $lastPage,
                                                     'total'       => $total,
                                                     'perPage'     => $perPage,
+                                                    'days'        => $days,
                                                 ]);
                                             } catch (\Throwable $e) {
                                                 report($e);
