@@ -124,92 +124,142 @@ class EditCustomerUser extends EditRecord
                                 ]),
                         ]),
 
-                    // ── Roles ─────────────────────────────────────────────────
-                    Tab::make('Roles')
-                        ->icon('heroicon-o-key')
+                    // ── Membership ────────────────────────────────────────────
+                    Tab::make('Membership')
+                        ->icon('heroicon-o-credit-card')
                         ->schema([
-                            Section::make('Platform Roles')
+                            Section::make('Current Membership')
+                                ->headerActions($this->membershipActions())
                                 ->schema([
-                                    CheckboxList::make('roles')
+                                    Placeholder::make('membership_summary')
                                         ->hiddenLabel()
-                                        ->helperText('Multi-role: controls what the user can do. The Primary Portal on the Identity tab controls where they log in.')
-                                        ->relationship(
-                                            'roles',
-                                            'display_name',
-                                            fn ($query) => $query
-                                                ->whereIn('name', CustomerUserResource::getNonAdminRoles())
-                                                ->orderBy('display_name')
-                                        )
-                                        ->columns(3)
-                                        ->columnSpanFull(),
+                                        ->content(function () {
+                                            try {
+                                                $record = $this->getRecord();
+                                                $m      = app(EntitlementService::class)->currentMembership($record);
+                                                $sub    = $this->currentSubscription();
+
+                                                return view('filament.admin.users.membership', [
+                                                    'm'   => $m,
+                                                    'sub' => $sub,
+                                                ]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Membership unavailable.';
+                                            }
+                                        }),
+                                ]),
+
+                            Section::make('Invoices')
+                                ->description('Billing history — each renewal is an invoice. Documents are hosted by Stripe.')
+                                ->schema([
+                                    Placeholder::make('membership_invoices')
+                                        ->hiddenLabel()
+                                        ->content(function () {
+                                            try {
+                                                $customerId = Subscription::query()
+                                                    ->where('user_id', $this->getRecord()->id)
+                                                    ->whereNotNull('stripe_customer_id')
+                                                    ->latest('created_at')
+                                                    ->value('stripe_customer_id');
+
+                                                if (! $customerId) {
+                                                    return 'No billing history — this account has no Stripe-billed membership.';
+                                                }
+
+                                                $invoices = app(StripeService::class)->listInvoices($customerId);
+
+                                                if (empty($invoices)) {
+                                                    return 'No invoices found for this account.';
+                                                }
+
+                                                return view('filament.admin.users.membership-invoices', ['invoices' => $invoices]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Invoices unavailable.';
+                                            }
+                                        }),
                                 ]),
                         ]),
 
-                    // ── Contact ───────────────────────────────────────────────
-                    Tab::make('Contact')
-                        ->icon('heroicon-o-phone')
+                    // ── Properties & Leases ───────────────────────────────────
+                    Tab::make('Properties & Leases')
+                        ->icon('heroicon-o-home-modern')
                         ->schema([
-                            Section::make('Primary Contact')
-                                ->columns(2)
+                            Section::make('Properties Owned')
                                 ->schema([
-                                    TextInput::make('email')
-                                        ->label('Email Address')
-                                        ->email()
-                                        ->required()
-                                        ->maxLength(255)
-                                        ->unique(table: 'users', column: 'email', ignoreRecord: true),
-                                    TextInput::make('phone')
-                                        ->label('Phone')
-                                        ->tel()
-                                        ->maxLength(20),
+                                    Placeholder::make('properties_owned')
+                                        ->label('')
+                                        ->content(function () {
+                                            try {
+                                                $properties = app(PropertyService::class)
+                                                    ->getOwnedPropertySummaries($this->getRecord()->id);
+
+                                                if (empty($properties)) return 'No properties owned.';
+
+                                                return view('filament.admin.users.properties-owned', ['properties' => $properties]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Unavailable.';
+                                            }
+                                        }),
                                 ]),
 
-                            Section::make('Mailing Address')
-                                ->description('Used for tax forms (1099) and mailing legal documents. Encrypted at rest.')
-                                ->columns(2)
+                            Section::make('Property Manager / Operator Roles')
                                 ->schema([
-                                    TextInput::make('address_line1')
-                                        ->label('Street Address')
-                                        ->maxLength(255)
-                                        ->columnSpanFull(),
-                                    TextInput::make('address_line2')
-                                        ->label('Apt / Unit / Suite')
-                                        ->maxLength(100)
-                                        ->columnSpanFull(),
-                                    TextInput::make('city')
-                                        ->label('City')
-                                        ->maxLength(100),
-                                    Select::make('state_code')
-                                        ->label('State')
-                                        ->options(\App\Support\UsStates::names())
-                                        ->searchable(),
-                                    TextInput::make('county')
-                                        ->label('County / Parish / District')
-                                        ->maxLength(100),
-                                    TextInput::make('zip_code')
-                                        ->label('ZIP Code')
-                                        ->maxLength(10),
+                                    Placeholder::make('property_manager_roles')
+                                        ->label('')
+                                        ->content(function () {
+                                            try {
+                                                $grants = app(PropertyService::class)
+                                                    ->getManagerGrantSummaries($this->getRecord()->id);
+
+                                                if (empty($grants)) return 'No property management roles.';
+
+                                                return view('filament.admin.users.manager-roles', ['grants' => $grants]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Unavailable.';
+                                            }
+                                        }),
                                 ]),
 
-                            Section::make('Emergency Contact')
-                                ->description('Who to reach in a field emergency or SOS event. Encrypted at rest.')
-                                ->columns(2)
+                            Section::make('Leases')
                                 ->schema([
-                                    TextInput::make('emergency_contact_name')
-                                        ->label('Name')
-                                        ->maxLength(150),
-                                    TextInput::make('emergency_contact_relationship')
-                                        ->label('Relationship')
-                                        ->maxLength(60)
-                                        ->placeholder('e.g. Spouse, Parent'),
-                                    TextInput::make('emergency_contact_phone')
-                                        ->label('Phone')
-                                        ->tel()
-                                        ->maxLength(20),
-                                    TextInput::make('emergency_contact_email')
-                                        ->label('Email')
-                                        ->email()
-                                        ->maxLength(255),
+                                    Placeholder::make('leases_summary')
+                                        ->label('')
+                                        ->content(function () {
+                                            try {
+                                                $leases = app(LeaseService::class)
+                                                    ->getLeaseSummariesForUser($this->getRecord()->id);
+
+                                                if (empty($leases)) return 'No leases found.';
+
+                                                return view('filament.admin.users.leases', ['leases' => $leases]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Unavailable.';
+                                            }
+                                        }),
+                                ]),
+
+                            Section::make('Club Memberships')
+                                ->schema([
+                                    Placeholder::make('club_memberships')
+                                        ->label('')
+                                        ->content(function () {
+                                            try {
+                                                $clubs = app(LeaseService::class)
+                                                    ->getClubAffiliationsForUser($this->getRecord()->id);
+
+                                                if (empty($clubs)) return 'No club memberships.';
+
+                                                return view('filament.admin.users.club-memberships', ['clubs' => $clubs]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Unavailable.';
+                                            }
+                                        }),
                                 ]),
                         ]),
 
@@ -326,6 +376,95 @@ class EditCustomerUser extends EditRecord
                                         ->maxLength(1000)
                                         ->columnSpanFull()
                                         ->hidden(fn (Get $get) => ! $get('is_first_responder')),
+                                ]),
+                        ]),
+
+                    // ── Contact ───────────────────────────────────────────────
+                    Tab::make('Contact')
+                        ->icon('heroicon-o-phone')
+                        ->schema([
+                            Section::make('Primary Contact')
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('email')
+                                        ->label('Email Address')
+                                        ->email()
+                                        ->required()
+                                        ->maxLength(255)
+                                        ->unique(table: 'users', column: 'email', ignoreRecord: true),
+                                    TextInput::make('phone')
+                                        ->label('Phone')
+                                        ->tel()
+                                        ->maxLength(20),
+                                ]),
+
+                            Section::make('Mailing Address')
+                                ->description('Used for tax forms (1099) and mailing legal documents. Encrypted at rest.')
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('address_line1')
+                                        ->label('Street Address')
+                                        ->maxLength(255)
+                                        ->columnSpanFull(),
+                                    TextInput::make('address_line2')
+                                        ->label('Apt / Unit / Suite')
+                                        ->maxLength(100)
+                                        ->columnSpanFull(),
+                                    TextInput::make('city')
+                                        ->label('City')
+                                        ->maxLength(100),
+                                    Select::make('state_code')
+                                        ->label('State')
+                                        ->options(\App\Support\UsStates::names())
+                                        ->searchable(),
+                                    TextInput::make('county')
+                                        ->label('County / Parish / District')
+                                        ->maxLength(100),
+                                    TextInput::make('zip_code')
+                                        ->label('ZIP Code')
+                                        ->maxLength(10),
+                                ]),
+
+                            Section::make('Emergency Contact')
+                                ->description('Who to reach in a field emergency or SOS event. Encrypted at rest.')
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('emergency_contact_name')
+                                        ->label('Name')
+                                        ->maxLength(150),
+                                    TextInput::make('emergency_contact_relationship')
+                                        ->label('Relationship')
+                                        ->maxLength(60)
+                                        ->placeholder('e.g. Spouse, Parent'),
+                                    TextInput::make('emergency_contact_phone')
+                                        ->label('Phone')
+                                        ->tel()
+                                        ->maxLength(20),
+                                    TextInput::make('emergency_contact_email')
+                                        ->label('Email')
+                                        ->email()
+                                        ->maxLength(255),
+                                ]),
+                        ]),
+
+                    // ── Roles ─────────────────────────────────────────────────
+                    Tab::make('Roles')
+                        ->icon('heroicon-o-key')
+                        ->schema([
+                            Section::make('Platform Roles')
+                                ->schema([
+                                    CheckboxList::make('roles')
+                                        ->hiddenLabel()
+                                        ->helperText('Multi-role: controls what the user can do. The Primary Portal on the Identity tab controls where they log in.')
+                                        ->relationship(
+                                            'roles',
+                                            'display_name',
+                                            fn ($query) => $query
+                                                ->whereIn('name', CustomerUserResource::getNonAdminRoles())
+                                                ->orderBy('display_name')
+                                        )
+                                        ->columns(3)
+                                        ->columnSpanFull(),
                                 ]),
                         ]),
 
@@ -545,64 +684,6 @@ class EditCustomerUser extends EditRecord
                                 ]),
                         ]),
 
-                    // ── Membership ────────────────────────────────────────────
-                    Tab::make('Membership')
-                        ->icon('heroicon-o-credit-card')
-                        ->schema([
-                            Section::make('Current Membership')
-                                ->headerActions($this->membershipActions())
-                                ->schema([
-                                    Placeholder::make('membership_summary')
-                                        ->hiddenLabel()
-                                        ->content(function () {
-                                            try {
-                                                $record = $this->getRecord();
-                                                $m      = app(EntitlementService::class)->currentMembership($record);
-                                                $sub    = $this->currentSubscription();
-
-                                                return view('filament.admin.users.membership', [
-                                                    'm'   => $m,
-                                                    'sub' => $sub,
-                                                ]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Membership unavailable.';
-                                            }
-                                        }),
-                                ]),
-
-                            Section::make('Invoices')
-                                ->description('Billing history — each renewal is an invoice. Documents are hosted by Stripe.')
-                                ->schema([
-                                    Placeholder::make('membership_invoices')
-                                        ->hiddenLabel()
-                                        ->content(function () {
-                                            try {
-                                                $customerId = Subscription::query()
-                                                    ->where('user_id', $this->getRecord()->id)
-                                                    ->whereNotNull('stripe_customer_id')
-                                                    ->latest('created_at')
-                                                    ->value('stripe_customer_id');
-
-                                                if (! $customerId) {
-                                                    return 'No billing history — this account has no Stripe-billed membership.';
-                                                }
-
-                                                $invoices = app(StripeService::class)->listInvoices($customerId);
-
-                                                if (empty($invoices)) {
-                                                    return 'No invoices found for this account.';
-                                                }
-
-                                                return view('filament.admin.users.membership-invoices', ['invoices' => $invoices]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Invoices unavailable.';
-                                            }
-                                        }),
-                                ]),
-                        ]),
-
                     // ── Admin Notes ───────────────────────────────────────────
                     Tab::make('Admin Notes')
                         ->icon('heroicon-o-pencil-square')
@@ -665,87 +746,6 @@ class EditCustomerUser extends EditRecord
                                             } catch (\Throwable $e) {
                                                 report($e);
                                                 return 'Audit log unavailable.';
-                                            }
-                                        }),
-                                ]),
-                        ]),
-
-                    // ── Properties & Leases ───────────────────────────────────
-                    Tab::make('Properties & Leases')
-                        ->icon('heroicon-o-home-modern')
-                        ->schema([
-                            Section::make('Properties Owned')
-                                ->schema([
-                                    Placeholder::make('properties_owned')
-                                        ->label('')
-                                        ->content(function () {
-                                            try {
-                                                $properties = app(PropertyService::class)
-                                                    ->getOwnedPropertySummaries($this->getRecord()->id);
-
-                                                if (empty($properties)) return 'No properties owned.';
-
-                                                return view('filament.admin.users.properties-owned', ['properties' => $properties]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Unavailable.';
-                                            }
-                                        }),
-                                ]),
-
-                            Section::make('Property Manager / Operator Roles')
-                                ->schema([
-                                    Placeholder::make('property_manager_roles')
-                                        ->label('')
-                                        ->content(function () {
-                                            try {
-                                                $grants = app(PropertyService::class)
-                                                    ->getManagerGrantSummaries($this->getRecord()->id);
-
-                                                if (empty($grants)) return 'No property management roles.';
-
-                                                return view('filament.admin.users.manager-roles', ['grants' => $grants]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Unavailable.';
-                                            }
-                                        }),
-                                ]),
-
-                            Section::make('Leases')
-                                ->schema([
-                                    Placeholder::make('leases_summary')
-                                        ->label('')
-                                        ->content(function () {
-                                            try {
-                                                $leases = app(LeaseService::class)
-                                                    ->getLeaseSummariesForUser($this->getRecord()->id);
-
-                                                if (empty($leases)) return 'No leases found.';
-
-                                                return view('filament.admin.users.leases', ['leases' => $leases]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Unavailable.';
-                                            }
-                                        }),
-                                ]),
-
-                            Section::make('Club Memberships')
-                                ->schema([
-                                    Placeholder::make('club_memberships')
-                                        ->label('')
-                                        ->content(function () {
-                                            try {
-                                                $clubs = app(LeaseService::class)
-                                                    ->getClubAffiliationsForUser($this->getRecord()->id);
-
-                                                if (empty($clubs)) return 'No club memberships.';
-
-                                                return view('filament.admin.users.club-memberships', ['clubs' => $clubs]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Unavailable.';
                                             }
                                         }),
                                 ]),
