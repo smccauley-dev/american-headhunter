@@ -8,10 +8,9 @@ use App\Models\Identity\LoginHistory;
 use App\Models\Identity\MfaConfiguration;
 use App\Models\Identity\User;
 use App\Models\Identity\UserProfile;
-use App\Models\Billing\Subscription;
+use App\Models\Billing\StripeInvoiceProjection;
 use App\Models\Lease\CheckIn;
 use App\Models\Wildlife\HarvestLog;
-use App\Services\Billing\StripeService;
 use App\Services\Documents\DocumentService;
 use App\Services\Lease\LeaseService;
 use App\Services\Platform\EntitlementService;
@@ -388,30 +387,19 @@ class ProfileController extends Controller
     // ── Private ───────────────────────────────────────────────────────────────
 
     /**
-     * The member's Stripe invoices for the membership card. Only fetched for
-     * members who actually have a Stripe customer (paying / formerly-paying), so
-     * free-tier loads never touch Stripe. Cached briefly and wrapped so a Stripe
-     * outage degrades to an empty list rather than 500ing the profile page.
+     * The member's invoices for the membership card, read from the local Stripe
+     * invoice projection (Phase 5.7) instead of a live Stripe call per render.
+     * The projection is kept current by webhooks + the daily reconcile job;
+     * Stripe stays the source of truth. Wrapped so any read hiccup degrades to an
+     * empty list rather than 500ing the profile page; free-tier members simply
+     * have no rows.
      *
      * @return array<int,array<string,mixed>>
      */
     private function buildInvoices(string $userId): array
     {
-        $customerId = Subscription::where('user_id', $userId)
-            ->whereNotNull('stripe_customer_id')
-            ->latest('created_at')
-            ->value('stripe_customer_id');
-
-        if (! $customerId) {
-            return [];
-        }
-
         try {
-            return Cache::store('valkey')->remember(
-                "member_invoices:{$customerId}",
-                now()->addMinutes(5),
-                fn () => app(StripeService::class)->listInvoices($customerId),
-            );
+            return StripeInvoiceProjection::displayForUser($userId);
         } catch (\Throwable) {
             return [];
         }

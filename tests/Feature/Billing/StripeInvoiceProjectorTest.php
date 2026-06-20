@@ -176,4 +176,39 @@ class StripeInvoiceProjectorTest extends TestCase
         $this->assertSame(999, $row->amount_refunded_cents);
         $this->assertSame('full', $row->refund_status);
     }
+
+    public function test_display_for_user_returns_listinvoices_shape_newest_first(): void
+    {
+        $userId = (string) Str::uuid();
+
+        $older = $this->projector->upsert($this->invoicePayload($userId, 'in_' . Str::random(14), 'paid', [
+            'created' => now()->subMonth()->timestamp,
+        ]), 'pi_old');
+        $newer = $this->projector->upsert($this->invoicePayload($userId, 'in_' . Str::random(14), 'paid', [
+            'created' => now()->timestamp,
+        ]), 'pi_new');
+
+        $rows = StripeInvoiceProjection::displayForUser($userId);
+
+        $this->assertCount(2, $rows);
+        // Newest first.
+        $this->assertSame($newer->stripe_invoice_id, $rows[0]['id']);
+        $this->assertSame($older->stripe_invoice_id, $rows[1]['id']);
+
+        // Exact listInvoices() row shape.
+        $this->assertSame(
+            ['id', 'number', 'date', 'amount', 'amount_cents', 'currency', 'status',
+                'refund_status', 'refunded', 'refunded_cents', 'hosted_url', 'pdf_url'],
+            array_keys($rows[0]),
+        );
+        $this->assertSame('9.99', $rows[0]['amount']);
+        $this->assertSame(999, $rows[0]['amount_cents']);
+        $this->assertSame('USD', $rows[0]['currency']);
+        $this->assertSame('none', $rows[0]['refund_status']);
+    }
+
+    public function test_display_for_user_is_empty_for_unknown_user(): void
+    {
+        $this->assertSame([], StripeInvoiceProjection::displayForUser((string) Str::uuid()));
+    }
 }

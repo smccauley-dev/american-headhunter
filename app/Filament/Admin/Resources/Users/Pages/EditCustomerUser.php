@@ -4,6 +4,7 @@ namespace App\Filament\Admin\Resources\Users\Pages;
 
 use App\Filament\Admin\Concerns\HasEditPageScaffold;
 use App\Filament\Admin\Resources\Users\CustomerUserResource;
+use App\Models\Billing\StripeInvoiceProjection;
 use App\Models\Billing\Subscription;
 use App\Models\Identity\BackgroundCheckResult;
 use App\Models\Identity\IdentityVerification;
@@ -42,7 +43,6 @@ use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
@@ -58,10 +58,6 @@ class EditCustomerUser extends EditRecord
 
     /** Audit Log time window in days; 0 = all time (wired to the window pills). */
     public int $auditLogDays = 7;
-
-    /** Per-request memo of the customer's Stripe invoices — shared by the invoice
-     *  list and the refund action so a single render hits Stripe at most once. */
-    private ?array $invoicesMemo = null;
 
     /** Switch the Audit Log time window and reset to the first page. */
     public function setAuditWindow(int $days): void
@@ -262,20 +258,10 @@ class EditCustomerUser extends EditRecord
                                         ->hiddenLabel()
                                         ->content(function () {
                                             try {
-                                                $customerId = Subscription::query()
-                                                    ->where('user_id', $this->getRecord()->id)
-                                                    ->whereNotNull('stripe_customer_id')
-                                                    ->latest('created_at')
-                                                    ->value('stripe_customer_id');
-
-                                                if (! $customerId) {
-                                                    return 'No billing history — this account has no Stripe-billed membership.';
-                                                }
-
-                                                $invoices = $this->customerInvoices($customerId);
+                                                $invoices = StripeInvoiceProjection::displayForUser($this->getRecord()->id);
 
                                                 if (empty($invoices)) {
-                                                    return 'No invoices found for this account.';
+                                                    return 'No billing history — this account has no Stripe-billed membership.';
                                                 }
 
                                                 return view('filament.admin.users.membership-invoices', ['invoices' => $invoices]);
@@ -1373,32 +1359,6 @@ class EditCustomerUser extends EditRecord
     }
 
     /**
-     * The customer's Stripe invoices, fetched once per render (in-request memo)
-     * and Valkey-cached for 2 minutes. listInvoices() is two Stripe round-trips
-     * and is read by both the invoice list and the refund action — without this
-     * the edit page made ~4 synchronous Stripe calls on every load/interaction.
-     */
-    private function customerInvoices(string $customerId): array
-    {
-        if ($this->invoicesMemo !== null) {
-            return $this->invoicesMemo;
-        }
-
-        return $this->invoicesMemo = Cache::store('valkey')->remember(
-            "admin_invoices:{$customerId}",
-            now()->addMinutes(2),
-            fn () => app(StripeService::class)->listInvoices($customerId),
-        );
-    }
-
-    /** Drop the cached invoice list after an admin action that mutates it. */
-    private function invalidateInvoiceCache(string $customerId): void
-    {
-        Cache::store('valkey')->forget("admin_invoices:{$customerId}");
-        $this->invoicesMemo = null;
-    }
-
-    /**
      * Paid plan options for this user's account type, keyed by plan_key. Free /
      * default plans are excluded — those aren't memberships an admin "adds".
      */
@@ -1641,26 +1601,17 @@ class EditCustomerUser extends EditRecord
     }
 
     /**
-     * Paid (refundable) Stripe invoices for this user, keyed by invoice id with a
-     * human label. Drives the refund modal's invoice picker. Returns [] when the
-     * account has no Stripe customer or Stripe is unreachable.
+     * Paid (refundable) invoices for this user, keyed by invoice id with a human
+     * label. Drives the refund modal's invoice picker. Read from the local Stripe
+     * invoice projection (Phase 5.7) — the refund itself still hits Stripe live.
+     * Returns [] when the account has no billed invoices or the read fails.
      *
      * @return array<string,string>
      */
     private function refundableInvoiceOptions(): array
     {
         try {
-            $customerId = Subscription::query()
-                ->where('user_id', $this->getRecord()->id)
-                ->whereNotNull('stripe_customer_id')
-                ->latest('created_at')
-                ->value('stripe_customer_id');
-
-            if (! $customerId) {
-                return [];
-            }
-
-            return collect($this->customerInvoices($customerId))
+            return collect(StripeInvoiceProjection::displayForUser($this->getRecord()->id))
                 ->filter(fn (array $i) => ($i['status'] ?? null) === 'paid' && (int) ($i['amount_cents'] ?? 0) > 0)
                 ->mapWithKeys(fn (array $i) => [
                     $i['id'] => "INVOICE: {$i['number']} — {$i['date']} — \${$i['amount']} {$i['currency']}",
@@ -1785,11 +1736,9 @@ class EditCustomerUser extends EditRecord
                             );
                         }
 
-                        // Refund changes the invoice's refund status — drop the
-                        // cached list so the column reflects it immediately.
-                        if ($sub?->stripe_customer_id) {
-                            $this->invalidateInvoiceCache($sub->stripe_customer_id);
-                        }
+                        // The refund's effect on the projection (refund_status,
+                        // amount_refunded_cents) lands via the charge.refunded
+                        // webhook; the daily reconcile is the backstop.
 
                         Notification::make()->success()->title('Refund issued')->send();
                     } catch (\Throwable $e) {
