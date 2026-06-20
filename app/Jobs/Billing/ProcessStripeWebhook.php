@@ -6,6 +6,7 @@ use App\Models\Billing\Payment;
 use App\Models\Billing\StripeAccount;
 use App\Models\Billing\Subscription;
 use App\Services\Audit\AuditService;
+use App\Services\Billing\SubscriptionService;
 use App\Services\Platform\EntitlementService;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -50,7 +51,7 @@ class ProcessStripeWebhook implements ShouldQueue
         $this->onQueue('priority');
     }
 
-    public function handle(EntitlementService $entitlements, AuditService $audit): void
+    public function handle(EntitlementService $entitlements, AuditService $audit, SubscriptionService $subscriptions): void
     {
         // Stripe may deliver the same event more than once — process it once.
         if (! Cache::store('valkey')->add("stripe_webhook:{$this->eventId}", 1, now()->addDays(2))) {
@@ -58,12 +59,86 @@ class ProcessStripeWebhook implements ShouldQueue
         }
 
         match ($this->eventType) {
+            'checkout.session.completed'    => $this->checkoutCompleted($subscriptions),
             'customer.subscription.updated' => $this->subscriptionUpdated($entitlements, $audit),
+            'customer.subscription.deleted' => $this->subscriptionDeleted($entitlements, $audit),
             'invoice.payment_failed'        => $this->invoicePaymentFailed($entitlements, $audit),
             'payment_intent.succeeded'      => $this->paymentIntentSucceeded($audit),
             'account.updated'               => $this->accountUpdated($audit),
             default                         => Log::info('StripeWebhook: unhandled event type', ['type' => $this->eventType]),
         };
+    }
+
+    /**
+     * A hosted Checkout completed — create the local subscription locked to the
+     * plan version carried in metadata. SubscriptionService::start audits and
+     * invalidates entitlements. Period dates default to monthly here and are
+     * reconciled by the following customer.subscription.updated event.
+     */
+    private function checkoutCompleted(SubscriptionService $subscriptions): void
+    {
+        if (($this->object['mode'] ?? null) !== 'subscription') {
+            return; // one-time payments are handled elsewhere
+        }
+
+        $stripeSubId   = $this->object['subscription'] ?? null;
+        $stripeCustId  = $this->object['customer'] ?? null;
+        $userId        = $this->object['metadata']['user_id'] ?? null;
+        $planVersionId = $this->object['metadata']['plan_version_id'] ?? null;
+
+        if (! $stripeSubId || ! $userId || ! $planVersionId) {
+            Log::warning('StripeWebhook: checkout.session.completed missing fields', ['stripe_subscription_id' => $stripeSubId]);
+            return;
+        }
+
+        // Idempotent: the subscription may already exist from a replay or a
+        // racing customer.subscription.* event.
+        if (Subscription::where('stripe_subscription_id', $stripeSubId)->exists()) {
+            return;
+        }
+
+        try {
+            $subscriptions->start($userId, $planVersionId, [
+                'stripe_subscription_id' => $stripeSubId,
+                'stripe_customer_id'     => $stripeCustId,
+                'status'                 => 'active',
+            ]);
+        } catch (\RuntimeException $e) {
+            // start() throws if the user already holds an active subscription —
+            // treat as already-reconciled rather than failing the webhook.
+            Log::info('StripeWebhook: checkout.session.completed skipped', ['error' => $e->getMessage(), 'user_id' => $userId]);
+        }
+    }
+
+    private function subscriptionDeleted(EntitlementService $entitlements, AuditService $audit): void
+    {
+        $stripeSubId = $this->object['id'] ?? null;
+        if (! $stripeSubId) {
+            return;
+        }
+
+        $sub = Subscription::where('stripe_subscription_id', $stripeSubId)->first();
+        if (! $sub || $sub->status === 'cancelled') {
+            return;
+        }
+
+        $old = $sub->status;
+        $sub->status       = 'cancelled';
+        $sub->cancelled_at = now();
+        $sub->save();
+
+        $entitlements->invalidateForUser($sub->user_id);
+
+        $audit->log(
+            eventType:      'subscription.cancelled',
+            sourceDatabase: 'ah_billing',
+            tableName:      'subscriptions',
+            recordId:       $sub->id,
+            userId:         $sub->user_id,
+            actionSummary:  'Subscription cancelled via Stripe webhook',
+            oldValues:      ['status' => $old],
+            newValues:      ['status' => 'cancelled'],
+        );
     }
 
     private function subscriptionUpdated(EntitlementService $entitlements, AuditService $audit): void

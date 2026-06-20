@@ -110,6 +110,7 @@ class ProfileController extends Controller
             'security'    => $this->buildSecurityProps($userId),
             'leases'      => $leaseService->getLeaseSummariesForLessee($userId),
             'membership'  => $entitlements->currentMembership($user),
+            'checkout'    => request()->query('checkout'),
             'initial_tab' => $initialTab,
             'template'    => $isLandowner ? null : $templates->getPublishedConfig('hunter'),
         ];

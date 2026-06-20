@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\PrintApplicationController;
 use App\Http\Controllers\Apply\ApplyController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\Member\CheckInController;
+use App\Http\Controllers\Member\CheckoutController;
 use App\Http\Controllers\Member\LeaseApplicationController as MemberLeaseApplicationController;
 use App\Http\Controllers\Member\LeaseDocumentController;
 use App\Http\Controllers\Member\LeaseSignController;
@@ -178,6 +179,8 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::get('/profile/photos/{documentId}', [ProfileController::class, 'servePhoto'])->name('profile.photos.serve');
     Route::get('/profile', [ProfileController::class, 'show'])->name('profile');
     Route::get('/myleases', [ProfileController::class, 'show'])->defaults('initialTab', 'leases')->name('myleases');
+    Route::get('/membership', [ProfileController::class, 'show'])->defaults('initialTab', 'membership')->name('membership');
+    Route::post('/membership/checkout', [CheckoutController::class, 'create'])->name('membership.checkout')->middleware('throttle:10,1');
     Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->name('profile.avatar.upload');
     Route::post('/profile/photos', [ProfileController::class, 'uploadPhoto'])->name('profile.photos.upload');

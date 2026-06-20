@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
+use App\Models\Identity\User;
 use App\Services\Platform\PlanService;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Response;
@@ -28,8 +29,16 @@ class PricingController extends Controller
             }, $plans);
         }
 
+        // When logged in, tell the page which group the member can actually
+        // subscribe to so only their own account type's paid plans offer checkout.
+        $currentAccountType = null;
+        if ($userId = session('auth.user_id')) {
+            $currentAccountType = User::find($userId)?->account_type;
+        }
+
         return inertia('Public/Pricing', [
-            'groups' => $groups,
+            'groups'               => $groups,
+            'current_account_type' => $currentAccountType,
         ]);
     }
 }

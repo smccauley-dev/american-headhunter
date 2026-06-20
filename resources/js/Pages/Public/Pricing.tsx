@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, usePage, Head } from '@inertiajs/react'
+import { Link, usePage, Head, router } from '@inertiajs/react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +28,7 @@ interface Plan {
 
 interface Props {
     groups: Record<string, Plan[]>
+    current_account_type: string | null
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ function formatPrice(plan: Plan, cycle: Cycle): { amount: string; suffix: string
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function Pricing({ groups }: Props) {
+export default function Pricing({ groups, current_account_type }: Props) {
     const [scrolled, setScrolled] = useState(false)
     const { auth } = usePage<{ auth?: { authenticated: boolean } }>().props
 
@@ -206,6 +207,7 @@ export default function Pricing({ groups }: Props) {
                                     plan={plan}
                                     cycle={cycle}
                                     authenticated={auth?.authenticated ?? false}
+                                    canSubscribe={(auth?.authenticated ?? false) && current_account_type === activeType}
                                 />
                             ))}
                         </div>
@@ -218,10 +220,34 @@ export default function Pricing({ groups }: Props) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function PlanCard({ plan, cycle, authenticated }: { plan: Plan; cycle: Cycle; authenticated: boolean }) {
+function PlanCard({ plan, cycle, authenticated, canSubscribe }: { plan: Plan; cycle: Cycle; authenticated: boolean; canSubscribe: boolean }) {
     const accent = plan.accent_color || 'var(--blaze)'
     const price = formatPrice(plan, cycle)
+    const [submitting, setSubmitting] = useState(false)
+
+    const isPaid = !plan.is_default_free && ((priceCents(plan, cycle) ?? 0) > 0)
+    // A logged-in member of this account type can check out directly on a paid
+    // plan; everyone else follows the marketing/get-started path.
+    const showCheckout = canSubscribe && isPaid
     const ctaHref = authenticated ? `/member` : `/get-started?plan=${encodeURIComponent(plan.plan_key)}`
+
+    const startCheckout = () => {
+        setSubmitting(true)
+        router.post('/member/membership/checkout',
+            { plan_key: plan.plan_key, interval: cycle },
+            { onFinish: () => setSubmitting(false) },
+        )
+    }
+
+    const ctaStyle: React.CSSProperties = {
+        marginTop: 'auto',
+        textAlign: 'center',
+        fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '.12em',
+        textTransform: 'uppercase', textDecoration: 'none',
+        padding: '12px 16px',
+        background: plan.is_featured ? accent : 'var(--ink)',
+        color: 'var(--bone)',
+    }
 
     return (
         <div style={{
@@ -310,20 +336,20 @@ function PlanCard({ plan, cycle, authenticated }: { plan: Plan; cycle: Cycle; au
                 )}
 
                 {/* CTA */}
-                <Link
-                    href={ctaHref}
-                    style={{
-                        marginTop: 'auto',
-                        textAlign: 'center',
-                        fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '.12em',
-                        textTransform: 'uppercase', textDecoration: 'none',
-                        padding: '12px 16px',
-                        background: plan.is_featured ? accent : 'var(--ink)',
-                        color: 'var(--bone)',
-                    }}
-                >
-                    {plan.is_default_free ? 'Start Free →' : 'Get Started →'}
-                </Link>
+                {showCheckout ? (
+                    <button
+                        type="button"
+                        onClick={startCheckout}
+                        disabled={submitting}
+                        style={{ ...ctaStyle, border: 'none', cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
+                    >
+                        {submitting ? 'Redirecting…' : 'Subscribe →'}
+                    </button>
+                ) : (
+                    <Link href={ctaHref} style={ctaStyle}>
+                        {plan.is_default_free ? 'Start Free →' : 'Get Started →'}
+                    </Link>
+                )}
             </div>
         </div>
     )

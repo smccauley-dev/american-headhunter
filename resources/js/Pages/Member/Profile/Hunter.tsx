@@ -289,11 +289,11 @@ const SOCIAL_PLATFORMS: SocialPlatform[] = [
 // ── Member portal nav items ───────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { label: 'My Leases',    href: '/member/myleases',  key: 'leases' },
-  { label: 'My Profile',   href: '/member/profile',   key: 'profile' },
+  { label: 'My Profile',    href: '/member/profile',    key: 'profile' },
   { label: 'My Membership', href: '/member/membership', key: 'membership' },
-  { label: 'Find Property', href: '/properties',       key: 'properties' },
-  { label: 'Settings',     href: '/member/settings',  key: 'settings' },
+  { label: 'My Leases',     href: '/member/myleases',   key: 'leases' },
+  { label: 'Property Search', href: '/properties',      key: 'properties' },
+  { label: 'Settings',      href: '/member/settings',   key: 'settings' },
 ]
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -461,7 +461,9 @@ interface Props {
   }
   leases: LeaseSummary[]
   membership: Membership
-  initial_tab: 'about' | 'leases'
+  // Set after returning from Stripe Checkout: 'success' | 'cancel'.
+  checkout: string | null
+  initial_tab: 'about' | 'leases' | 'membership'
   // Null for account types without a CMS profile template (e.g. landowner);
   // the component falls back to DEFAULT_TEMPLATE.
   template: TemplateConfig | null
@@ -722,7 +724,7 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, activity, security, leases, membership, initial_tab, template, properties }: Props) {
+export default function HunterProfile({ user, profile, photos, activity, security, leases, membership, checkout, initial_tab, template, properties }: Props) {
   // Landowner accounts reuse this profile shell but swap the hunting-specific
   // modules (gear, hunting prefs) for a "My Properties" blade.
   const isLandowner = user.account_type === 'landowner'
@@ -1400,7 +1402,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   ) : tab === 'leases' ? (
                     <LeasesTab leases={leases} />
                   ) : tab === 'membership' ? (
-                    <MembershipTab membership={membership} />
+                    <MembershipTab membership={membership} checkout={checkout} />
                   ) : (
                     <SecurityTab
                       mfa={security.mfa}
@@ -1547,7 +1549,7 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
 
 // ── My Membership tab ─────────────────────────────────────────────────────────
 
-function MembershipTab({ membership }: { membership: Membership }) {
+function MembershipTab({ membership, checkout }: { membership: Membership; checkout: string | null }) {
   // Status pill palette — mirrors the lease card's status styling vocabulary.
   const palette: Record<string, { bg: string; color: string; border: string }> = {
     active:   { bg: 'rgba(74,124,89,0.2)',  color: '#7bbd8e', border: '1px solid rgba(74,124,89,0.5)' },
@@ -1576,6 +1578,16 @@ function MembershipTab({ membership }: { membership: Membership }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {checkout === 'success' && (
+        <div style={{ padding: '12px 16px', background: 'rgba(74,124,89,0.12)', border: '1px solid rgba(74,124,89,0.4)', fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', letterSpacing: '.04em', color: '#3f6b4d' }}>
+          Payment received — your membership is activating. This page will reflect the new plan shortly.
+        </div>
+      )}
+      {checkout === 'cancel' && (
+        <div style={{ padding: '12px 16px', background: 'rgba(168,152,116,0.14)', border: '1px solid #d4c9b0', fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', letterSpacing: '.04em', color: '#7a6c4c' }}>
+          Checkout canceled — no changes were made to your membership.
+        </div>
+      )}
       <div style={{ border: '1px solid #d4c9b0', background: '#FBF7EE' }}>
         {/* Dark header strip */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', background: 'var(--ah-ink)' }}>
