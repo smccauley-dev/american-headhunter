@@ -741,6 +741,8 @@ What was implemented:
 
 **Follow-up fix (2026-06-15) — admin print/restore/delete routes (same root cause, fourth surface) + route-group consolidation:** three more bare-`web`-group admin routes still carried only `auth:web` with no `db.system`: `admin.applications.print` (the lease-application **Print** button), `admin.lease-documents.restore`, and `admin.lease-documents.delete`. Same defect — the `web` guard's `SELECT` on `identity.users` ran as `ah_runtime` with empty context and found zero rows. Here the symptom was a hard 500 rather than broken images: with the authenticated staff user unresolved, `Authenticate` treated the request as unauthenticated and redirected to its `redirectTo()` target, route name **`login`**, which does not exist in this app (Filament's login is `filament.admin.auth.login`) → `Symfony\…\RouteNotFoundException: Route [login] not defined`. Reported on clicking **Print** at `/admin/applications/lease-applications/{id}` (staff user `6ec4b3e8-…`). Fix: rather than patch each route inline (this was the third recurrence of the omission), **all** admin `web`-guard routes outside the panel were consolidated into a single `Route::middleware(['db.system', 'auth:web'])->group(...)` in `routes/web.php`, so the role can never be omitted again on a sibling route. Verified: `gatherRouteMiddleware()` shows `UseSystemDatabaseRole` at index 5, before `Authenticate:web` at 6, on all three routes; an end-to-end probe authenticating as the real staff user and dispatching the print URL through the HTTP kernel returns **200** with the full rendered print page (pre-fix: 500 / RouteNotFoundException). Note the unauthenticated case still 500s on these admin routes because `Authenticate`'s `login`-route redirect target doesn't exist — a separate, lower-priority papercut (authenticated staff is the only intended caller); tracked as a possible future tidy (point `redirectTo` at the Filament login).
 
+**Follow-up fix (2026-06-18) — console role swap must purge pre-opened connections:** `migrate`/`migrate:single` failed with `SQLSTATE[42501]: must be owner of table membership_plans` even though `RuntimeDatabaseRoleProvider` selects the `ah_app` owner for schema commands. Root cause: the migrate command pre-opens the target connection (config default `ah_runtime`) before the provider's role swap runs, and `ConnectionRole::useOwner()`/`useSystem()` only rewrote `config()` — an already-open PDO keeps its original credentials, so DDL ran as `ah_runtime` and was denied. Fix: the provider now calls `ConnectionRole::useOwner(true)`/`useSystem(true)` (purge=true) so all `APP_CONNECTIONS` are `DB::purge()`'d and reconnect with the swapped role. After the fix `migrate:single platform` runs DDL as `ah_app`; RLS regression still 6/6 (the change only affects console/queue/test boot, never the `ah_runtime` HTTP path).
+
 ---
 
 ## SEC-044 — Encrypted-Field Plaintext and Key Pass Through Query Bindings (Log-Exposure Risk)
@@ -850,6 +852,67 @@ Wrap **only** the identity user lookup in `ConnectionRole::asSystem` (the helper
 
 ---
 
+## SEC-048 — Public Property Detail Gate Uses `auth()->check()`, Which Is Always False for Session-Authed Members (LOW — fail-closed)
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low (correctness/availability defect; **no data exposure** — fails closed) |
+| **Status** | OPEN |
+| **Found** | 2026-06-20 (72h feature security scan) |
+| **File** | `app/Http/Controllers/Public/PropertyController.php` (`show`, ~line 88) |
+
+**Description:**
+The public property detail gate is meant to be "members-only EXCEPT featured (advertising) listings, which guests may view":
+```php
+if (! auth()->check() && ! $property->activeListings->contains(fn ($l) => $l->is_featured)) {
+    return redirect('/get-started');
+}
+```
+The entire web portal authenticates via the session key `session('auth.user_id')` — the Laravel default guard is **never hydrated** for members (there is no `Auth::login`/`loginUsingId`/`onceUsingId` anywhere in `app/` outside the Filament admin panel). So `auth()->check()` is **always false** for a logged-in member. The gate therefore collapses to "redirect everyone on a non-featured property," catching logged-in members too:
+
+- Anonymous + non-featured → redirected ✅ (intended)
+- Anonymous + featured → allowed ✅ (intended)
+- **Member + non-featured → redirected to `/get-started`** ❌ (defect — should be allowed)
+- Member + featured → allowed ✅
+
+The frontend already disagrees with the backend: `HandleInertiaRequests` shares `'authenticated' => (bool) session('auth.user_id')`, and `Public/PropertyDetail.tsx` / `Properties.tsx` show Apply buttons to authenticated members — yet `show()` redirects them away before the page renders. The intended anonymous-blocking is intact and correct; only the member half of the same rule is broken.
+
+**Risk posture:** This is **fail-closed** — the bug is *more* restrictive than intended, so there is no information disclosure or auth bypass. The impact is purely functional: members can't open non-featured property detail pages.
+
+**Root Cause:**
+`auth()->check()` reads the Laravel guard, but the public/member portal is session-authenticated (`RequireSessionAuth` / `session('auth.user_id')`), not guard-authenticated. The two notions of "logged in" diverge.
+
+**Proposed Fix (not yet applied):**
+Match the rest of the portal and the Inertia share — gate on the session key:
+```php
+if (! session('auth.user_id') && ! $property->activeListings->contains(fn ($l) => $l->is_featured)) {
+    return redirect('/get-started');
+}
+```
+Keeps guests out of non-featured details exactly as today; lets logged-in members through.
+
+---
+
+## SEC-049 — Contact Directory Resolves Identity Users Under `ah_runtime` Without `asSystem` (LOW — fail-closed; verify)
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low / Informational (potential functional under-disclosure; **no data exposure** — fails closed) |
+| **Status** | OPEN (needs functional verification) |
+| **File** | `app/Services/Property/PropertyService.php` (`getContactDirectory`) |
+| **Lineage** | Same class as SEC-047 (cross-DB name lookup vs `users` RLS under `ah_runtime`) |
+
+**Description:**
+`getContactDirectory()` resolves the landowner/manager identities for the lessee-facing field-contact directory with a plain `User::on('identity')->whereIn('id', $userIds)` — **without** the `ConnectionRole::asSystem` wrapper that its sibling `getManagersForProperty()` uses (added in SEC-047 precisely because `users` RLS hides other people's rows under `ah_runtime`). When this path runs in a per-user `ah_runtime` context (e.g. the mobile API `GET /api/v1/properties/{id}/contacts`, or the member lease page), the viewing hunter is neither the owner/manager nor staff, so the `users` RLS (`users_self_read`/`users_admin_read`) would filter those rows out — landowner/manager names and phone numbers could resolve to blank/email-fallback.
+
+**Risk posture:** **Fail-closed** — if it misfires it *under*-discloses (blank contacts), never over-discloses, so it is not a security exposure. Flagged because it is a likely *functional* gap in the field-contact directory (hunters in the field may not see the landowner/manager contact details they're supposed to), and because it is the same root pattern as SEC-047 left un-applied on this sibling method.
+
+**To verify when picked up:** confirm whether the contact directory is actually reached under `ah_runtime` (member lease page + mobile API) and whether owner/manager contacts render or come back blank. If blank, wrap **only** the identity user lookup in `ConnectionRole::asSystem` (viewer already authorized for the property via `userHasActiveLeaseForProperty`/`userCanManageProperty`), mirroring SEC-047 — no `users` RLS broadening.
+
+**Note:** Distinct from SEC-042 (which *removed* the internal `manager_id` from lessee payloads). The contact name/phone disclosure here is intended-by-design; the concern is that RLS may be suppressing it.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -859,6 +922,8 @@ Wrap **only** the identity user lookup in `ConnectionRole::asSystem` (the helper
 | SEC-045 | `check_ins` (and payee `w9_records`) write default-denied under `ah_runtime` (SELECT-only RLS policy) | Medium | **FIXED (2026-06-16)** — self-service write policies added to `check_ins` + `w9_records`; `invoices`/`payments`/`payouts` intentionally left runtime-read-only (system-authored via `ah_system`); regression tests green (18 passed) | — |
 | SEC-046 | Lease activation silently default-denied under `ah_runtime` when the lessee signs last — `UPDATE leases` no-ops (SELECT-only RLS) yet reports success; lease stuck at `pending_signatures` | High | **FIXED (2026-06-17)** — completion writes run via `ConnectionRole::asSystem`; `LeaseService::activate` re-reads + throws on non-persist; regression test green (22 passed) | — |
 | SEC-047 | Member-portal property check-in log shows "Unknown user" — cross-DB hunter name lookup default-denied by `users` RLS under `ah_runtime` | Low | **FIXED (2026-06-17)** — name lookup wrapped in `ConnectionRole::asSystem` (viewer already property-authorized) | — |
+| SEC-048 | Public property detail gate uses `auth()->check()` (always false for session-authed members) → logged-in members wrongly redirected from non-featured detail pages; fail-closed (no exposure) | Low | OPEN — fix: gate on `session('auth.user_id')` | Next property pass |
+| SEC-049 | Contact directory (`getContactDirectory`) resolves identity users under `ah_runtime` without `asSystem` → owner/manager contacts may render blank for lessees; fail-closed (no exposure) | Low | OPEN — verify reach under `ah_runtime`, then mirror SEC-047 fix if blank | Next property pass |
 
 ---
 

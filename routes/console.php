@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\Billing\ReconcileStripeInvoices;
 use App\Jobs\Documents\CleanupUnattachedDocuments;
 use App\Jobs\ExpireListingsJob;
 use Illuminate\Foundation\Inspiring;
@@ -24,3 +25,7 @@ Schedule::command('mfa:prune-challenges')->dailyAt('03:00');
 // Hard-delete lease documents soft-deleted more than 30 days ago and clean up storage files.
 // Runs at 02:00 daily — between listing expiry and MFA pruning.
 Schedule::command('lease:prune-deleted-documents')->dailyAt('02:00');
+
+// Reconcile the Stripe invoice projection (Phase 5.7) — backstop for any missed
+// webhook. Runs at 04:00 daily, after the other maintenance jobs.
+Schedule::job(new ReconcileStripeInvoices)->dailyAt('04:00');

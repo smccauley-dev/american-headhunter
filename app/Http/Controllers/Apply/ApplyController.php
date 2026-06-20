@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Apply;
 
+use App\Exceptions\OutOfStateHuntException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Apply\SubmitApplicationRequest;
 use App\Models\Identity\HunterCredentials;
@@ -13,6 +14,7 @@ use App\Services\Identity\GuestHunterService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\ApplicationService;
 use App\Services\Lease\EsignatureService;
+use App\Services\Platform\EntitlementService;
 use App\Services\Platform\LegalService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\RedirectResponse;
@@ -28,6 +30,7 @@ class ApplyController extends Controller
         private readonly GuestHunterService        $guestHunterService,
         private readonly LegalService              $legalService,
         private readonly EsignatureService         $esignatureService,
+        private readonly EntitlementService        $entitlementService,
     ) {}
 
     public function show(string $listingId, Request $request): Response|RedirectResponse
@@ -65,12 +68,22 @@ class ApplyController extends Controller
             ? $this->propertyService->getUnavailableRanges($listing->id)
             : [];
 
+        // Soft gate: a single-state-restricted hunter cannot apply to an
+        // out-of-state listing. Mirrors the authoritative gate in
+        // ApplicationService::submit() so the UI never offers a dead-end submit.
+        $state          = $listing->property?->state_code;
+        $applicant      = User::on('identity')->find($userId);
+        $canApply       = ! $applicant || ! $state || $this->entitlementService->canHuntInState($applicant, $state);
+        $restrictedState = $canApply ? null : $this->entitlementService->restrictedHuntState($applicant);
+
         return inertia('Apply/Index', [
             'listing'           => $this->serializeListing($listing),
             'property'          => $this->serializeProperty($listing->property),
             'unavailableRanges' => $unavailableRanges,
             'primaryHunter'     => $primaryHunter,
             'savedGuests'       => $savedGuests,
+            'canApply'          => $canApply,
+            'restrictedState'   => $restrictedState,
             'certificationDoc' => $certDoc ? [
                 'key'     => $certDoc->document_key,
                 'version' => $certDoc->version,
@@ -114,21 +127,26 @@ class ApplyController extends Controller
             }
         }
 
-        $certDoc     = $this->legalService->getActiveCertification();
-        $application = $this->applicationService->submitAtomically(
-            userId:     $userId,
-            attributes: [
-                'listing_id'        => $listingId,
-                'applicant_user_id' => $userId,
-                'application_type'  => $request->application_type,
-                'message'           => $request->message,
-                'proposed_start'    => $request->proposed_start,
-                'proposed_end'      => $request->proposed_end,
-            ],
-            hunters:  $hunters,
-            certDoc:  $certDoc,
-            request:  $request,
-        );
+        $certDoc = $this->legalService->getActiveCertification();
+
+        try {
+            $application = $this->applicationService->submitAtomically(
+                userId:     $userId,
+                attributes: [
+                    'listing_id'        => $listingId,
+                    'applicant_user_id' => $userId,
+                    'application_type'  => $request->application_type,
+                    'message'           => $request->message,
+                    'proposed_start'    => $request->proposed_start,
+                    'proposed_end'      => $request->proposed_end,
+                ],
+                hunters:  $hunters,
+                certDoc:  $certDoc,
+                request:  $request,
+            );
+        } catch (OutOfStateHuntException $e) {
+            return redirect()->back()->withInput()->withErrors(['state' => $e->getMessage()]);
+        }
 
         return redirect()->route('apply.status', $application->id)
             ->with('success', 'Your application has been submitted. The landowner will be in touch.');

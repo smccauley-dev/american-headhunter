@@ -63,16 +63,18 @@ class UserService extends BaseService
     {
         $user = User::create([
             'email'         => strtolower($data['email']),
+            'phone'         => $data['phone'] ?? null,
             'password_hash' => Hash::make($data['password']),
             'account_type'  => $data['account_type'],
             'status'        => 'pending_verification',
         ]);
 
         UserProfile::create([
-            'user_id'    => $user->id,
-            'first_name' => $data['first_name'] ?? null,
-            'last_name'  => $data['last_name']  ?? null,
-            'state_code' => $data['state_code'] ?? null,
+            'user_id'       => $user->id,
+            'first_name'    => $data['first_name'] ?? null,
+            'last_name'     => $data['last_name']  ?? null,
+            'state_code'    => $data['state_code'] ?? null,
+            'date_of_birth' => $data['date_of_birth'] ?? null,
         ]);
 
         ConsentLog::create([

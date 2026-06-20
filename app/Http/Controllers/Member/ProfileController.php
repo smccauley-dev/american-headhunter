@@ -8,10 +8,12 @@ use App\Models\Identity\LoginHistory;
 use App\Models\Identity\MfaConfiguration;
 use App\Models\Identity\User;
 use App\Models\Identity\UserProfile;
+use App\Models\Billing\StripeInvoiceProjection;
 use App\Models\Lease\CheckIn;
 use App\Models\Wildlife\HarvestLog;
 use App\Services\Documents\DocumentService;
 use App\Services\Lease\LeaseService;
+use App\Services\Platform\EntitlementService;
 use App\Services\Platform\ProfileTemplateService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\Request;
@@ -28,7 +30,7 @@ class ProfileController extends Controller
 {
     public function __construct(private readonly DocumentService $documents) {}
 
-    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, string $initialTab = 'about'): Response
+    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, EntitlementService $entitlements, string $initialTab = 'about'): Response
     {
         $userId  = session('auth.user_id');
         $user    = User::findOrFail($userId);
@@ -108,6 +110,10 @@ class ProfileController extends Controller
             'activity'    => $this->buildActivityProps($userId),
             'security'    => $this->buildSecurityProps($userId),
             'leases'      => $leaseService->getLeaseSummariesForLessee($userId),
+            'membership'  => $entitlements->currentMembership($user),
+            'invoices'    => $this->buildInvoices($userId),
+            'checkout'    => request()->query('checkout'),
+            'billing'     => request()->query('billing'),
             'initial_tab' => $initialTab,
             'template'    => $isLandowner ? null : $templates->getPublishedConfig('hunter'),
         ];
@@ -379,6 +385,25 @@ class ProfileController extends Controller
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
+
+    /**
+     * The member's invoices for the membership card, read from the local Stripe
+     * invoice projection (Phase 5.7) instead of a live Stripe call per render.
+     * The projection is kept current by webhooks + the daily reconcile job;
+     * Stripe stays the source of truth. Wrapped so any read hiccup degrades to an
+     * empty list rather than 500ing the profile page; free-tier members simply
+     * have no rows.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function buildInvoices(string $userId): array
+    {
+        try {
+            return StripeInvoiceProjection::displayForUser($userId);
+        } catch (\Throwable) {
+            return [];
+        }
+    }
 
     private function buildActivityProps(string $userId): array
     {

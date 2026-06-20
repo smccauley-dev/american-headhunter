@@ -489,7 +489,7 @@ class SubmitApplicationTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Test 9 — Day hunt: dates overlapping a booked range are rejected
+    // Test 9 — Day hunt: dates overlapping an unavailable range are rejected
     // ─────────────────────────────────────────────────────────────────────────
 
     public function test_day_hunt_rejects_dates_overlapping_unavailable_range(): void
@@ -500,12 +500,15 @@ class SubmitApplicationTest extends TestCase
             'season_end'   => '2026-12-31',
         ]);
 
+        // An owner-side blackout — chk_property_availability_booked_lease requires
+        // a lease_id + cost for 'booked' rows, but 'blocked' carries neither and is
+        // treated identically by getUnavailableRanges().
         DB::connection('property')->table('property_availability')->insert([
             'id'         => (string) Str::uuid(),
             'listing_id' => $dayHuntId,
             'date_start' => '2026-10-10',
             'date_end'   => '2026-10-14',
-            'reason'     => 'booked',
+            'reason'     => 'blocked',
         ]);
 
         $response = $this->withSession(['auth.user_id' => $this->userId])

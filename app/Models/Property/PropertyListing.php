@@ -24,6 +24,7 @@ class PropertyListing extends BaseModelWithSoftDeletes
         'deposit_percent',
         'auto_renew',
         'visibility',
+        'is_featured',
     ];
 
     protected function casts(): array
@@ -34,6 +35,7 @@ class PropertyListing extends BaseModelWithSoftDeletes
             'price_total'             => 'decimal:2',
             'deposit_amount'   => 'decimal:2',
             'auto_renew'       => 'boolean',
+            'is_featured'      => 'boolean',
             'season_start'     => 'date',
             'season_end'       => 'date',
         ]);

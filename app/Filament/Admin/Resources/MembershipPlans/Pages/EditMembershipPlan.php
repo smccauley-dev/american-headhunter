@@ -30,6 +30,13 @@ class EditMembershipPlan extends EditRecord
         return $this->dollarsToCents($data);
     }
 
+    // The public pricing page caches its payload for 15 min — drop it on save so
+    // card edits (image, accent, badge, featured) and visibility toggles show up.
+    protected function afterSave(): void
+    {
+        app(PlanService::class)->flushPricingCache();
+    }
+
     protected function getSavedNotificationTitle(): ?string
     {
         return 'Plan saved — Publish a new version to apply pricing to new subscribers.';

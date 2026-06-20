@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Models\Billing\Subscription;
 use App\Models\Platform\FeatureEntitlement;
 use App\Models\Platform\MembershipPlan;
 use App\Models\Platform\PlanVersion;
@@ -21,13 +22,19 @@ use Tests\TestCase;
 class PlanServiceTest extends TestCase
 {
     private string $planId;
+    private string $planKey;
+
+    /** @var string[] subscription ids created in billing during a test */
+    private array $subscriptionIds = [];
 
     protected function setUp(): void
     {
         parent::setUp();
 
+        $this->planKey = 'test_plan_' . Str::random(8);
+
         $plan = MembershipPlan::on('platform')->create([
-            'plan_key'            => 'test_plan_' . Str::random(8),
+            'plan_key'            => $this->planKey,
             'account_type'        => 'hunter',
             'display_name'        => 'Test Plan',
             'monthly_price_cents' => 1500,
@@ -52,11 +59,19 @@ class PlanServiceTest extends TestCase
 
     protected function tearDown(): void
     {
+        if ($this->subscriptionIds !== []) {
+            $billing = DB::connection('billing');
+            $billing->table('subscriptions')->whereIn('id', $this->subscriptionIds)->delete();
+            try { $billing->disconnect(); } catch (\Throwable) {}
+        }
+
         $platform = DB::connection('platform');
         $platform->table('plan_versions')->where('plan_id', $this->planId)->delete();
         $platform->table('feature_entitlements')->where('plan_id', $this->planId)->delete();
         $platform->table('membership_plans')->where('id', $this->planId)->delete();
         try { $platform->disconnect(); } catch (\Throwable) {}
+
+        $this->service()->flushPricingCache();
 
         parent::tearDown();
     }
@@ -100,5 +115,105 @@ class PlanServiceTest extends TestCase
             2,
             PlanVersion::on('platform')->where('plan_id', $this->planId)->count(),
         );
+    }
+
+    public function test_public_pricing_lists_public_active_plans_with_pricing_perks(): void
+    {
+        MembershipPlan::on('platform')->where('id', $this->planId)->update([
+            'is_public' => true,
+            'is_active' => true,
+            'tagline'   => 'For the weekend hunter',
+        ]);
+
+        // Hide the setUp entitlements, then add one shown perk: only
+        // show_on_pricing entitlements appear as card perks.
+        FeatureEntitlement::on('platform')
+            ->where('plan_id', $this->planId)
+            ->update(['show_on_pricing' => false]);
+
+        FeatureEntitlement::on('platform')->create([
+            'plan_id'         => $this->planId,
+            'feature_key'     => 'priority_support',
+            'feature_type'    => 'boolean',
+            'bool_value'      => true,
+            'display_label'   => 'Priority Support',
+            'show_on_pricing' => true,
+            'display_order'   => 1,
+        ]);
+
+        $this->service()->flushPricingCache();
+        $groups = $this->service()->publicPricing();
+
+        $mine = collect($groups['hunter'] ?? [])->firstWhere('plan_key', $this->planKey);
+
+        $this->assertNotNull($mine, 'public plan appears under its account type');
+        $this->assertSame('For the weekend hunter', $mine['tagline']);
+        $this->assertSame(1500, $mine['monthly_price_cents']);
+
+        $perkLabels = array_column($mine['perks'], 'label');
+        $this->assertSame(['Priority Support'], $perkLabels, 'only show_on_pricing entitlements appear, hidden ones excluded');
+    }
+
+    public function test_public_pricing_excludes_non_public_plan(): void
+    {
+        MembershipPlan::on('platform')->where('id', $this->planId)->update([
+            'is_public' => false,
+            'is_active' => true,
+        ]);
+
+        $this->service()->flushPricingCache();
+        $groups = $this->service()->publicPricing();
+
+        $mine = collect($groups['hunter'] ?? [])->firstWhere('plan_key', $this->planKey);
+        $this->assertNull($mine, 'a non-public plan is not on the pricing page');
+    }
+
+    public function test_soft_delete_succeeds_without_subscribers_and_stamps_deprecated_at(): void
+    {
+        $plan = MembershipPlan::on('platform')->find($this->planId);
+
+        $result = $this->service()->softDeletePlan($plan, (string) Str::uuid());
+
+        $this->assertTrue($result);
+        $this->assertNull(
+            MembershipPlan::on('platform')->find($this->planId),
+            'soft-deleted plan is excluded by the default scope',
+        );
+
+        $row = DB::connection('platform')->table('membership_plans')->where('id', $this->planId)->first();
+        $this->assertNotNull($row->deleted_at, 'deleted_at is stamped');
+        $this->assertNotNull($row->deprecated_at, 'deprecated_at is stamped');
+    }
+
+    public function test_soft_delete_is_refused_while_a_subscription_is_active(): void
+    {
+        $plan    = MembershipPlan::on('platform')->find($this->planId);
+        $version = $this->service()->publishNewVersion($plan, (string) Str::uuid());
+
+        $subscription = Subscription::on('billing')->create([
+            'user_id'              => (string) Str::uuid(),
+            'plan_version_id'      => $version->id,
+            'status'               => 'active',
+            'current_period_start' => now()->toDateString(),
+            'current_period_end'   => now()->addMonth()->toDateString(),
+        ]);
+        $this->subscriptionIds[] = $subscription->id;
+
+        $result = $this->service()->softDeletePlan($plan, (string) Str::uuid());
+
+        $this->assertFalse($result, 'deletion is refused while a live subscription references a version');
+        $this->assertNotNull(
+            MembershipPlan::on('platform')->find($this->planId),
+            'the plan is left intact',
+        );
+    }
+
+    public function test_pricing_index_route_is_publicly_accessible(): void
+    {
+        // The slash in the Inertia component name is JSON-escaped in the page
+        // payload (Public\/Pricing), so match the escaped form.
+        $this->get('/pricing')
+            ->assertOk()
+            ->assertSee('Public\\/Pricing', false);
     }
 }

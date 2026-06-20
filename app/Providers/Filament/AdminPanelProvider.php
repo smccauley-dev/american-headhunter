@@ -563,11 +563,13 @@ class AdminPanelProvider extends PanelProvider
             text-transform: uppercase !important;
             color: rgba(10, 21, 18, 0.7) !important;
         }
+        .fi-section .fi-section-header-description,
         .fi-section-header-description {
             font-family: 'JetBrains Mono', Menlo, monospace !important;
-            font-size: 10px !important;
+            font-size: 9px !important;
+            line-height: 1.5 !important;
             letter-spacing: 0.08em !important;
-            color: rgba(10, 21, 18, 0.4) !important;
+            color: #0a1512 !important;
         }
         .fi-section-content {
             background-color: transparent !important;
@@ -695,6 +697,33 @@ class AdminPanelProvider extends PanelProvider
             background-color: transparent !important;
             border-color: #a89874 !important;
             margin-top: 8px !important;
+        }
+
+        /* Table header (e.g. relation managers) — match section card chrome:
+           same vertical breathing room + inset divider as .fi-section-header. */
+        .fi-ta-header {
+            padding-block: 1.25rem !important;
+            background-image: linear-gradient(#a89874, #a89874) !important;
+            background-position: center bottom !important;
+            background-size: calc(100% - 48px) 1px !important;
+            background-repeat: no-repeat !important;
+        }
+        .fi-ta-header-heading {
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
+            font-size: 13px !important;
+            font-weight: 400 !important;
+            letter-spacing: 0.15em !important;
+            text-transform: uppercase !important;
+            color: rgba(10, 21, 18, 0.7) !important;
+        }
+        /* Two-class selector (0,2,0) so size/spacing outrank the broad
+           `.fi-main p` rule (0,1,1) below; color matches it (#0a1512). */
+        .fi-ta-header .fi-ta-header-description {
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
+            font-size: 9px !important;
+            line-height: 1.5 !important;
+            letter-spacing: 0.08em !important;
+            color: #0a1512 !important;
         }
 
         /* Column header row */
@@ -893,6 +922,19 @@ class AdminPanelProvider extends PanelProvider
         .fi-main .fi-select-input {
             background-color: #faf7f2 !important;
             color: #0a1512 !important;
+        }
+
+        /* Toggle with afterContent text beside the switch — stop the switch
+           wrapper (and the caption wrapper) from filling the row so the
+           caption sits right next to the switch instead of far right. */
+        .ah-toggle-inline .fi-fo-field-content-ctn {
+            justify-content: flex-start !important;
+            margin-top: 0.4rem !important;
+        }
+        .ah-toggle-inline .fi-fo-field-content-ctn > * {
+            flex: 0 0 auto !important;
+            width: auto !important;
+            margin-inline: 0 !important;
         }
 
         /* File upload — match the member frontend's branded parchment FilePond skin.

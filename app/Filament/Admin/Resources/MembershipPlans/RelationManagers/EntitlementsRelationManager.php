@@ -4,11 +4,13 @@ namespace App\Filament\Admin\Resources\MembershipPlans\RelationManagers;
 
 use App\Models\Platform\FeatureEntitlement;
 use App\Services\Platform\EntitlementService;
+use App\Support\Entitlements;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -32,46 +34,48 @@ class EntitlementsRelationManager extends RelationManager
 
     protected static ?string $title = 'Entitlements';
 
-    public const FEATURE_TYPES = [
-        'boolean' => 'Boolean (on/off)',
-        'integer' => 'Integer (limit)',
-        'string'  => 'String',
-        'json'    => 'JSON',
-    ];
-
     public function form(Schema $schema): Schema
     {
-        return $schema->components([
-            TextInput::make('feature_key')
-                ->label('Feature Key')
+        return $schema->columns(2)->components([
+            Select::make('feature_key')
+                ->label('Entitlement')
+                ->options(fn (?FeatureEntitlement $record): array => $this->entitlementOptions($record))
                 ->required()
-                ->maxLength(100)
-                ->fontFamily('mono')
-                ->helperText('Matches the key checked via EntitlementService, e.g. trail_camera_integration.'),
-            Select::make('feature_type')
-                ->label('Type')
-                ->options(self::FEATURE_TYPES)
-                ->required()
-                ->live(),
+                ->live()
+                ->afterStateUpdated(function ($state, callable $set): void {
+                    if ($type = Entitlements::typeFor((string) $state)) {
+                        $set('feature_type', $type);
+                    }
+                })
+                ->helperText('Only entitlements the platform actually offers are listed. To add a new capability, define it in App\Support\Entitlements first, then wire its gate in code.'),
+            TextInput::make('display_label')
+                ->label('Display Label')
+                ->maxLength(150)
+                ->helperText('Shown on the pricing page.'),
+            Hidden::make('feature_type'),
             Toggle::make('bool_value')
                 ->label('Enabled')
+                ->helperText('Whether this on/off feature is granted to the plan.')
+                ->inline(false)
+                ->afterContent('Granted to plan')
+                ->extraFieldWrapperAttributes(['class' => 'ah-toggle-inline'])
+                ->columnSpanFull()
                 ->visible(fn (Get $get): bool => $get('feature_type') === 'boolean'),
             TextInput::make('int_value')
                 ->label('Limit')
                 ->numeric()
                 ->helperText('-1 = unlimited.')
+                ->columnSpanFull()
                 ->visible(fn (Get $get): bool => $get('feature_type') === 'integer'),
             TextInput::make('string_value')
                 ->label('Value')
                 ->maxLength(255)
+                ->columnSpanFull()
                 ->visible(fn (Get $get): bool => $get('feature_type') === 'string'),
             KeyValue::make('json_value')
                 ->label('JSON Value')
+                ->columnSpanFull()
                 ->visible(fn (Get $get): bool => $get('feature_type') === 'json'),
-            TextInput::make('display_label')
-                ->label('Display Label')
-                ->maxLength(150)
-                ->helperText('Shown on the pricing page.'),
             Textarea::make('display_description')
                 ->label('Display Description')
                 ->rows(2)
@@ -81,32 +85,29 @@ class EntitlementsRelationManager extends RelationManager
                 ->numeric()
                 ->default(0),
             Toggle::make('show_on_pricing')
-                ->label('Show on Pricing Page'),
+                ->label('Show on Pricing Page')
+                ->inline(false)
+                ->afterContent('Enabled Pricing')
+                ->extraFieldWrapperAttributes(['class' => 'ah-toggle-inline']),
         ]);
     }
 
     public function table(Table $table): Table
     {
         return $table
+            ->description('Entitlements define what this plan unlocks — feature switches, numeric limits, and values that gate access across the platform. Add capabilities from the catalog; each one only takes effect where its gate is wired in code.')
             ->defaultSort('display_order')
             ->columns([
-                TextColumn::make('feature_key')
-                    ->label('Key')
-                    ->searchable()
-                    ->fontFamily('mono'),
-                TextColumn::make('feature_type')
-                    ->label('Type')
-                    ->badge()
-                    ->formatStateUsing(fn (string $state): string => ucfirst($state)),
-                TextColumn::make('value')
-                    ->label('Value')
-                    ->state(fn (FeatureEntitlement $record): string => $this->formatValue($record)),
                 TextColumn::make('display_label')
-                    ->label('Label')
+                    ->label('Entitlement Name')
+                    ->searchable()
                     ->limit(40)
                     ->placeholder('—'),
+                TextColumn::make('value')
+                    ->label('Limit')
+                    ->state(fn (FeatureEntitlement $record): string => $this->formatValue($record)),
                 IconColumn::make('show_on_pricing')
-                    ->label('On Pricing')
+                    ->label('Pricing Page')
                     ->boolean(),
                 TextColumn::make('display_order')
                     ->label('Order')
@@ -141,6 +142,28 @@ class EntitlementsRelationManager extends RelationManager
             $value === null  => '—',
             default          => (string) $value,
         };
+    }
+
+    /**
+     * Catalog options for the entitlement picker, hiding keys already attached to
+     * this plan (the unique (plan_id, feature_key) constraint forbids duplicates).
+     * When editing a row whose key predates the catalog, surface it so the Select
+     * isn't blank.
+     */
+    private function entitlementOptions(?FeatureEntitlement $record): array
+    {
+        $used = $this->getOwnerRecord()->entitlements()
+            ->when($record, fn ($q) => $q->whereKeyNot($record->getKey()))
+            ->pluck('feature_key')
+            ->all();
+
+        $options = Entitlements::groupedOptions($used);
+
+        if ($record && Entitlements::typeFor($record->feature_key) === null) {
+            $options['Uncatalogued'][$record->feature_key] = $record->feature_key;
+        }
+
+        return $options;
     }
 
     private function flushEntitlementCache(): void

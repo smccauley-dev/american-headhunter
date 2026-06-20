@@ -4,10 +4,12 @@ use App\Http\Controllers\Admin\PrintApplicationController;
 use App\Http\Controllers\Apply\ApplyController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\Member\CheckInController;
+use App\Http\Controllers\Member\CheckoutController;
 use App\Http\Controllers\Member\LeaseApplicationController as MemberLeaseApplicationController;
 use App\Http\Controllers\Member\LeaseDocumentController;
 use App\Http\Controllers\Member\LeaseSignController;
 use App\Http\Controllers\Member\MemberController;
+use App\Http\Controllers\Member\MembershipController;
 use App\Http\Controllers\Member\ProfileController;
 use App\Http\Controllers\Member\PropertyController as MemberPropertyController;
 use App\Http\Controllers\Member\PropertyDetailController as MemberPropertyDetailController;
@@ -19,6 +21,7 @@ use App\Http\Controllers\Member\PropertyContactController as MemberPropertyConta
 use App\Http\Controllers\Api\MentionController;
 use App\Http\Controllers\Member\SecurityController;
 use App\Http\Controllers\Public\HunterPublicProfileController;
+use App\Http\Controllers\Public\PricingController;
 use App\Http\Controllers\Public\PropertyController;
 use Illuminate\Support\Facades\Route;
 
@@ -26,6 +29,8 @@ Route::get('/', HomeController::class)->name('home');
 
 Route::get('/properties', [PropertyController::class, 'index'])->name('property.index');
 Route::get('/properties/{slug}', [PropertyController::class, 'show'])->name('property.show');
+
+Route::get('/pricing', [PricingController::class, 'index'])->name('pricing.index');
 
 Route::get('/hunters/{username}', [HunterPublicProfileController::class, 'show'])->name('hunter.public');
 
@@ -166,6 +171,7 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::get('/leases/{lease}/documents/{leaseDocument}/download', [LeaseDocumentController::class, 'download'])->name('leases.documents.download');
     Route::delete('/leases/{lease}/documents/{leaseDocument}', [LeaseDocumentController::class, 'destroy'])->name('leases.documents.destroy');
     Route::post('/leases/{lease}/messages', [MemberController::class, 'message'])->name('leases.messages.store')->middleware('throttle:20,1');
+    Route::post('/leases/{lease}/deposit', [MemberController::class, 'payDeposit'])->name('leases.deposit')->middleware('throttle:10,1');
 
     Route::post('/checkin',  [CheckInController::class, 'store'])->name('checkin.store')->middleware('throttle:20,1');
     Route::post('/checkout', [CheckInController::class, 'destroy'])->name('checkin.destroy')->middleware('throttle:20,1');
@@ -175,6 +181,12 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::get('/profile/photos/{documentId}', [ProfileController::class, 'servePhoto'])->name('profile.photos.serve');
     Route::get('/profile', [ProfileController::class, 'show'])->name('profile');
     Route::get('/myleases', [ProfileController::class, 'show'])->defaults('initialTab', 'leases')->name('myleases');
+    Route::get('/membership', [ProfileController::class, 'show'])->defaults('initialTab', 'membership')->name('membership');
+    Route::post('/membership/checkout', [CheckoutController::class, 'create'])->name('membership.checkout')->middleware('throttle:10,1');
+    Route::post('/membership/cancel', [MembershipController::class, 'cancel'])->name('membership.cancel')->middleware('throttle:10,1');
+    Route::post('/membership/resume', [MembershipController::class, 'resume'])->name('membership.resume')->middleware('throttle:10,1');
+    Route::post('/membership/change', [MembershipController::class, 'changePlan'])->name('membership.change')->middleware('throttle:10,1');
+    Route::post('/membership/update-payment', [MembershipController::class, 'updatePayment'])->name('membership.update-payment')->middleware('throttle:10,1');
     Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->name('profile.avatar.upload');
     Route::post('/profile/photos', [ProfileController::class, 'uploadPhoto'])->name('profile.photos.upload');

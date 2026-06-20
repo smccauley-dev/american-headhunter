@@ -20,6 +20,9 @@ class DatabaseSeeder extends Seeder
             // DB 2 — Property (sample listings for dev)
             PropertySeeder::class,
 
+            // DB 4 — Billing (dev test subscriptions; needs platform plans + test users)
+            \Database\Seeders\Billing\TestSubscriptionSeeder::class,
+
             // DB 7 — Communications (system email templates)
             \Database\Seeders\Communications\EmailTemplateSeeder::class,
         ]);

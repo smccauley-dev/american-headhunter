@@ -33,6 +33,10 @@ services:
 
   postgres:
     image: postgis/postgis:16-3.4
+    # Raise max_connections (default 100) — the test suite opens a writer pool
+    # across all 14 databases, so a full-suite run peaks well above the default
+    # and otherwise hits "remaining connection slots reserved for SUPERUSER".
+    command: ["postgres", "-c", "max_connections=300"]
     ports:
       - "${DB_PORT:-5432}:5432"
     environment:

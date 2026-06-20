@@ -558,6 +558,31 @@ class PropertyService extends BaseService
     }
 
     /**
+     * Active, public, staff-flagged "featured" listings for the public home page.
+     * Unlike search results (gated behind signup), these advertising listings are
+     * fully viewable to anyone. Newest first, capped at $limit. Uses the read
+     * replica; eager-loads the same relations the home page expects.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, PropertyListing>
+     */
+    public function featuredListings(int $limit = 6): \Illuminate\Database\Eloquent\Collection
+    {
+        return PropertyListing::on('property_read')
+            ->with(['property', 'property.species'])
+            ->where('property_listings.is_featured', true)
+            ->where('property_listings.status', 'active')
+            ->whereNull('property_listings.deleted_at')
+            ->where('property_listings.visibility', 'public')
+            ->join('properties', 'properties.id', '=', 'property_listings.property_id')
+            ->where('properties.status', 'active')
+            ->whereNull('properties.deleted_at')
+            ->orderByDesc('property_listings.created_at')
+            ->select('property_listings.*')
+            ->limit($limit)
+            ->get();
+    }
+
+    /**
      * Search active public listings with filters. Uses the read replica.
      * Returns paginated results.
      *
@@ -570,6 +595,7 @@ class PropertyService extends BaseService
      *   max_acres?: float,
      *   min_price?: float,
      *   max_price?: float,
+     *   restricted_state?: ?string,
      *   page?: int,
      *   per_page?: int,
      * } $filters
@@ -586,6 +612,16 @@ class PropertyService extends BaseService
             ->where('properties.status', 'active')
             ->whereNull('properties.deleted_at')
             ->where('property_listings.visibility', 'public');
+
+        // Home-state gate: a single-state-restricted member sees only listings in
+        // their locked state, plus featured listings anywhere (advertising). Applied
+        // before user filters so it can never be widened by a state_code filter.
+        if (! empty($filters['restricted_state'])) {
+            $query->where(function ($q) use ($filters) {
+                $q->where('properties.state_code', $filters['restricted_state'])
+                  ->orWhere('property_listings.is_featured', true);
+            });
+        }
 
         if (! empty($filters['state_code'])) {
             $query->where('properties.state_code', $filters['state_code']);

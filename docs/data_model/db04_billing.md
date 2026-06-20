@@ -6,7 +6,7 @@
 **Server:** Dedicated PCI-scoped PostgreSQL instance — isolated network segment, access-logged, SOC 2 compliant
 **Encryption Key:** Key D — HSM-backed, rotated monthly via Azure Key Vault
 **Extensions:** `pgcrypto`, `uuid-ossp`
-**RLS Enabled:** Yes — on `invoices`, `payments`, `payment_methods`, `payouts`, `w9_records`
+**RLS Enabled:** Yes — on `invoices`, `payments`, `payment_methods`, `payouts`, `w9_records`, `security_deposits`, `stripe_invoice_projections`
 
 This database governs all financial transactions: invoices, payments, refunds, Stripe Connect payouts to landowners, membership subscriptions, and tax records (TaxJar calculations and 1099 filing via Tax1099).
 
@@ -409,7 +409,7 @@ CREATE TRIGGER trg_tax_1099_records_updated_at
 > These four tables were named in the build roadmap (Phase 5.1) but had **no schema definition anywhere** until they were designed here. Build status as of 2026-06-15:
 > - ✅ **`promo_codes`** — BUILT (migration `2026_06_15_000001`)
 > - ✅ **`w9_records`** — BUILT (migration `2026_06_15_000002`); adds `w9_records` to the RLS list
-> - ⏳ **`security_deposits`** — proposed, pending review (will add to RLS list when built)
+> - ✅ **`security_deposits`** — BUILT (migration `2026_06_20_000003`); adds `security_deposits` to the RLS list. Slices 1–2 done: schema + model + RLS forgery-defense **and** the capture/release/forfeit `SecurityDepositService` with in-portal hosted-Checkout collection, webhook authoring, and admin + member UI. Forfeiture→landowner payout (Connect) is the remaining slice.
 > - ⏳ **`tax_nexus_tracking`** — proposed, pending review
 >
 > **Identifier note:** unlike the tables above (which still show the stale `set_updated_at()` / `app.current_role`), these use the **actual codebase identifiers**: trigger function `trigger_set_updated_at()` and RLS settings `app.current_user_id` + `app.user_role` (the `,true` "missing ok" flag is set by `InjectDatabaseContext`).
@@ -482,7 +482,7 @@ CREATE POLICY w9_records_own_user ON w9_records
 
 ---
 
-### `security_deposits` ⏳ *(proposed — pending review)*
+### `security_deposits` ✅ *(BUILT 2026-06-20)*
 
 Refundable damage deposit held for the life of a lease, then released, partially withheld, or forfeited at lease end. Funded by a dedicated `payments` row; forfeited funds are disbursed to the landowner via a `payouts` row.
 
@@ -526,23 +526,30 @@ CREATE TRIGGER trg_security_deposits_updated_at
     FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 ```
 
-**RLS Policy:**
+**RLS Policy (as built):**
 ```sql
 ALTER TABLE security_deposits ENABLE ROW LEVEL SECURITY;
 
+-- Read-only for the runtime role: either party (lessee/landowner) sees their own
+-- deposit; staff/super_admin see all. NO write policy by design — writes are
+-- system-authored (ah_system, BYPASSRLS) only.
 CREATE POLICY security_deposits_parties_and_staff ON security_deposits
-    FOR SELECT TO ah_app
+    FOR SELECT TO ah_runtime
     USING (
-        payer_user_id = current_setting('app.current_user_id', true)::UUID
-        OR payee_user_id = current_setting('app.current_user_id', true)::UUID
+        payer_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID
+        OR payee_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID
         OR current_setting('app.user_role', true) IN ('staff', 'super_admin')
     );
 ```
 
 **Notes:**
 - No `deleted_at` — a deposit is a financial record; it resolves via `status`, never deletes.
+- **System-authored, runtime-read-only (SEC-045 forgery-defense).** Like `invoices`/`payments`/`payouts` and `stripe_invoice_projections`, the table has a single `FOR SELECT TO ah_runtime` policy and **no** write policy, so under PostgreSQL default-deny every runtime `INSERT`/`UPDATE` fails — a logged-in lessee or landowner can read their own deposit but can never forge or mutate one. Only `ah_system` (BYPASSRLS — the deposit-charge webhook, release/forfeit jobs, Filament admin) authors these rows. Regression coverage: `tests/Feature/Security/SecurityDepositRlsWriteTest`.
 - Forfeiture is a disputed/adjudicated action: `forfeited_amount_cents` should only be set after an incident/dispute resolution (DB 10) and triggers a `payouts` row to the landowner. Partial releases set both `refunded_amount_cents` and `forfeited_amount_cents`.
-- **Open decision:** hold mechanism — a separate captured charge (simplest, funds sit in platform balance) vs. a Stripe manual-capture authorization (cardholder funds held, but max 7-day auth window makes it unsuitable for season-long leases). Recommend a **separate charge + refund-on-release**; the auth-hold path does not fit lease durations.
+- **Hold mechanism (decided):** a **separate captured charge + refund-on-release** (funds sit in the platform balance), *not* a Stripe manual-capture authorization — the auth-hold's max 7-day window cannot span a season-long lease.
+- **Build status:** slices 1–2 built. Slice 1 = this table + `App\Models\Billing\SecurityDeposit` + RLS test. Slice 2 = `App\Services\Billing\SecurityDepositService` (capture/release/forfeit), Stripe hosted-Checkout collection, webhook authoring, and admin + member UI (see below). Slice 3 (forfeiture→landowner payout via Stripe Connect) is deferred — `forfeit()` records state but does **not** yet disburse.
+- **Collection flow (slice 2):** the deposit is **not** auto-charged at lease activation. The member pays in-portal: `Member/Lease.tsx` shows a "Pay Deposit" card → `POST /member/leases/{lease}/deposit` (`ah_runtime`, throttled) → `SecurityDepositService::createCheckoutSession` opens a Stripe Checkout `mode=payment` (one-time, refundable). The runtime path writes **nothing** (SEC-045); the held row is authored by `ProcessStripeWebhook` on `checkout.session.completed` (`mode=payment` + `metadata.purpose=security_deposit`, idempotent on the PaymentIntent) running as `ah_system`. Deposit amount derives from the listing: flat `deposit_amount`, else `deposit_percent` of the lease total.
+- **Release / forfeit (slice 2):** admin-driven from the read-only Filament `SecurityDepositResource` (Billing group). Release refunds the full remaining balance and sets `released`. Forfeit records `forfeited_amount_cents` + `forfeit_reason`, refunds any un-forfeited remainder to the lessee (`partially_released`) or sets `forfeited` for a full forfeit; the forfeited cash stays captured on the platform until the Connect payout slice. Both audit via `AuditService` (`security_deposit.held|released|forfeited`).
 
 ---
 

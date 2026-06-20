@@ -11,6 +11,7 @@ use App\Services\Documents\DocumentService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
+use App\Services\Billing\SecurityDepositService;
 use App\Services\Lease\LeaseDocumentService;
 use App\Services\Lease\LeaseService;
 use App\Services\Property\PropertyMapService;
@@ -40,7 +41,7 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService): Response
     {
         $userId = session('auth.user_id');
 
@@ -165,6 +166,27 @@ class MemberController extends Controller
             ];
         }
 
+        // Security deposit (lessee-facing). Amount derives from the listing; a held
+        // deposit shows as secured. The pay action goes through hosted Checkout —
+        // the row itself is authored by the webhook, never on this runtime request.
+        $deposit = null;
+        if (! $isLessor) {
+            $existingDeposit = rescue(fn () => $depositService->forLease($lease), null);
+            $amountDueCents  = rescue(fn () => $depositService->amountDueCents($leaseRecord), 0) ?: 0;
+
+            if ($existingDeposit || $amountDueCents > 0) {
+                $displayCents = $existingDeposit ? (int) $existingDeposit->amount_cents : $amountDueCents;
+                $deposit = [
+                    'status'    => $existingDeposit?->status,
+                    'amount'    => number_format($displayCents / 100, 2),
+                    'refunded'  => $existingDeposit ? number_format((int) $existingDeposit->refunded_amount_cents / 100, 2) : null,
+                    'forfeited' => $existingDeposit ? number_format((int) $existingDeposit->forfeited_amount_cents / 100, 2) : null,
+                    'can_pay'   => ! $existingDeposit && $amountDueCents > 0,
+                    'pay_url'   => route('member.leases.deposit', $lease),
+                ];
+            }
+        }
+
         return Inertia::render('Member/Lease', [
             'lease' => [
                 'id'          => $leaseRecord->id,
@@ -187,6 +209,7 @@ class MemberController extends Controller
                 'rules'  => collect($property->rules ?? [])->map(fn ($r) => $r->rule_text)->values()->all(),
             ] : null,
             'access_info'    => $accessInfo,
+            'deposit'        => $deposit,
             'contacts'       => $contacts,
             'signers'         => $signers,
             'sign_url'        => $signUrl,
@@ -197,6 +220,39 @@ class MemberController extends Controller
             'upload_url'     => route('member.leases.documents.upload', $lease),
             'communications' => $communications,
         ]);
+    }
+
+    /**
+     * Start the hosted Checkout that funds a lease's refundable security deposit.
+     * Only the lessee pays. Redirects to Stripe; the held row is authored by the
+     * webhook on payment success.
+     */
+    public function payDeposit(string $lease, SecurityDepositService $depositService): \Symfony\Component\HttpFoundation\Response
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessee_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $existing = $depositService->forLease($lease);
+        if ($existing && $existing->status === 'held') {
+            return back()->withErrors(['deposit' => 'A deposit is already held for this lease.']);
+        }
+        if ($depositService->amountDueCents($leaseRecord) <= 0) {
+            return back()->withErrors(['deposit' => 'No security deposit is due for this lease.']);
+        }
+
+        $payer   = User::findOrFail($userId);
+        $session = $depositService->createCheckoutSession(
+            $leaseRecord,
+            $payer,
+            route('member.leases.show', $lease) . '?deposit=paid',
+            route('member.leases.show', $lease) . '?deposit=cancel',
+        );
+
+        return Inertia::location($session->url);
     }
 
     public function message(Request $request, string $lease, ApplicationMessageService $messageService): RedirectResponse

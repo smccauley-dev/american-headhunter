@@ -799,6 +799,7 @@ class PropertyFormV2
                     ->tabs([
 
                         Tab::make('General Info')
+                            ->icon('heroicon-o-information-circle')
                             ->schema([
                                 Section::make()
                                     ->columns(2)
@@ -867,6 +868,7 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Game Type')
+                            ->icon('heroicon-o-trophy')
                             ->schema([
                                 Section::make()
                                     ->schema([
@@ -892,6 +894,7 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Property Rules')
+                            ->icon('heroicon-o-clipboard-document-list')
                             ->schema([
                                 Section::make()
                                     ->schema([
@@ -919,9 +922,11 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Amenities')
+                            ->icon('heroicon-o-sparkles')
                             ->schema(static::amenitiesTabSchema()),
 
                         Tab::make('Photos')
+                            ->icon('heroicon-o-photo')
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Photo Gallery')
@@ -937,6 +942,7 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Map')
+                            ->icon('heroicon-o-map')
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Boundary Map')
@@ -955,6 +961,7 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Listings')
+                            ->icon('heroicon-o-tag')
                             ->schema([
                                 Section::make()
                                     ->schema([
@@ -1009,6 +1016,11 @@ class PropertyFormV2
                                                     ->label('Auto Renew')
                                                     ->default(false)
                                                     ->inline(false),
+                                                Toggle::make('is_featured')
+                                                    ->label('Featured (Home Page)')
+                                                    ->helperText('Show this listing as a special advertising listing on the public home page — fully viewable without signing in.')
+                                                    ->default(false)
+                                                    ->inline(false),
                                                 DatePicker::make('season_start')
                                                     ->label('Season Start'),
                                                 DatePicker::make('season_end')
@@ -1058,6 +1070,7 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Check In/Out')
+                            ->icon('heroicon-o-map-pin')
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Field Check-In Log')
@@ -1072,6 +1085,7 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Managers')
+                            ->icon('heroicon-o-user-group')
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Active Managers')
@@ -1087,6 +1101,7 @@ class PropertyFormV2
                             ]),
 
                         Tab::make('Contacts')
+                            ->icon('heroicon-o-phone')
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Landowner & Managers')

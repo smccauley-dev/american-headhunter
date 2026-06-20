@@ -35,7 +35,7 @@ class LeaseService extends BaseService
     private function buildLeaseDetail(string $leaseId): LeaseDetailDTO
     {
         $lease    = Lease::with(['hunters', 'notes', 'checkIns', 'renewals'])->findOrFail($leaseId);
-        $property = $this->propertyService->findById($lease->property_id);
+        $property = $this->propertyService->find($lease->property_id);
         $lessee   = $this->userService->findById($lease->lessee_user_id);
         $lessor   = $this->userService->findById($lease->lessor_user_id);
 

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Auth;
 
 use App\Models\Identity\User;
+use App\Support\UsStates;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -23,6 +24,9 @@ class RegisterRequest extends FormRequest
             'last_name'    => ['required', 'string', 'max:100'],
             'date_of_birth' => ['required', 'date', 'before:today'],
             'phone'        => ['required', 'string', 'max:20'],
+            // Home state gatekeeps which listings a member may apply to, so it must
+            // be a valid two-letter USPS code, not free text.
+            'state_code'   => ['required', 'string', 'size:2', Rule::in(array_keys(UsStates::names()))],
             'tos_accepted' => ['required', 'accepted'],
             'privacy_accepted' => ['required', 'accepted'],
         ];
@@ -35,6 +39,8 @@ class RegisterRequest extends FormRequest
             'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
             'tos_accepted.accepted' => 'You must accept the Terms of Service.',
             'privacy_accepted.accepted' => 'You must accept the Privacy Policy.',
+            'state_code.required' => 'Please select your home state.',
+            'state_code.in'       => 'Please select a valid U.S. state.',
         ];
     }
 

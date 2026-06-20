@@ -117,7 +117,7 @@ class PromotionalPeriodResource extends Resource
                         ->label('Promo Key')
                         ->required()
                         ->maxLength(80)
-                        ->fontFamily('mono')
+                        ->extraInputAttributes(['class' => 'font-mono'])
                         ->disabled(fn (string $operation): bool => $operation === 'edit')
                         ->dehydrated(fn (string $operation): bool => $operation === 'create')
                         ->helperText('Permanent once created, e.g. founding_landowner.'),

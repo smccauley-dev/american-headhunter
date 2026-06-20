@@ -22,6 +22,7 @@ class PropertyInfolistV2
                 ->tabs([
 
                     Tab::make('General Info')
+                        ->icon('heroicon-o-information-circle')
                         ->schema([
                             Section::make()
                                 ->columns(2)
@@ -66,6 +67,7 @@ class PropertyInfolistV2
                         ]),
 
                     Tab::make('Game Type')
+                        ->icon('heroicon-o-trophy')
                         ->schema([
                             Section::make()
                                 ->schema([
@@ -85,6 +87,7 @@ class PropertyInfolistV2
                         ]),
 
                     Tab::make('Property Rules')
+                        ->icon('heroicon-o-clipboard-document-list')
                         ->schema([
                             Section::make()
                                 ->schema([
@@ -100,9 +103,11 @@ class PropertyInfolistV2
                         ]),
 
                     Tab::make('Amenities')
+                        ->icon('heroicon-o-sparkles')
                         ->schema(static::amenitiesTabSchema()),
 
                     Tab::make('Listings')
+                        ->icon('heroicon-o-tag')
                         ->schema([
                             Section::make()
                                 ->schema([

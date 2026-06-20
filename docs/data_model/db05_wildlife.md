@@ -382,7 +382,7 @@ class HarvestLog extends Model
     // Cross-DB: resolved via UserService
     public function getHunter(): ?\App\Models\Identity\User
     {
-        return app(\App\Services\Identity\UserService::class)->find($this->user_id);
+        return app(\App\Services\Identity\UserService::class)->findById($this->user_id);
     }
 }
 ```

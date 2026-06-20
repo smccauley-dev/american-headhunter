@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
+use App\Models\Identity\User;
+use App\Services\Platform\EntitlementService;
 use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\Request;
@@ -10,7 +12,10 @@ use Inertia\Response;
 
 class PropertyController extends Controller
 {
-    public function __construct(private readonly PropertyService $propertyService) {}
+    public function __construct(
+        private readonly PropertyService    $propertyService,
+        private readonly EntitlementService $entitlementService,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -40,9 +45,14 @@ class PropertyController extends Controller
             $filters['species'] = (array) $request->input('species');
         }
 
+        // Single-state-restricted (e.g. free-tier) hunters may only browse listings
+        // in their locked home state; featured listings stay visible everywhere as
+        // advertising. Unrestricted members and guests are unaffected (null = no gate).
+        // Kept out of $filters so it is not echoed back as a user-facing filter.
         $paginator = $this->propertyService->searchListings(array_merge($filters, [
-            'page'     => $request->integer('page', 1),
-            'per_page' => 20,
+            'restricted_state' => $this->browseRestrictedState($request),
+            'page'             => $request->integer('page', 1),
+            'per_page'         => 20,
         ]));
 
         $listings = $paginator->through(fn ($listing) => [
@@ -53,6 +63,7 @@ class PropertyController extends Controller
             'price_per_hunter' => $listing->price_per_hunter,
             'price_total'      => $listing->price_total,
             'max_hunters'      => $listing->max_hunters,
+            'is_featured'      => (bool) $listing->is_featured,
             'property' => [
                 'id'             => $listing->property->id,
                 'title'          => $listing->property->title,
@@ -71,7 +82,25 @@ class PropertyController extends Controller
         ]);
     }
 
-    public function show(string $slug): Response
+    /**
+     * The home state a logged-in member is locked to for browsing, or null when
+     * unrestricted (unrestricted member, or guest with no session). Mirrors the
+     * apply-time gate so the search list never shows out-of-state listings a free
+     * hunter could not apply to anyway.
+     */
+    private function browseRestrictedState(Request $request): ?string
+    {
+        $userId = $request->session()->get('auth.user_id');
+        if (! $userId) {
+            return null;
+        }
+
+        $user = User::on('identity')->find($userId);
+
+        return $user ? $this->entitlementService->restrictedHuntState($user) : null;
+    }
+
+    public function show(string $slug): Response|\Illuminate\Http\RedirectResponse
     {
         $property = $this->propertyService->findBySlug($slug);
 
@@ -80,6 +109,13 @@ class PropertyController extends Controller
         }
 
         $property->load(['activeListings', 'photos', 'species', 'rules']);
+
+        // Detail pages are members-only EXCEPT for featured (advertising)
+        // listings, which guests may view. A guest hitting a non-featured
+        // property's URL is redirected to sign-up.
+        if (! auth()->check() && ! $property->activeListings->contains(fn ($l) => $l->is_featured)) {
+            return redirect('/get-started');
+        }
 
         // Base boundary image only — marker overlays are never exposed publicly
         $boundaryMap = app(PropertyMapService::class)->getBoundaryImage($property->id);

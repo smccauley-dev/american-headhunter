@@ -2,6 +2,7 @@
 
 namespace App\Services\Platform;
 
+use App\Models\Billing\Subscription;
 use App\Models\Platform\FeatureEntitlement;
 use App\Models\Platform\MembershipPlan;
 use App\Models\Platform\PlanVersion;
@@ -19,10 +20,125 @@ use App\Services\BaseService;
  */
 class PlanService extends BaseService
 {
+    private const PRICING_CACHE_KEY = 'public_pricing';
+
     public function __construct(
         private readonly EntitlementService $entitlements,
         private readonly AuditService $audit,
     ) {}
+
+    /**
+     * Assemble the public pricing page payload: every public, active plan grouped
+     * by account type, each with the price from its current published version
+     * (falling back to the staged price when no version is published yet) and the
+     * perks marked show_on_pricing, ordered for display. Cached 15 min in Valkey
+     * Cluster 2 — invalidate via flushPricingCache() on any plan/version edit.
+     */
+    public function publicPricing(): array
+    {
+        return $this->cache(self::PRICING_CACHE_KEY, fn () => $this->buildPublicPricing(), ttlMinutes: 15);
+    }
+
+    public function flushPricingCache(): void
+    {
+        $this->invalidate(self::PRICING_CACHE_KEY);
+    }
+
+    /**
+     * Whether any live subscription is locked to one of this plan's versions.
+     * Cross-DB: subscriptions live in DB 4 (billing) and reference plan_versions
+     * in DB 12 (platform) by UUID — assembled here, never via an Eloquent join.
+     */
+    public function hasActiveSubscriptions(MembershipPlan $plan): bool
+    {
+        $versionIds = PlanVersion::on('platform')
+            ->where('plan_id', $plan->id)
+            ->pluck('id')
+            ->all();
+
+        if ($versionIds === []) {
+            return false;
+        }
+
+        return Subscription::on('billing')
+            ->whereIn('plan_version_id', $versionIds)
+            ->whereIn('status', ['active', 'trialing', 'past_due'])
+            ->exists();
+    }
+
+    /**
+     * Soft-delete a plan: it stays referenced by its immutable versions and any
+     * historical subscriptions, so we only hide it (deleted_at) and stamp
+     * deprecated_at. Refuses while live subscriptions exist — callers must gate on
+     * hasActiveSubscriptions() first; this re-checks to close the TOCTOU window.
+     */
+    public function softDeletePlan(MembershipPlan $plan, string $actorUserId): bool
+    {
+        if ($this->hasActiveSubscriptions($plan)) {
+            return false;
+        }
+
+        // deprecated_at is not mass-assignable here — set it directly, then let
+        // Eloquent's soft delete stamp deleted_at via delete().
+        $plan->deprecated_at = now();
+        $plan->save();
+        $plan->delete();
+
+        $this->flushPricingCache();
+
+        $this->audit->log(
+            eventType:      'membership_plan.deleted',
+            sourceDatabase: 'ah_platform',
+            tableName:      'membership_plans',
+            recordId:       $plan->id,
+            userId:         $actorUserId,
+            actionSummary:  "Soft-deleted plan {$plan->plan_key}",
+            newValues:      ['plan_key' => $plan->plan_key],
+        );
+
+        return true;
+    }
+
+    private function buildPublicPricing(): array
+    {
+        $plans = MembershipPlan::on('platform')
+            ->where('is_public', true)
+            ->where('is_active', true)
+            ->whereNull('deleted_at')
+            ->with(['currentVersion', 'entitlements' => fn ($q) => $q->where('show_on_pricing', true)])
+            ->orderBy('account_type')
+            ->orderBy('sort_order')
+            ->get();
+
+        $groups = [];
+
+        foreach ($plans as $plan) {
+            $version = $plan->currentVersion;
+
+            $groups[$plan->account_type][] = [
+                'id'                  => $plan->id,
+                'plan_key'            => $plan->plan_key,
+                'display_name'        => $plan->display_name,
+                'tagline'             => $plan->tagline,
+                'description'         => $plan->description,
+                'monthly_price_cents' => $version->monthly_price_cents ?? $plan->monthly_price_cents,
+                'annual_price_cents'  => $version->annual_price_cents ?? $plan->annual_price_cents,
+                'monthly_enabled'     => (bool) $plan->monthly_enabled,
+                'annual_enabled'      => (bool) $plan->annual_enabled,
+                'is_default_free'     => (bool) $plan->is_default_free,
+                'header_image_path'   => $plan->header_image_path,
+                'accent_color'        => $plan->accent_color,
+                'badge_label'         => $plan->badge_label,
+                'is_featured'         => (bool) $plan->is_featured,
+                'perks'               => $plan->entitlements->map(fn (FeatureEntitlement $e) => [
+                    'label'       => $e->display_label ?: $e->feature_key,
+                    'description' => $e->display_description,
+                ])->values()->all(),
+            ];
+        }
+
+        return $groups;
+    }
 
     /**
      * Snapshot the plan's current pricing and feature entitlements into a new
@@ -52,6 +168,7 @@ class PlanService extends BaseService
         ]);
 
         $this->entitlements->invalidateAll();
+        $this->flushPricingCache();
 
         $this->audit->log(
             eventType:      'plan_version.published',

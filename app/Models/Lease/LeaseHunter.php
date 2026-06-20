@@ -39,7 +39,7 @@ class LeaseHunter extends BaseModelWithSoftDeletes
 
     public function getUser(): ?\App\Models\Identity\User
     {
-        return app(\App\Services\Identity\UserService::class)->find($this->user_id);
+        return app(\App\Services\Identity\UserService::class)->findById($this->user_id);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

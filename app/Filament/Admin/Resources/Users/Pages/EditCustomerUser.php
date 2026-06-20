@@ -4,17 +4,23 @@ namespace App\Filament\Admin\Resources\Users\Pages;
 
 use App\Filament\Admin\Concerns\HasEditPageScaffold;
 use App\Filament\Admin\Resources\Users\CustomerUserResource;
+use App\Models\Billing\StripeInvoiceProjection;
+use App\Models\Billing\Subscription;
 use App\Models\Identity\BackgroundCheckResult;
 use App\Models\Identity\IdentityVerification;
 use App\Models\Identity\OfacScreeningResult;
 use App\Models\Identity\Role;
 use App\Models\Identity\UserAdminNote;
 use App\Models\Identity\UserProfile;
+use App\Models\Platform\MembershipPlan;
 use App\Services\Audit\AuditService;
 use App\Services\Auth\MfaService;
+use App\Services\Billing\StripeService;
+use App\Services\Billing\SubscriptionService;
 use App\Services\Documents\DocumentService;
 use App\Services\Identity\UserService;
 use App\Services\Lease\LeaseService;
+use App\Services\Platform\EntitlementService;
 use App\Services\Platform\MfaFactorService;
 use App\Services\Property\PropertyService;
 use App\Support\AdminAuth;
@@ -47,6 +53,104 @@ class EditCustomerUser extends EditRecord
 
     protected static string $resource = CustomerUserResource::class;
 
+    /** Current page of the Audit Log tab (wired to the Prev/Next controls). */
+    public int $auditLogPage = 1;
+
+    /** Audit Log time window in days; 0 = all time (wired to the window pills). */
+    public int $auditLogDays = 7;
+
+    /** Switch the Audit Log time window and reset to the first page. */
+    public function setAuditWindow(int $days): void
+    {
+        $this->auditLogDays = max(0, $days);
+        $this->auditLogPage = 1;
+    }
+
+    /** Audit record ids for this user — their own id plus any subscription ids. */
+    private function auditRecordIds(): array
+    {
+        return array_merge(
+            [$this->getRecord()->id],
+            Subscription::query()
+                ->where('user_id', $this->getRecord()->id)
+                ->pluck('id')
+                ->all(),
+        );
+    }
+
+    /**
+     * Stream the user's COMPLETE audit history (all time, ignoring the window) as
+     * a CSV download. Uses a lazy cursor so the full log never lands in memory.
+     */
+    public function exportAuditCsv(): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $record    = $this->getRecord();
+        $recordIds = $this->auditRecordIds();
+        $filename  = 'audit-' . $record->id . '-' . now()->format('Ymd-His') . '.csv';
+
+        return response()->streamDownload(function () use ($recordIds) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, [
+                'Occurred At', 'Event Type', 'Source DB', 'Table', 'Record ID',
+                'Actor User ID', 'IP Address', 'User Agent', 'Summary',
+                'Old Values', 'New Values',
+            ]);
+
+            \App\Models\Audit\AuditLog::on('audit')
+                ->whereIn('record_id', $recordIds)
+                ->orderByDesc('occurred_at')
+                ->cursor()
+                ->each(function ($e) use ($out) {
+                    fputcsv($out, [
+                        $e->occurred_at?->toIso8601String(),
+                        $e->event_type,
+                        $e->source_database,
+                        $e->table_name,
+                        $e->record_id,
+                        $e->user_id,
+                        $e->ip_address,
+                        $e->user_agent,
+                        $e->action_summary,
+                        $e->old_values ? json_encode($e->old_values) : '',
+                        $e->new_values ? json_encode($e->new_values) : '',
+                    ]);
+                });
+
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv']);
+    }
+
+    /**
+     * Audit Log section header buttons: the time-window selector (active window
+     * filled, the rest muted) followed by the full-history CSV export. Native
+     * Filament actions so they inherit the panel theme and sit inline with the
+     * section title.
+     */
+    private function auditWindowActions(): array
+    {
+        $windows = [3 => '3 days', 7 => '7 days', 15 => '15 days', 30 => '30 days', 0 => 'All'];
+
+        $actions = [];
+        foreach ($windows as $value => $label) {
+            $actions[] = Action::make("audit_window_{$value}")
+                ->label($label)
+                ->button()
+                ->size(\Filament\Support\Enums\Size::Small)
+                ->color(fn () => $this->auditLogDays === $value ? 'primary' : 'gray')
+                ->action(fn () => $this->setAuditWindow($value));
+        }
+
+        $actions[] = Action::make('export_audit_csv')
+            ->label('Export Full Audit')
+            ->icon('heroicon-o-arrow-down-tray')
+            ->button()
+            ->size(\Filament\Support\Enums\Size::Small)
+            ->color('success')
+            ->action(fn () => $this->exportAuditCsv());
+
+        return $actions;
+    }
+
     public function getHeading(): string|\Illuminate\Contracts\Support\Htmlable
     {
         $name = trim(
@@ -69,6 +173,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Identity ──────────────────────────────────────────────
                     Tab::make('Identity')
+                        ->icon('heroicon-o-identification')
                         ->schema([
                             Section::make('Account')
                                 ->columns(2)
@@ -118,95 +223,140 @@ class EditCustomerUser extends EditRecord
                                 ]),
                         ]),
 
-                    // ── Roles ─────────────────────────────────────────────────
-                    Tab::make('Roles')
+                    // ── Membership ────────────────────────────────────────────
+                    Tab::make('Membership')
+                        ->icon('heroicon-o-credit-card')
                         ->schema([
-                            Section::make('Platform Roles')
+                            Section::make('Current Membership')
+                                ->description("The member's active plan, billing source, and renewal status. Use the controls to add, change, disable, or re-enable a membership.")
+                                ->headerActions($this->membershipActions())
                                 ->schema([
-                                    CheckboxList::make('roles')
+                                    Placeholder::make('membership_summary')
                                         ->hiddenLabel()
-                                        ->helperText('Multi-role: controls what the user can do. The Primary Portal on the Identity tab controls where they log in.')
-                                        ->relationship(
-                                            'roles',
-                                            'display_name',
-                                            fn ($query) => $query
-                                                ->whereIn('name', CustomerUserResource::getNonAdminRoles())
-                                                ->orderBy('display_name')
-                                        )
-                                        ->columns(3)
-                                        ->columnSpanFull(),
+                                        ->content(function () {
+                                            try {
+                                                $record = $this->getRecord();
+                                                $m      = app(EntitlementService::class)->currentMembership($record);
+                                                $sub    = $this->currentSubscription();
+
+                                                return view('filament.admin.users.membership', [
+                                                    'm'   => $m,
+                                                    'sub' => $sub,
+                                                ]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Membership unavailable.';
+                                            }
+                                        }),
+                                ]),
+
+                            Section::make('Invoices')
+                                ->description('Billing history — each renewal is an invoice. Documents are hosted by Stripe.')
+                                ->headerActions($this->refundActions())
+                                ->schema([
+                                    Placeholder::make('membership_invoices')
+                                        ->hiddenLabel()
+                                        ->content(function () {
+                                            try {
+                                                $invoices = StripeInvoiceProjection::displayForUser($this->getRecord()->id);
+
+                                                if (empty($invoices)) {
+                                                    return 'No billing history — this account has no Stripe-billed membership.';
+                                                }
+
+                                                return view('filament.admin.users.membership-invoices', ['invoices' => $invoices]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Invoices unavailable.';
+                                            }
+                                        }),
                                 ]),
                         ]),
 
-                    // ── Contact ───────────────────────────────────────────────
-                    Tab::make('Contact')
+                    // ── Properties & Leases ───────────────────────────────────
+                    Tab::make('Properties & Leases')
+                        ->icon('heroicon-o-home-modern')
                         ->schema([
-                            Section::make('Primary Contact')
-                                ->columns(2)
+                            Section::make('Properties Owned')
                                 ->schema([
-                                    TextInput::make('email')
-                                        ->label('Email Address')
-                                        ->email()
-                                        ->required()
-                                        ->maxLength(255)
-                                        ->unique(table: 'users', column: 'email', ignoreRecord: true),
-                                    TextInput::make('phone')
-                                        ->label('Phone')
-                                        ->tel()
-                                        ->maxLength(20),
+                                    Placeholder::make('properties_owned')
+                                        ->label('')
+                                        ->content(function () {
+                                            try {
+                                                $properties = app(PropertyService::class)
+                                                    ->getOwnedPropertySummaries($this->getRecord()->id);
+
+                                                if (empty($properties)) return 'No properties owned.';
+
+                                                return view('filament.admin.users.properties-owned', ['properties' => $properties]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Unavailable.';
+                                            }
+                                        }),
                                 ]),
 
-                            Section::make('Mailing Address')
-                                ->description('Used for tax forms (1099) and mailing legal documents. Encrypted at rest.')
-                                ->columns(2)
+                            Section::make('Property Manager / Operator Roles')
                                 ->schema([
-                                    TextInput::make('address_line1')
-                                        ->label('Street Address')
-                                        ->maxLength(255)
-                                        ->columnSpanFull(),
-                                    TextInput::make('address_line2')
-                                        ->label('Apt / Unit / Suite')
-                                        ->maxLength(100)
-                                        ->columnSpanFull(),
-                                    TextInput::make('city')
-                                        ->label('City')
-                                        ->maxLength(100),
-                                    Select::make('state_code')
-                                        ->label('State')
-                                        ->options(\App\Support\UsStates::names())
-                                        ->searchable(),
-                                    TextInput::make('county')
-                                        ->label('County / Parish / District')
-                                        ->maxLength(100),
-                                    TextInput::make('zip_code')
-                                        ->label('ZIP Code')
-                                        ->maxLength(10),
+                                    Placeholder::make('property_manager_roles')
+                                        ->label('')
+                                        ->content(function () {
+                                            try {
+                                                $grants = app(PropertyService::class)
+                                                    ->getManagerGrantSummaries($this->getRecord()->id);
+
+                                                if (empty($grants)) return 'No property management roles.';
+
+                                                return view('filament.admin.users.manager-roles', ['grants' => $grants]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Unavailable.';
+                                            }
+                                        }),
                                 ]),
 
-                            Section::make('Emergency Contact')
-                                ->description('Who to reach in a field emergency or SOS event. Encrypted at rest.')
-                                ->columns(2)
+                            Section::make('Leases')
                                 ->schema([
-                                    TextInput::make('emergency_contact_name')
-                                        ->label('Name')
-                                        ->maxLength(150),
-                                    TextInput::make('emergency_contact_relationship')
-                                        ->label('Relationship')
-                                        ->maxLength(60)
-                                        ->placeholder('e.g. Spouse, Parent'),
-                                    TextInput::make('emergency_contact_phone')
-                                        ->label('Phone')
-                                        ->tel()
-                                        ->maxLength(20),
-                                    TextInput::make('emergency_contact_email')
-                                        ->label('Email')
-                                        ->email()
-                                        ->maxLength(255),
+                                    Placeholder::make('leases_summary')
+                                        ->label('')
+                                        ->content(function () {
+                                            try {
+                                                $leases = app(LeaseService::class)
+                                                    ->getLeaseSummariesForUser($this->getRecord()->id);
+
+                                                if (empty($leases)) return 'No leases found.';
+
+                                                return view('filament.admin.users.leases', ['leases' => $leases]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Unavailable.';
+                                            }
+                                        }),
+                                ]),
+
+                            Section::make('Club Memberships')
+                                ->schema([
+                                    Placeholder::make('club_memberships')
+                                        ->label('')
+                                        ->content(function () {
+                                            try {
+                                                $clubs = app(LeaseService::class)
+                                                    ->getClubAffiliationsForUser($this->getRecord()->id);
+
+                                                if (empty($clubs)) return 'No club memberships.';
+
+                                                return view('filament.admin.users.club-memberships', ['clubs' => $clubs]);
+                                            } catch (\Throwable $e) {
+                                                report($e);
+                                                return 'Unavailable.';
+                                            }
+                                        }),
                                 ]),
                         ]),
 
                     // ── Profile ───────────────────────────────────────────────
                     Tab::make('Profile')
+                        ->icon('heroicon-o-user-circle')
                         ->schema([
                             Section::make('Profile Details')
                                 ->columns(2)
@@ -320,8 +470,98 @@ class EditCustomerUser extends EditRecord
                                 ]),
                         ]),
 
+                    // ── Contact ───────────────────────────────────────────────
+                    Tab::make('Contact')
+                        ->icon('heroicon-o-phone')
+                        ->schema([
+                            Section::make('Primary Contact')
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('email')
+                                        ->label('Email Address')
+                                        ->email()
+                                        ->required()
+                                        ->maxLength(255)
+                                        ->unique(table: 'users', column: 'email', ignoreRecord: true),
+                                    TextInput::make('phone')
+                                        ->label('Phone')
+                                        ->tel()
+                                        ->maxLength(20),
+                                ]),
+
+                            Section::make('Mailing Address')
+                                ->description('Used for tax forms (1099) and mailing legal documents. Encrypted at rest.')
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('address_line1')
+                                        ->label('Street Address')
+                                        ->maxLength(255)
+                                        ->columnSpanFull(),
+                                    TextInput::make('address_line2')
+                                        ->label('Apt / Unit / Suite')
+                                        ->maxLength(100)
+                                        ->columnSpanFull(),
+                                    TextInput::make('city')
+                                        ->label('City')
+                                        ->maxLength(100),
+                                    Select::make('state_code')
+                                        ->label('State')
+                                        ->options(\App\Support\UsStates::names())
+                                        ->searchable(),
+                                    TextInput::make('county')
+                                        ->label('County / Parish / District')
+                                        ->maxLength(100),
+                                    TextInput::make('zip_code')
+                                        ->label('ZIP Code')
+                                        ->maxLength(10),
+                                ]),
+
+                            Section::make('Emergency Contact')
+                                ->description('Who to reach in a field emergency or SOS event. Encrypted at rest.')
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('emergency_contact_name')
+                                        ->label('Name')
+                                        ->maxLength(150),
+                                    TextInput::make('emergency_contact_relationship')
+                                        ->label('Relationship')
+                                        ->maxLength(60)
+                                        ->placeholder('e.g. Spouse, Parent'),
+                                    TextInput::make('emergency_contact_phone')
+                                        ->label('Phone')
+                                        ->tel()
+                                        ->maxLength(20),
+                                    TextInput::make('emergency_contact_email')
+                                        ->label('Email')
+                                        ->email()
+                                        ->maxLength(255),
+                                ]),
+                        ]),
+
+                    // ── Roles ─────────────────────────────────────────────────
+                    Tab::make('Roles')
+                        ->icon('heroicon-o-key')
+                        ->schema([
+                            Section::make('Platform Roles')
+                                ->schema([
+                                    CheckboxList::make('roles')
+                                        ->hiddenLabel()
+                                        ->helperText('Multi-role: controls what the user can do. The Primary Portal on the Identity tab controls where they log in.')
+                                        ->relationship(
+                                            'roles',
+                                            'display_name',
+                                            fn ($query) => $query
+                                                ->whereIn('name', CustomerUserResource::getNonAdminRoles())
+                                                ->orderBy('display_name')
+                                        )
+                                        ->columns(3)
+                                        ->columnSpanFull(),
+                                ]),
+                        ]),
+
                     // ── Security ──────────────────────────────────────────────
                     Tab::make('Security')
+                        ->icon('heroicon-o-lock-closed')
                         ->schema([
                             Section::make('Public Profile')
                                 ->columns(2)
@@ -445,6 +685,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Compliance ────────────────────────────────────────────
                     Tab::make('Compliance')
+                        ->icon('heroicon-o-shield-check')
                         ->schema([
                             Section::make('Trust Score')
                                 ->schema([
@@ -536,6 +777,7 @@ class EditCustomerUser extends EditRecord
 
                     // ── Admin Notes ───────────────────────────────────────────
                     Tab::make('Admin Notes')
+                        ->icon('heroicon-o-pencil-square')
                         ->schema([
                             Section::make('Staff Notes')
                                 ->schema([
@@ -562,107 +804,49 @@ class EditCustomerUser extends EditRecord
 
                     // ── Audit Log ─────────────────────────────────────────────
                     Tab::make('Audit Log')
+                        ->icon('heroicon-o-clock')
                         ->schema([
                             Section::make('Audit Log')
+                                ->description('Account and membership activity. Pick a time window to keep the view focused, or export the complete history.')
+                                ->headerActions($this->auditWindowActions())
                                 ->schema([
                                     Placeholder::make('audit_log')
-                                        ->label('')
+                                        ->hiddenLabel()
                                         ->content(function () {
                                             try {
-                                                $events = \App\Models\Audit\AuditLog::on('audit')
-                                                    ->where('record_id', $this->getRecord()->id)
-                                                    ->orderByDesc('occurred_at')
-                                                    ->limit(50)
-                                                    ->get();
+                                                // Audit events are keyed by record_id. User-level events use the
+                                                // user id; subscription events (membership activity) use the
+                                                // subscription id — include both so this is the full picture.
+                                                $recordIds = $this->auditRecordIds();
 
-                                                if ($events->isEmpty()) {
-                                                    return 'No audit events for this user.';
+                                                $perPage = 15;
+                                                $days    = $this->auditLogDays;
+
+                                                $base = \App\Models\Audit\AuditLog::on('audit')
+                                                    ->whereIn('record_id', $recordIds);
+                                                if ($days > 0) {
+                                                    $base->where('occurred_at', '>=', now()->subDays($days));
                                                 }
 
-                                                return view('filament.admin.users.audit-log', ['events' => $events]);
+                                                $total    = (clone $base)->count();
+                                                $lastPage = (int) max(1, ceil(max($total, 1) / $perPage));
+                                                $page     = min(max(1, $this->auditLogPage), $lastPage);
+
+                                                $events = $total > 0
+                                                    ? $base->orderByDesc('occurred_at')->forPage($page, $perPage)->get()
+                                                    : collect();
+
+                                                return view('filament.admin.users.audit-log', [
+                                                    'events'      => $events,
+                                                    'currentPage' => $page,
+                                                    'lastPage'    => $lastPage,
+                                                    'total'       => $total,
+                                                    'perPage'     => $perPage,
+                                                    'days'        => $days,
+                                                ]);
                                             } catch (\Throwable $e) {
                                                 report($e);
                                                 return 'Audit log unavailable.';
-                                            }
-                                        }),
-                                ]),
-                        ]),
-
-                    // ── Properties & Leases ───────────────────────────────────
-                    Tab::make('Properties & Leases')
-                        ->schema([
-                            Section::make('Properties Owned')
-                                ->schema([
-                                    Placeholder::make('properties_owned')
-                                        ->label('')
-                                        ->content(function () {
-                                            try {
-                                                $properties = app(PropertyService::class)
-                                                    ->getOwnedPropertySummaries($this->getRecord()->id);
-
-                                                if (empty($properties)) return 'No properties owned.';
-
-                                                return view('filament.admin.users.properties-owned', ['properties' => $properties]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Unavailable.';
-                                            }
-                                        }),
-                                ]),
-
-                            Section::make('Property Manager / Operator Roles')
-                                ->schema([
-                                    Placeholder::make('property_manager_roles')
-                                        ->label('')
-                                        ->content(function () {
-                                            try {
-                                                $grants = app(PropertyService::class)
-                                                    ->getManagerGrantSummaries($this->getRecord()->id);
-
-                                                if (empty($grants)) return 'No property management roles.';
-
-                                                return view('filament.admin.users.manager-roles', ['grants' => $grants]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Unavailable.';
-                                            }
-                                        }),
-                                ]),
-
-                            Section::make('Leases')
-                                ->schema([
-                                    Placeholder::make('leases_summary')
-                                        ->label('')
-                                        ->content(function () {
-                                            try {
-                                                $leases = app(LeaseService::class)
-                                                    ->getLeaseSummariesForUser($this->getRecord()->id);
-
-                                                if (empty($leases)) return 'No leases found.';
-
-                                                return view('filament.admin.users.leases', ['leases' => $leases]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Unavailable.';
-                                            }
-                                        }),
-                                ]),
-
-                            Section::make('Club Memberships')
-                                ->schema([
-                                    Placeholder::make('club_memberships')
-                                        ->label('')
-                                        ->content(function () {
-                                            try {
-                                                $clubs = app(LeaseService::class)
-                                                    ->getClubAffiliationsForUser($this->getRecord()->id);
-
-                                                if (empty($clubs)) return 'No club memberships.';
-
-                                                return view('filament.admin.users.club-memberships', ['clubs' => $clubs]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Unavailable.';
                                             }
                                         }),
                                 ]),
@@ -1155,6 +1339,414 @@ class EditCustomerUser extends EditRecord
             report($e);
             return false;
         }
+    }
+
+    // ── Membership controls ────────────────────────────────────────────────────
+
+    /**
+     * The user's current subscription (active/trialing/past_due), or null. Stripe
+     * identifiers are $hidden on the model for serialization only — they remain
+     * readable as PHP attributes, which the controls below rely on.
+     */
+    private function currentSubscription(): ?Subscription
+    {
+        try {
+            return app(SubscriptionService::class)->activeFor($this->getRecord()->id);
+        } catch (\Throwable $e) {
+            report($e);
+            return null;
+        }
+    }
+
+    /**
+     * Paid plan options for this user's account type, keyed by plan_key. Free /
+     * default plans are excluded — those aren't memberships an admin "adds".
+     */
+    private function paidPlanOptions(): array
+    {
+        return MembershipPlan::on('platform')
+            ->where('account_type', $this->getRecord()->account_type)
+            ->where('is_active', true)
+            ->where(fn ($q) => $q->where('monthly_price_cents', '>', 0)->orWhere('annual_price_cents', '>', 0))
+            ->orderBy('sort_order')
+            ->get()
+            ->mapWithKeys(fn ($p) => [$p->plan_key => $p->display_name])
+            ->all();
+    }
+
+    /**
+     * Section header actions for membership management. All four mutate billing
+     * state, so they require pricing authority and are fully audited (the service
+     * methods audit with the admin as actor; inline schedule/resume audit here).
+     */
+    private function membershipActions(): array
+    {
+        if (! AdminAuth::canManagePricing()) {
+            return [];
+        }
+
+        return [
+            // Add — grant a membership to a user who has none. Comp by default
+            // (no Stripe); an existing Stripe subscription created out-of-band may
+            // be linked by id.
+            Action::make('add_membership')
+                ->label('Add Membership')
+                ->icon('heroicon-o-plus-circle')
+                ->color('primary')
+                ->visible(fn () => ! $this->currentSubscription())
+                ->modalHeading('Add Membership')
+                ->modalDescription('Grants a membership directly. Leave the Stripe fields blank for a complimentary (unbilled) membership, or link an existing Stripe subscription created out-of-band.')
+                ->form([
+                    Select::make('plan_key')
+                        ->label('Plan')
+                        ->options(fn () => $this->paidPlanOptions())
+                        ->required(),
+                    Select::make('interval')
+                        ->label('Billing Interval')
+                        ->options(['monthly' => 'Monthly', 'annual' => 'Annual'])
+                        ->default('monthly')
+                        ->required(),
+                    TextInput::make('trial_days')
+                        ->label('Trial Days')
+                        ->numeric()
+                        ->minValue(0)
+                        ->helperText('Optional — start the membership in a trial for this many days.'),
+                    TextInput::make('stripe_subscription_id')
+                        ->label('Stripe Subscription ID')
+                        ->placeholder('sub_…')
+                        ->helperText('Optional — link an existing Stripe subscription. Blank = complimentary.'),
+                    TextInput::make('stripe_customer_id')
+                        ->label('Stripe Customer ID')
+                        ->placeholder('cus_…'),
+                ])
+                ->action(function (array $data) {
+                    $record = $this->getRecord();
+                    try {
+                        $version = app(SubscriptionService::class)->currentVersionForPlan($data['plan_key']);
+                        $sub = app(SubscriptionService::class)->start($record->id, $version->id, [
+                            'interval'               => $data['interval'] ?? 'monthly',
+                            'trial_days'             => filled($data['trial_days'] ?? null) ? (int) $data['trial_days'] : null,
+                            'stripe_subscription_id' => ($data['stripe_subscription_id'] ?? '') ?: null,
+                            'stripe_customer_id'     => ($data['stripe_customer_id'] ?? '') ?: null,
+                        ]);
+
+                        // start() audits subscription.created with the member as actor;
+                        // record the admin grant separately for actor attribution.
+                        app(AuditService::class)->log(
+                            eventType:      'subscription.admin_granted',
+                            sourceDatabase: 'ah_billing',
+                            tableName:      'subscriptions',
+                            recordId:       $sub->id,
+                            userId:         Auth::id(),
+                            ipAddress:      request()->ip(),
+                            userAgent:      request()->userAgent(),
+                            actionSummary:  "Admin added membership ({$data['plan_key']}) for {$record->email}",
+                            newValues:      ['plan_key' => $data['plan_key'], 'plan_version_id' => $version->id],
+                        );
+
+                        Notification::make()->success()->title('Membership added')->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Could not add membership')->body($e->getMessage())->send();
+                    }
+                }),
+
+            // Upgrade / downgrade — switch to a different paid plan. Stripe-billed
+            // subscriptions are changed in Stripe (immediate, prorated, interval
+            // preserved); swapVersion mirrors the lock locally + audits.
+            Action::make('change_plan')
+                ->label('Upgrade / Downgrade')
+                ->icon('heroicon-o-arrows-up-down')
+                ->color('warning')
+                ->visible(fn () => (bool) $this->currentSubscription())
+                ->modalHeading('Change Membership Plan')
+                ->modalDescription('Switches the membership to a different plan. For Stripe-billed members the change is immediate and prorated, preserving the billing interval.')
+                ->form([
+                    Select::make('plan_key')
+                        ->label('New Plan')
+                        ->options(fn () => $this->paidPlanOptions())
+                        ->required(),
+                ])
+                ->action(function (array $data) {
+                    $record = $this->getRecord();
+                    $sub    = $this->currentSubscription();
+                    try {
+                        if (! $sub) {
+                            throw new \RuntimeException('No active membership to change.');
+                        }
+
+                        $plan = MembershipPlan::on('platform')
+                            ->where('plan_key', $data['plan_key'])
+                            ->where('is_active', true)
+                            ->first();
+
+                        if (! $plan) {
+                            throw new \RuntimeException('That plan is not available.');
+                        }
+                        if ($plan->account_type !== $record->account_type) {
+                            throw new \RuntimeException('That plan is for a different account type.');
+                        }
+
+                        $version = app(SubscriptionService::class)->currentVersionForPlan($plan->plan_key);
+                        if ($version->id === $sub->plan_version_id) {
+                            throw new \RuntimeException('User is already on that plan.');
+                        }
+
+                        if ($sub->stripe_subscription_id) {
+                            app(StripeService::class)->changeSubscriptionPlan($sub->stripe_subscription_id, $plan, $version->id);
+                        }
+
+                        // swapVersion audits subscription.plan_changed with the admin
+                        // as actor and invalidates the entitlement cache.
+                        app(SubscriptionService::class)->swapVersion($sub, $version->id, Auth::id());
+
+                        Notification::make()->success()->title('Plan changed')->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Could not change plan')->body($e->getMessage())->send();
+                    }
+                }),
+
+            // Disable — schedule cancellation at the end of the paid period. The
+            // member keeps access until then; reversible via Enable.
+            Action::make('disable_membership')
+                ->label('Disable')
+                ->icon('heroicon-o-no-symbol')
+                ->color('danger')
+                ->requiresConfirmation()
+                ->modalHeading('Disable Membership')
+                ->modalDescription('Schedules cancellation at the end of the current paid period. The member keeps access until then; you can re-enable before it ends.')
+                ->visible(fn () => ($s = $this->currentSubscription()) && ! $s->cancelled_at)
+                ->action(function () {
+                    $record = $this->getRecord();
+                    $sub    = $this->currentSubscription();
+                    try {
+                        if (! $sub) {
+                            throw new \RuntimeException('No active membership to disable.');
+                        }
+
+                        $cancelAt = $sub->current_period_end;
+                        if ($sub->stripe_subscription_id) {
+                            $stripeSub = app(StripeService::class)->cancelSubscriptionAtPeriodEnd($sub->stripe_subscription_id);
+                            $ts        = $stripeSub->cancel_at ?? $stripeSub->current_period_end ?? null;
+                            $cancelAt  = $ts ? \Carbon\Carbon::createFromTimestamp($ts) : ($sub->current_period_end ?? now());
+                        }
+
+                        $sub->cancelled_at = $cancelAt ?: now();
+                        $sub->save();
+
+                        app(EntitlementService::class)->invalidateForUser($record->id);
+                        app(AuditService::class)->log(
+                            eventType:      'subscription.cancel_scheduled',
+                            sourceDatabase: 'ah_billing',
+                            tableName:      'subscriptions',
+                            recordId:       $sub->id,
+                            userId:         Auth::id(),
+                            ipAddress:      request()->ip(),
+                            userAgent:      request()->userAgent(),
+                            actionSummary:  "Admin scheduled cancellation at period end for {$record->email}",
+                            newValues:      ['cancelled_at' => $sub->cancelled_at?->toDateString()],
+                        );
+
+                        Notification::make()->warning()->title('Membership scheduled to cancel')->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Could not disable membership')->body($e->getMessage())->send();
+                    }
+                }),
+
+            // Enable — undo a scheduled cancellation; the membership keeps renewing.
+            Action::make('enable_membership')
+                ->label('Enable')
+                ->icon('heroicon-o-check-circle')
+                ->color('success')
+                ->requiresConfirmation()
+                ->modalHeading('Enable Membership')
+                ->modalDescription('Cancels the scheduled cancellation — the membership keeps renewing.')
+                ->visible(fn () => ($s = $this->currentSubscription()) && $s->cancelled_at)
+                ->action(function () {
+                    $record = $this->getRecord();
+                    $sub    = $this->currentSubscription();
+                    try {
+                        if (! $sub || ! $sub->cancelled_at) {
+                            throw new \RuntimeException('There is no scheduled cancellation to undo.');
+                        }
+
+                        if ($sub->stripe_subscription_id) {
+                            app(StripeService::class)->resumeSubscription($sub->stripe_subscription_id);
+                        }
+
+                        $sub->cancelled_at = null;
+                        $sub->save();
+
+                        app(EntitlementService::class)->invalidateForUser($record->id);
+                        app(AuditService::class)->log(
+                            eventType:      'subscription.resumed',
+                            sourceDatabase: 'ah_billing',
+                            tableName:      'subscriptions',
+                            recordId:       $sub->id,
+                            userId:         Auth::id(),
+                            ipAddress:      request()->ip(),
+                            userAgent:      request()->userAgent(),
+                            actionSummary:  "Admin re-enabled membership for {$record->email}",
+                        );
+
+                        Notification::make()->success()->title('Membership re-enabled')->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Could not enable membership')->body($e->getMessage())->send();
+                    }
+                }),
+        ];
+    }
+
+    /**
+     * Paid (refundable) invoices for this user, keyed by invoice id with a human
+     * label. Drives the refund modal's invoice picker. Read from the local Stripe
+     * invoice projection (Phase 5.7) — the refund itself still hits Stripe live.
+     * Returns [] when the account has no billed invoices or the read fails.
+     *
+     * @return array<string,string>
+     */
+    private function refundableInvoiceOptions(): array
+    {
+        try {
+            return collect(StripeInvoiceProjection::displayForUser($this->getRecord()->id))
+                ->filter(fn (array $i) => ($i['status'] ?? null) === 'paid' && (int) ($i['amount_cents'] ?? 0) > 0)
+                ->mapWithKeys(fn (array $i) => [
+                    $i['id'] => "INVOICE: {$i['number']} — {$i['date']} — \${$i['amount']} {$i['currency']}",
+                ])
+                ->all();
+        } catch (\Throwable $e) {
+            report($e);
+            return [];
+        }
+    }
+
+    /**
+     * Section header action to refund a paid invoice through Stripe. Refunds move
+     * real money, so the control requires pricing authority and is fully audited.
+     * A full or partial amount is supported, and the admin may optionally schedule
+     * cancellation at period end in the same step.
+     */
+    private function refundActions(): array
+    {
+        if (! AdminAuth::canManagePricing()) {
+            return [];
+        }
+
+        return [
+            Action::make('refund_invoice')
+                ->label('Issue Refund')
+                ->icon('heroicon-o-receipt-refund')
+                ->color('danger')
+                ->visible(fn () => ! empty($this->refundableInvoiceOptions()))
+                ->modalHeading('Issue Refund')
+                ->modalDescription('Refunds a paid invoice through Stripe. Leave the amount blank to refund the full invoice, or enter an amount for a partial refund.')
+                ->form([
+                    Select::make('invoice_id')
+                        ->label('Invoice')
+                        ->options(fn () => $this->refundableInvoiceOptions())
+                        ->required(),
+                    TextInput::make('amount')
+                        ->label('Refund Amount')
+                        ->numeric()
+                        ->prefix('$')
+                        ->minValue(0.01)
+                        ->helperText('Leave blank to refund the full invoice amount.'),
+                    Select::make('reason')
+                        ->label('Reason')
+                        ->options([
+                            'requested_by_customer' => 'Requested by customer',
+                            'duplicate'             => 'Duplicate',
+                            'fraudulent'            => 'Fraudulent',
+                        ])
+                        ->default('requested_by_customer')
+                        ->required(),
+                    Textarea::make('note')
+                        ->label('Internal Note')
+                        ->rows(2)
+                        ->helperText('Optional — stored on the Stripe refund metadata and the audit record.'),
+                    Toggle::make('also_cancel')
+                        ->label('Also schedule cancellation at period end')
+                        ->helperText('Disables the membership at the end of the current paid period (reversible via Enable).'),
+                ])
+                ->action(function (array $data) {
+                    $record = $this->getRecord();
+                    try {
+                        $amountCents = filled($data['amount'] ?? null)
+                            ? (int) round(((float) $data['amount']) * 100)
+                            : null;
+
+                        $refund = app(StripeService::class)->refundInvoice(
+                            $data['invoice_id'],
+                            $amountCents,
+                            $data['reason'] ?? null,
+                            ($data['note'] ?? '') ?: null,
+                        );
+
+                        $sub = $this->currentSubscription();
+                        app(AuditService::class)->log(
+                            eventType:      'invoice.refunded',
+                            sourceDatabase: 'ah_billing',
+                            tableName:      'subscriptions',
+                            recordId:       $sub?->id ?? $record->id,
+                            userId:         Auth::id(),
+                            ipAddress:      request()->ip(),
+                            userAgent:      request()->userAgent(),
+                            actionSummary:  sprintf(
+                                'Admin refunded %s on invoice %s for %s (%s)',
+                                $amountCents !== null ? '$' . number_format($amountCents / 100, 2) : 'full amount',
+                                $data['invoice_id'],
+                                $record->email,
+                                $data['reason'] ?? 'n/a',
+                            ),
+                            newValues:      [
+                                'refund_id'  => $refund->id,
+                                'invoice_id' => $data['invoice_id'],
+                                'amount'     => $amountCents !== null ? number_format($amountCents / 100, 2) : 'full',
+                                'reason'     => $data['reason'] ?? null,
+                                'note'       => ($data['note'] ?? '') ?: null,
+                            ],
+                        );
+
+                        // Optional cancellation — mirrors the Disable action.
+                        if (! empty($data['also_cancel']) && $sub && ! $sub->cancelled_at) {
+                            $cancelAt = $sub->current_period_end;
+                            if ($sub->stripe_subscription_id) {
+                                $stripeSub = app(StripeService::class)->cancelSubscriptionAtPeriodEnd($sub->stripe_subscription_id);
+                                $ts        = $stripeSub->cancel_at ?? $stripeSub->current_period_end ?? null;
+                                $cancelAt  = $ts ? \Carbon\Carbon::createFromTimestamp($ts) : ($sub->current_period_end ?? now());
+                            }
+
+                            $sub->cancelled_at = $cancelAt ?: now();
+                            $sub->save();
+
+                            app(EntitlementService::class)->invalidateForUser($record->id);
+                            app(AuditService::class)->log(
+                                eventType:      'subscription.cancel_scheduled',
+                                sourceDatabase: 'ah_billing',
+                                tableName:      'subscriptions',
+                                recordId:       $sub->id,
+                                userId:         Auth::id(),
+                                ipAddress:      request()->ip(),
+                                userAgent:      request()->userAgent(),
+                                actionSummary:  "Admin scheduled cancellation at period end (with refund) for {$record->email}",
+                                newValues:      ['cancelled_at' => $sub->cancelled_at?->toDateString()],
+                            );
+                        }
+
+                        // The refund's effect on the projection (refund_status,
+                        // amount_refunded_cents) lands via the charge.refunded
+                        // webhook; the daily reconcile is the backstop.
+
+                        Notification::make()->success()->title('Refund issued')->send();
+                    } catch (\Throwable $e) {
+                        report($e);
+                        Notification::make()->danger()->title('Could not issue refund')->body($e->getMessage())->send();
+                    }
+                }),
+        ];
     }
 
     private function formatServiceRange(mixed $start, mixed $end): ?string

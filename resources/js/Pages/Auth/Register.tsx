@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import AuthLayout from '@/Components/Auth/AuthLayout';
 import AuthInput from '@/Components/Auth/AuthInput';
+import { US_STATES } from '@/lib/usStates';
 
 interface LegalUrls {
     tos_url: string;
@@ -35,6 +36,7 @@ export default function Register() {
         password:          '',
         password_confirmation: '',
         date_of_birth:     '',
+        state_code:        '',
         phone:             '',
         tos_accepted:      false,
         privacy_accepted:  false,
@@ -140,16 +142,55 @@ export default function Register() {
                     required
                 />
 
-                <AuthInput
-                    label="Date of Birth"
-                    id="date_of_birth"
-                    type="date"
-                    autoComplete="bday"
-                    value={form.date_of_birth}
-                    onChange={e => set('date_of_birth', e.target.value)}
-                    error={errors.date_of_birth}
-                    required
-                />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                    <AuthInput
+                        label="Date of Birth"
+                        id="date_of_birth"
+                        type="date"
+                        autoComplete="bday"
+                        value={form.date_of_birth}
+                        onChange={e => set('date_of_birth', e.target.value)}
+                        error={errors.date_of_birth}
+                        required
+                    />
+
+                    {/* Home state gatekeeps which listings a member may apply to, so it
+                        is a select (clean 2-letter code) rather than free text. */}
+                    <div style={{ marginBottom: 20 }}>
+                        <label htmlFor="state_code" style={{
+                            display: 'block', fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
+                            color: '#4a5440', marginBottom: 6,
+                        }}>
+                            Current Home State
+                        </label>
+                        <select
+                            id="state_code"
+                            value={form.state_code}
+                            onChange={e => set('state_code', e.target.value)}
+                            required
+                            style={{
+                                width: '100%', padding: '10px 14px',
+                                background: '#f4ecdc', border: `1px solid ${errors.state_code ? '#c84c21' : '#a89874'}`,
+                                borderRadius: 0, fontSize: 16, fontFamily: "'Crimson Pro', Georgia, serif",
+                                color: form.state_code ? '#0a1512' : '#8a7a5a', outline: 'none',
+                                appearance: 'none', cursor: 'pointer',
+                            }}
+                            onFocus={e => (e.target.style.borderColor = '#0a1512')}
+                            onBlur={e => (e.target.style.borderColor = errors.state_code ? '#c84c21' : '#a89874')}
+                        >
+                            <option value="" disabled>Select your state</option>
+                            {US_STATES.map(([code, name]) => (
+                                <option key={code} value={code} style={{ color: '#0a1512' }}>{name}</option>
+                            ))}
+                        </select>
+                        {errors.state_code && (
+                            <p style={{ marginTop: 4, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.1em', color: '#c84c21' }}>
+                                {errors.state_code}
+                            </p>
+                        )}
+                    </div>
+                </div>
 
                 <AuthInput
                     label="Password"
