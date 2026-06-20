@@ -758,6 +758,41 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
 - [x] All resources gated by `AdminAuth::canManagePricing()` / `canViewBilling()`; admin panel runs under `ah_system` (BYPASSRLS) so oversight reads see all rows. No new RLS migrations or HTTP endpoints required — the integration surface is entitlement-cache invalidation (Valkey Cluster 2). Stripe product/price sync deferred (IDs admin-entered, nullable).
 - [x] Commit: "Filament billing and pricing admin" (PlanService 6a7088f, plans 9479aad, promos 31ea0b1, oversight 935be5c)
 
+### 5.7 Stripe Invoice Projection (local read model)
+
+The goal: a locally-queryable, denormalized read model of Stripe **subscription** invoice data in DB 4, kept current by webhooks at the record level, so the admin invoice list (and the member billing-history panel) stop making live Stripe round-trips on every page load. Stripe stays the source of truth; the projection is a mirror. This replaces the current pattern where `StripeService::listInvoices()` makes 2 live Stripe HTTP calls per render (cached only 2 min in Valkey).
+
+**Scope note:** this is a *read* optimization for **subscription** invoices (the ones surfaced today via `listInvoices()`). It does NOT touch the lease-payment `invoices` table semantics, and it does not change any write/refund path — refunds keep calling Stripe live.
+
+#### Critical constraints (verified live 2026-06-20 — the projection must obey these, not work around them)
+
+- **System-authored, runtime-read-only (RLS).** Verified: `ah_system` has BYPASSRLS, `ah_runtime` is default-deny on writes, and `invoices`/`payments`/`payouts` carry a `FOR SELECT TO ah_runtime` policy only (no INSERT/UPDATE policy) — the SEC-045 forgery-defense pattern. The new projection table **mirrors `invoices` exactly**: `ENABLE ROW LEVEL SECURITY` + one `FOR SELECT TO ah_runtime` policy (subscriber + staff/super_admin) + **no write policy**. All writes happen under `ah_system` (the queue worker and the reconcile console job both run as `ah_system` per `RuntimeDatabaseRoleProvider`). The Filament admin panel runs under `ah_system` so oversight reads see all rows.
+- **API version `2026-05-27.dahlia`.** Payment data lives on `invoice.payments.data[].payment.payment_intent`, not the dropped top-level `invoice.payment_intent`/`charge`. Reuse `StripeService::invoicePaymentIntentId()` (already dahlia-aware with legacy fallback) for any refund/PI enrichment. **Gotcha:** webhook event payloads are NOT expanded — `$event->data->object` on an `invoice.*` event carries the generic fields (number/status/amount/currency/period/`hosted_invoice_url`/`invoice_pdf`) but NOT `payments.data`, so refund/PI enrichment needs a follow-up `Invoice::retrieve(id, expand:['payments'])` or must be sourced from the `charge.refunded` event.
+- **No raw card data / no logging.** Project only generic IDs + display fields (number, status, amounts, currency, period, hosted/pdf URLs, refund status). Never PAN/CVV (those never leave Stripe); never log invoice PII — the webhook job logs event types + Stripe IDs only.
+
+#### Open decision (resolved at build time)
+
+- New dedicated `stripe_invoice_projections` table (**recommended, built**) vs. extending the lease-shaped `invoices` table. Decision: new table — keeps lease-payment `invoices` semantics clean and avoids overloading one table with two record shapes. A subscription invoice has a single relevant party, so the table uses `subscriber_user_id` (the member billed) rather than the `payer`/`payee` pair lease `invoices` carries (the `payee` would be the platform — meaningless here).
+
+#### Build (sequenced so the read-path cutover is the final, gated step)
+
+- [x] **Migration** `billing/2026_06_20_000001_create_stripe_invoice_projections_table` — columns: `id` UUID PK, `subscriber_user_id`, `stripe_invoice_id` (unique), `stripe_subscription_id`, `stripe_customer_id`, `number`, `status` (CHECK draft/open/paid/void/uncollectible), `amount_cents`, `amount_refunded_cents`, `currency`, `refund_status` (CHECK none/partial/full), `period_start`, `period_end`, `hosted_invoice_url`, `invoice_pdf`, `stripe_created_at`, `created_at`/`updated_at`/`deleted_at`; `trigger_set_updated_at`; RLS enabled + `FOR SELECT TO ah_runtime` (subscriber + staff) policy, **no write policy** (mirror `invoices`)
+- [x] **Model** `App\Models\Billing\StripeInvoiceProjection` extends `BaseModelWithSoftDeletes`; cents cast to int; Stripe IDs in `$hidden`
+- [ ] **Webhook upsert** — extend `ProcessStripeWebhook` with branches for `invoice.created`, `invoice.finalized`, `invoice.paid`, `invoice.payment_failed`, `invoice.voided`, `charge.refunded`; one row upserted per event (no full-table refresh); runs under `ah_system` (existing). Refund enrichment via `Invoice::retrieve(expand:['payments'])` / `charge.refunded`
+- [ ] **Reconciliation backstop** — `App\Jobs\Billing\ReconcileStripeInvoices` (daily, `ah_system`): re-pull invoices changed since last run to self-heal missed/out-of-order webhooks; scheduled in the console kernel
+- [x] **RLS write-defense test** — `tests/Feature/Security/StripeInvoiceProjectionRlsWriteTest` (mirror `W9RecordRlsWriteTest`, 6 tests): explicit `ah_runtime` connection reads its own row, cannot read another user's, staff reads all, INSERT rejected + UPDATE 0-affected (default-deny); owner/`ah_system` seed writes succeed
+- [ ] **Backfill command** — one-time pull of existing subscription invoices into the projection; verify populated before any read swap
+- [ ] **Read-path cutover (final, gated, reversible)** — only after the table is proven populated: switch `EditCustomerUser` invoice section + member billing-history (`ProfileController`) from live `listInvoices()` to the projection; drop the 2-min Valkey cache for the list. The refund action keeps calling Stripe live (write path unchanged)
+- [ ] Commit: "Stripe invoice projection (Phase 5.7)"
+
+#### Milestone checklist
+
+- [ ] Admin invoice list and member billing history render from DB 4 with zero live Stripe calls on the hot path
+- [ ] New subscription invoices appear in the projection via webhook within seconds; refund status updates on `charge.refunded`
+- [ ] Reconciliation job heals a deliberately-dropped webhook on its next run
+- [ ] `ah_runtime` cannot forge a projection row (RLS write-defense test green); reads still scoped to parties + staff
+- [ ] Read-path cutover is reversible (one-line source swap back to `listInvoices()`)
+
 ### Phase 5 Milestone
 
 - [ ] A hunter can select a plan and pay via Stripe Checkout
