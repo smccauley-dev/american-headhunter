@@ -476,6 +476,8 @@ interface Props {
   invoices: InvoiceItem[]
   // Set after returning from Stripe Checkout: 'success' | 'cancel'.
   checkout: string | null
+  // Set after returning from the card-update Checkout: 'updated' | 'cancel'.
+  billing: string | null
   initial_tab: 'about' | 'leases' | 'membership'
   // Null for account types without a CMS profile template (e.g. landowner);
   // the component falls back to DEFAULT_TEMPLATE.
@@ -737,7 +739,7 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, activity, security, leases, membership, invoices, checkout, initial_tab, template, properties }: Props) {
+export default function HunterProfile({ user, profile, photos, activity, security, leases, membership, invoices, checkout, billing, initial_tab, template, properties }: Props) {
   // Landowner accounts reuse this profile shell but swap the hunting-specific
   // modules (gear, hunting prefs) for a "My Properties" blade.
   const isLandowner = user.account_type === 'landowner'
@@ -1415,7 +1417,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   ) : tab === 'leases' ? (
                     <LeasesTab leases={leases} />
                   ) : tab === 'membership' ? (
-                    <MembershipTab membership={membership} checkout={checkout} invoices={invoices} />
+                    <MembershipTab membership={membership} checkout={checkout} billing={billing} invoices={invoices} />
                   ) : (
                     <SecurityTab
                       mfa={security.mfa}
@@ -1562,7 +1564,7 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
 
 // ── My Membership tab ─────────────────────────────────────────────────────────
 
-function MembershipTab({ membership, checkout, invoices }: { membership: Membership; checkout: string | null; invoices: InvoiceItem[] }) {
+function MembershipTab({ membership, checkout, billing, invoices }: { membership: Membership; checkout: string | null; billing: string | null; invoices: InvoiceItem[] }) {
   const [busy, setBusy] = useState(false)
 
   // A paid subscription can be cancelled (and a scheduled cancel resumed) until
@@ -1581,6 +1583,13 @@ function MembershipTab({ membership, checkout, invoices }: { membership: Members
     if (busy) return
     setBusy(true)
     router.post('/member/membership/resume', {}, { preserveScroll: true, onFinish: () => setBusy(false) })
+  }
+
+  function updatePayment() {
+    if (busy) return
+    setBusy(true)
+    // Redirects to a Stripe-hosted setup Checkout; no card data touches our server.
+    router.post('/member/membership/update-payment', {}, { onFinish: () => setBusy(false) })
   }
 
   // Status pill palette — mirrors the lease card's status styling vocabulary.
@@ -1619,6 +1628,16 @@ function MembershipTab({ membership, checkout, invoices }: { membership: Members
       {checkout === 'cancel' && (
         <div style={{ padding: '12px 16px', background: 'rgba(168,152,116,0.14)', border: '1px solid #d4c9b0', fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', letterSpacing: '.04em', color: '#7a6c4c' }}>
           Checkout canceled — no changes were made to your membership.
+        </div>
+      )}
+      {billing === 'updated' && (
+        <div style={{ padding: '12px 16px', background: 'rgba(74,124,89,0.12)', border: '1px solid rgba(74,124,89,0.4)', fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', letterSpacing: '.04em', color: '#3f6b4d' }}>
+          Payment method updated — we&apos;re retrying your payment. This page will reflect the new status shortly.
+        </div>
+      )}
+      {billing === 'cancel' && (
+        <div style={{ padding: '12px 16px', background: 'rgba(168,152,116,0.14)', border: '1px solid #d4c9b0', fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', letterSpacing: '.04em', color: '#7a6c4c' }}>
+          Card update canceled — no changes were made to your payment method.
         </div>
       )}
       <div style={{ border: '1px solid #d4c9b0', background: '#FBF7EE' }}>
@@ -1664,8 +1683,18 @@ function MembershipTab({ membership, checkout, invoices }: { membership: Members
         )}
 
         {membership.status === 'past_due' && (
-          <div style={{ padding: '8px 18px', background: 'rgba(176,58,46,0.08)', borderTop: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: '#b03a2e' }}>
-            Payment is past due — update your billing to keep your benefits.
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '8px 18px', background: 'rgba(176,58,46,0.08)', borderTop: '1px solid #e5ddd0' }}>
+            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: '#b03a2e' }}>
+              Payment is past due — update your card to keep your benefits.
+            </span>
+            <button
+              type="button"
+              onClick={updatePayment}
+              disabled={busy}
+              style={{ flexShrink: 0, fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 18px', background: '#b03a2e', color: '#fff', border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 }}
+            >
+              {busy ? 'Working…' : 'Update Payment Method'}
+            </button>
           </div>
         )}
 

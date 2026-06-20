@@ -29,6 +29,9 @@ interface Plan {
 interface Props {
     groups: Record<string, Plan[]>
     current_account_type: string | null
+    // The member's current paid plan key (null when free / no subscription).
+    current_plan_key: string | null
+    has_active_subscription: boolean
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -63,7 +66,7 @@ function formatPrice(plan: Plan, cycle: Cycle): { amount: string; suffix: string
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function Pricing({ groups, current_account_type }: Props) {
+export default function Pricing({ groups, current_account_type, current_plan_key, has_active_subscription }: Props) {
     const [scrolled, setScrolled] = useState(false)
     const { auth } = usePage<{ auth?: { authenticated: boolean } }>().props
 
@@ -208,6 +211,8 @@ export default function Pricing({ groups, current_account_type }: Props) {
                                     cycle={cycle}
                                     authenticated={auth?.authenticated ?? false}
                                     canSubscribe={(auth?.authenticated ?? false) && current_account_type === activeType}
+                                    isCurrentPlan={has_active_subscription && current_account_type === activeType && plan.plan_key === current_plan_key}
+                                    hasActiveSubscription={has_active_subscription && current_account_type === activeType}
                                 />
                             ))}
                         </div>
@@ -220,21 +225,36 @@ export default function Pricing({ groups, current_account_type }: Props) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function PlanCard({ plan, cycle, authenticated, canSubscribe }: { plan: Plan; cycle: Cycle; authenticated: boolean; canSubscribe: boolean }) {
+function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, hasActiveSubscription }: { plan: Plan; cycle: Cycle; authenticated: boolean; canSubscribe: boolean; isCurrentPlan: boolean; hasActiveSubscription: boolean }) {
     const accent = plan.accent_color || 'var(--blaze)'
     const price = formatPrice(plan, cycle)
     const [submitting, setSubmitting] = useState(false)
 
     const isPaid = !plan.is_default_free && ((priceCents(plan, cycle) ?? 0) > 0)
-    // A logged-in member of this account type can check out directly on a paid
-    // plan; everyone else follows the marketing/get-started path.
-    const showCheckout = canSubscribe && isPaid
+    // An existing subscriber switches plans (immediate + prorated); a logged-in
+    // member of this account type with no subscription checks out directly; the
+    // free plan and everyone else follow the marketing/get-started path.
+    const showSwitch   = hasActiveSubscription && isPaid && !isCurrentPlan
+    const showCheckout = canSubscribe && isPaid && !hasActiveSubscription
     const ctaHref = authenticated ? `/member` : `/get-started?plan=${encodeURIComponent(plan.plan_key)}`
 
     const startCheckout = () => {
         setSubmitting(true)
         router.post('/member/membership/checkout',
             { plan_key: plan.plan_key, interval: cycle },
+            { onFinish: () => setSubmitting(false) },
+        )
+    }
+
+    const switchPlan = () => {
+        if (! window.confirm(
+            `Switch to ${plan.display_name}? The change takes effect immediately and ` +
+            `your next invoice is prorated for the difference. Your billing interval ` +
+            `stays the same.`
+        )) return
+        setSubmitting(true)
+        router.post('/member/membership/change',
+            { plan_key: plan.plan_key },
             { onFinish: () => setSubmitting(false) },
         )
     }
@@ -336,7 +356,20 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe }: { plan: Plan; cy
                 )}
 
                 {/* CTA */}
-                {showCheckout ? (
+                {isCurrentPlan ? (
+                    <div style={{ ...ctaStyle, background: 'var(--parch-dim)', color: 'var(--sage-dim)', cursor: 'default' }}>
+                        Current Plan
+                    </div>
+                ) : showSwitch ? (
+                    <button
+                        type="button"
+                        onClick={switchPlan}
+                        disabled={submitting}
+                        style={{ ...ctaStyle, border: 'none', cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
+                    >
+                        {submitting ? 'Switching…' : 'Switch to this plan'}
+                    </button>
+                ) : showCheckout ? (
                     <button
                         type="button"
                         onClick={startCheckout}
@@ -345,6 +378,11 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe }: { plan: Plan; cy
                     >
                         {submitting ? 'Redirecting…' : 'Subscribe →'}
                     </button>
+                ) : hasActiveSubscription ? (
+                    // Subscribers manage downgrade-to-free (cancel) from the membership panel.
+                    <Link href="/member" style={{ ...ctaStyle, background: 'var(--ink)' }}>
+                        Manage Membership →
+                    </Link>
                 ) : (
                     <Link href={ctaHref} style={ctaStyle}>
                         {plan.is_default_free ? 'Start Free →' : 'Get Started →'}

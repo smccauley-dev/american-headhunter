@@ -114,6 +114,7 @@ class ProfileController extends Controller
             'membership'  => $entitlements->currentMembership($user),
             'invoices'    => $this->buildInvoices($userId),
             'checkout'    => request()->query('checkout'),
+            'billing'     => request()->query('billing'),
             'initial_tab' => $initialTab,
             'template'    => $isLandowner ? null : $templates->getPublishedConfig('hunter'),
         ];

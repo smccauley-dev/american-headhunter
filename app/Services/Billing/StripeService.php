@@ -11,6 +11,7 @@ use Stripe\Event;
 use Stripe\Invoice;
 use Stripe\Price;
 use Stripe\Product;
+use Stripe\SetupIntent;
 use Stripe\Stripe;
 use Stripe\Subscription as StripeSubscription;
 use Stripe\Webhook;
@@ -201,5 +202,94 @@ class StripeService
             'hosted_url' => $inv->hosted_invoice_url,
             'pdf_url'    => $inv->invoice_pdf,
         ])->all();
+    }
+
+    /**
+     * Switch an existing subscription to a different plan, immediately and with
+     * proration (Stripe credits unused time on the old price and charges the
+     * difference). The billing interval is preserved: we read the current item's
+     * recurring interval from Stripe (the subscriptions table stores no interval)
+     * and pick the new plan's matching price. The locked plan_version_id is
+     * refreshed in Stripe metadata so the webhook can reconcile.
+     */
+    public function changeSubscriptionPlan(string $stripeSubscriptionId, MembershipPlan $newPlan, string $newPlanVersionId): StripeSubscription
+    {
+        $sub  = StripeSubscription::retrieve($stripeSubscriptionId);
+        $item = $sub->items->data[0] ?? null;
+        if (! $item) {
+            throw new \RuntimeException("Stripe subscription {$stripeSubscriptionId} has no line item to change.");
+        }
+
+        $interval = ($item->price->recurring->interval ?? 'month') === 'year' ? 'annual' : 'monthly';
+        $priceId  = $interval === 'annual'
+            ? $newPlan->stripe_annual_price_id
+            : $newPlan->stripe_monthly_price_id;
+
+        if (! $priceId) {
+            throw new \RuntimeException("Plan {$newPlan->plan_key} has no Stripe price for interval '{$interval}'. Run stripe:sync-plans.");
+        }
+
+        return StripeSubscription::update($stripeSubscriptionId, [
+            'items'              => [['id' => $item->id, 'price' => $priceId]],
+            'proration_behavior' => 'create_prorations',
+            'metadata'           => [
+                'user_id'         => $sub->metadata->user_id ?? null,
+                'plan_version_id' => $newPlanVersionId,
+            ],
+        ]);
+    }
+
+    /**
+     * Create a hosted Checkout Session (mode=setup) to collect a new payment
+     * method for an existing customer — used by the dunning flow when a payment
+     * has failed. The card is captured by Stripe (never touches our server); the
+     * resulting setup_intent is finished in the webhook via applyUpdatedPaymentMethod.
+     */
+    public function createPaymentUpdateCheckoutSession(User $user, string $successUrl, string $cancelUrl): Session
+    {
+        return Session::create([
+            'mode'              => 'setup',
+            'customer'          => $this->getOrCreateCustomer($user),
+            'success_url'       => $successUrl,
+            'cancel_url'        => $cancelUrl,
+            'setup_intent_data' => [
+                'metadata' => ['user_id' => $user->id],
+            ],
+        ]);
+    }
+
+    /**
+     * Finish a card-update setup: make the newly collected payment method the
+     * customer's default and the subscription's default, then retry the open
+     * invoice so a past_due subscription recovers. Called from the webhook after
+     * a setup-mode Checkout completes.
+     */
+    public function applyUpdatedPaymentMethod(string $setupIntentId): void
+    {
+        $intent          = SetupIntent::retrieve($setupIntentId);
+        $paymentMethodId = $intent->payment_method;
+        $customerId      = $intent->customer;
+
+        if (! $paymentMethodId || ! $customerId) {
+            return;
+        }
+
+        Customer::update((string) $customerId, [
+            'invoice_settings' => ['default_payment_method' => $paymentMethodId],
+        ]);
+
+        // Point each of the customer's subscriptions at the new default, then pay
+        // any open invoice so Stripe re-attempts the charge and fires the
+        // status-flipping webhooks.
+        $subscriptions = StripeSubscription::all(['customer' => $customerId, 'limit' => 10]);
+        foreach ($subscriptions->data as $sub) {
+            StripeSubscription::update($sub->id, ['default_payment_method' => $paymentMethodId]);
+        }
+
+        $openInvoices = Invoice::all(['customer' => $customerId, 'status' => 'open', 'limit' => 1]);
+        $invoice      = $openInvoices->data[0] ?? null;
+        if ($invoice) {
+            $invoice->pay();
+        }
     }
 }

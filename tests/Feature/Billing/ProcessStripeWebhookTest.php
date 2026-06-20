@@ -5,6 +5,7 @@ namespace Tests\Feature\Billing;
 use App\Jobs\Billing\ProcessStripeWebhook;
 use App\Models\Billing\Subscription;
 use App\Services\Audit\AuditService;
+use App\Services\Billing\StripeService;
 use App\Services\Billing\SubscriptionService;
 use App\Services\Platform\EntitlementService;
 use Illuminate\Support\Facades\DB;
@@ -59,13 +60,14 @@ class ProcessStripeWebhookTest extends TestCase
         return $id;
     }
 
-    private function dispatch(string $type, array $object): void
+    private function dispatch(string $type, array $object, ?StripeService $stripe = null): void
     {
         $job = new ProcessStripeWebhook('evt_' . bin2hex(random_bytes(8)), $type, $object);
         $job->handle(
             app(EntitlementService::class),
             app(AuditService::class),
             app(SubscriptionService::class),
+            $stripe ?? app(StripeService::class),
         );
     }
 
@@ -216,5 +218,71 @@ class ProcessStripeWebhookTest extends TestCase
         $sub->refresh();
         $this->assertSame('active', $sub->status);
         $this->assertNull($sub->cancelled_at, 'resuming clears the scheduled cancel date');
+    }
+
+    // ── customer.subscription.updated — plan-change reconcile ────────────────────
+
+    public function test_subscription_updated_reconciles_plan_version_from_metadata(): void
+    {
+        $userId = $this->newUserId();
+        $subId  = 'sub_' . Str::random(14);
+
+        $sub = app(SubscriptionService::class)->start($userId, $this->versionId, [
+            'stripe_subscription_id' => $subId,
+            'stripe_customer_id'     => 'cus_change',
+            'status'                 => 'active',
+        ]);
+        $this->subscriptionIds[] = $sub->id;
+
+        // A different current version (a second plan) the webhook can reconcile to.
+        $newVersionId = app(SubscriptionService::class)
+            ->currentVersionForPlan('hunter_pro')->id;
+        $this->assertNotSame($this->versionId, $newVersionId);
+
+        $this->dispatch('customer.subscription.updated', [
+            'id'       => $subId,
+            'status'   => 'active',
+            'metadata' => ['plan_version_id' => $newVersionId],
+        ]);
+
+        $sub->refresh();
+        $this->assertSame($newVersionId, $sub->plan_version_id, 'plan_version_id reconciles to Stripe metadata');
+    }
+
+    public function test_subscription_updated_keeps_plan_version_when_metadata_matches(): void
+    {
+        $userId = $this->newUserId();
+        $subId  = 'sub_' . Str::random(14);
+
+        $sub = app(SubscriptionService::class)->start($userId, $this->versionId, [
+            'stripe_subscription_id' => $subId,
+            'stripe_customer_id'     => 'cus_same',
+            'status'                 => 'active',
+        ]);
+        $this->subscriptionIds[] = $sub->id;
+
+        $this->dispatch('customer.subscription.updated', [
+            'id'       => $subId,
+            'status'   => 'active',
+            'metadata' => ['plan_version_id' => $this->versionId],
+        ]);
+
+        $sub->refresh();
+        $this->assertSame($this->versionId, $sub->plan_version_id, 'matching metadata is a no-op');
+    }
+
+    // ── checkout.session.completed — setup mode (dunning card update) ────────────
+
+    public function test_checkout_completed_setup_mode_applies_updated_payment_method(): void
+    {
+        $stripe = \Mockery::mock(StripeService::class);
+        $stripe->shouldReceive('applyUpdatedPaymentMethod')
+            ->once()
+            ->with('seti_test_123');
+
+        $this->dispatch('checkout.session.completed', [
+            'mode'         => 'setup',
+            'setup_intent' => 'seti_test_123',
+        ], $stripe);
     }
 }

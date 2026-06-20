@@ -6,6 +6,7 @@ use App\Models\Billing\Payment;
 use App\Models\Billing\StripeAccount;
 use App\Models\Billing\Subscription;
 use App\Services\Audit\AuditService;
+use App\Services\Billing\StripeService;
 use App\Services\Billing\SubscriptionService;
 use App\Services\Platform\EntitlementService;
 use Carbon\Carbon;
@@ -51,7 +52,7 @@ class ProcessStripeWebhook implements ShouldQueue
         $this->onQueue('priority');
     }
 
-    public function handle(EntitlementService $entitlements, AuditService $audit, SubscriptionService $subscriptions): void
+    public function handle(EntitlementService $entitlements, AuditService $audit, SubscriptionService $subscriptions, StripeService $stripe): void
     {
         // Stripe may deliver the same event more than once — process it once.
         if (! Cache::store('valkey')->add("stripe_webhook:{$this->eventId}", 1, now()->addDays(2))) {
@@ -59,7 +60,7 @@ class ProcessStripeWebhook implements ShouldQueue
         }
 
         match ($this->eventType) {
-            'checkout.session.completed'    => $this->checkoutCompleted($subscriptions),
+            'checkout.session.completed'    => $this->checkoutCompleted($subscriptions, $stripe),
             'customer.subscription.updated' => $this->subscriptionUpdated($entitlements, $audit),
             'customer.subscription.deleted' => $this->subscriptionDeleted($entitlements, $audit),
             'invoice.payment_failed'        => $this->invoicePaymentFailed($entitlements, $audit),
@@ -75,8 +76,18 @@ class ProcessStripeWebhook implements ShouldQueue
      * invalidates entitlements. Period dates default to monthly here and are
      * reconciled by the following customer.subscription.updated event.
      */
-    private function checkoutCompleted(SubscriptionService $subscriptions): void
+    private function checkoutCompleted(SubscriptionService $subscriptions, StripeService $stripe): void
     {
+        // A setup-mode Checkout means the member updated their card (dunning flow):
+        // finish it by making the new method the default and retrying the open invoice.
+        if (($this->object['mode'] ?? null) === 'setup') {
+            $setupIntentId = $this->object['setup_intent'] ?? null;
+            if ($setupIntentId) {
+                $stripe->applyUpdatedPaymentMethod($setupIntentId);
+            }
+            return;
+        }
+
         if (($this->object['mode'] ?? null) !== 'subscription') {
             return; // one-time payments are handled elsewhere
         }
@@ -182,6 +193,15 @@ class ProcessStripeWebhook implements ShouldQueue
         if ($sub->status === 'cancelled' && empty($sub->cancelled_at)) {
             $sub->cancelled_at = now();
         }
+
+        // Reconcile the locked plan version from Stripe metadata. The change-plan
+        // controller swaps this locally and refreshes the Stripe metadata, so this
+        // is normally a no-op; it keeps Stripe authoritative if that swap was missed.
+        $metaVersionId = $this->object['metadata']['plan_version_id'] ?? null;
+        if ($metaVersionId && $metaVersionId !== $sub->plan_version_id) {
+            $sub->plan_version_id = $metaVersionId;
+        }
+
         $sub->save();
 
         $entitlements->invalidateForUser($sub->user_id);

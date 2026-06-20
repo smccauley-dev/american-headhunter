@@ -184,6 +184,8 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/membership/checkout', [CheckoutController::class, 'create'])->name('membership.checkout')->middleware('throttle:10,1');
     Route::post('/membership/cancel', [MembershipController::class, 'cancel'])->name('membership.cancel')->middleware('throttle:10,1');
     Route::post('/membership/resume', [MembershipController::class, 'resume'])->name('membership.resume')->middleware('throttle:10,1');
+    Route::post('/membership/change', [MembershipController::class, 'changePlan'])->name('membership.change')->middleware('throttle:10,1');
+    Route::post('/membership/update-payment', [MembershipController::class, 'updatePayment'])->name('membership.update-payment')->middleware('throttle:10,1');
     Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->name('profile.avatar.upload');
     Route::post('/profile/photos', [ProfileController::class, 'uploadPhoto'])->name('profile.photos.upload');

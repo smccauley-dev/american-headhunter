@@ -6,6 +6,7 @@ use App\Models\Billing\Subscription;
 use App\Services\Billing\StripeService;
 use App\Services\Billing\SubscriptionService;
 use App\Services\Platform\EntitlementService;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -31,6 +32,10 @@ class MembershipManagementTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // These routes carry a throttle:10,1 limiter whose counter lives in Valkey
+        // and persists across test runs; bypass it so the suite is deterministic.
+        $this->withoutMiddleware(ThrottleRequests::class);
 
         $this->userId      = (string) Str::uuid();
         $this->stripeSubId = 'sub_' . Str::random(14);
@@ -134,5 +139,79 @@ class MembershipManagementTest extends TestCase
         $this->withSession(['auth.user_id' => $this->userId])
             ->post('/member/membership/resume')
             ->assertSessionHasErrors('membership');
+    }
+
+    // ── change plan ─────────────────────────────────────────────────────────────
+
+    public function test_change_plan_swaps_the_locked_version(): void
+    {
+        $targetVersion = app(SubscriptionService::class)
+            ->currentVersionForPlan('hunter_sportsman');
+        $this->assertNotSame($this->versionId, $targetVersion->id);
+
+        $this->mock(StripeService::class, function ($mock) use ($targetVersion) {
+            $mock->shouldReceive('changeSubscriptionPlan')
+                ->once()
+                ->withArgs(function ($subId, $plan, $versionId) use ($targetVersion) {
+                    return $subId === $this->stripeSubId
+                        && $plan->plan_key === 'hunter_sportsman'
+                        && $versionId === $targetVersion->id;
+                })
+                ->andReturn($this->stripeSubscription(['id' => $this->stripeSubId]));
+        });
+
+        $this->withSession(['auth.user_id' => $this->userId])
+            ->post('/member/membership/change', ['plan_key' => 'hunter_sportsman'])
+            ->assertRedirect();
+
+        $sub = Subscription::find($this->subscriptionId);
+        $this->assertSame($targetVersion->id, $sub->plan_version_id, 'the locked plan version is swapped locally');
+    }
+
+    public function test_change_plan_rejects_the_current_plan(): void
+    {
+        // The test user is already on hunter_scout (the setUp version).
+        $this->mock(StripeService::class, function ($mock) {
+            $mock->shouldNotReceive('changeSubscriptionPlan');
+        });
+
+        $this->withSession(['auth.user_id' => $this->userId])
+            ->post('/member/membership/change', ['plan_key' => 'hunter_scout'])
+            ->assertSessionHasErrors('plan_key');
+    }
+
+    public function test_change_plan_rejects_a_different_account_type(): void
+    {
+        $this->mock(StripeService::class, function ($mock) {
+            $mock->shouldNotReceive('changeSubscriptionPlan');
+        });
+
+        // A landowner plan — wrong account type for this hunter.
+        $this->withSession(['auth.user_id' => $this->userId])
+            ->post('/member/membership/change', ['plan_key' => 'landowner_ranch'])
+            ->assertSessionHasErrors('plan_key');
+    }
+
+    // ── update payment method (dunning) ─────────────────────────────────────────
+
+    public function test_update_payment_redirects_to_hosted_checkout(): void
+    {
+        $this->mock(StripeService::class, function ($mock) {
+            $mock->shouldReceive('createPaymentUpdateCheckoutSession')
+                ->once()
+                ->andReturn(\Stripe\Checkout\Session::constructFrom([
+                    'id'  => 'cs_test_update',
+                    'url' => 'https://checkout.stripe.test/setup',
+                ]));
+        });
+
+        // An Inertia (XHR) request gets a 409 + X-Inertia-Location so the client
+        // does a hard redirect to the Stripe-hosted setup Checkout.
+        $response = $this->withSession(['auth.user_id' => $this->userId])
+            ->withHeader('X-Inertia', 'true')
+            ->post('/member/membership/update-payment');
+
+        $response->assertStatus(409);
+        $response->assertHeader('X-Inertia-Location', 'https://checkout.stripe.test/setup');
     }
 }
