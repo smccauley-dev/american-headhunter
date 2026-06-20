@@ -7,6 +7,7 @@ use App\Models\Billing\StripeAccount;
 use App\Models\Billing\StripeInvoiceProjection;
 use App\Models\Billing\Subscription;
 use App\Services\Audit\AuditService;
+use App\Services\Billing\SecurityDepositService;
 use App\Services\Billing\StripeInvoiceProjector;
 use App\Services\Billing\StripeService;
 use App\Services\Billing\SubscriptionService;
@@ -92,6 +93,13 @@ class ProcessStripeWebhook implements ShouldQueue
             if ($setupIntentId) {
                 $stripe->applyUpdatedPaymentMethod($setupIntentId);
             }
+            return;
+        }
+
+        // A payment-mode Checkout funding a security deposit — author the held row.
+        if (($this->object['mode'] ?? null) === 'payment'
+            && ($this->object['metadata']['purpose'] ?? null) === 'security_deposit') {
+            app(SecurityDepositService::class)->recordHeldFromCheckout($this->object);
             return;
         }
 

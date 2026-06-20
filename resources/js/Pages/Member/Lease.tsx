@@ -105,6 +105,14 @@ interface Props {
     rules: string[]
   } | null
   access_info: AccessInfo | null
+  deposit: {
+    status: string | null
+    amount: string
+    refunded: string | null
+    forfeited: string | null
+    can_pay: boolean
+    pay_url: string
+  } | null
   contacts: ContactDirectory | null
   signers: Signer[]
   sign_url: string | null
@@ -820,11 +828,12 @@ function CommunicationsSection({ data, isLessor }: { data: Communications; isLes
   )
 }
 
-export default function Lease({ lease, property, access_info, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications }: Props) {
+export default function Lease({ lease, property, access_info, deposit, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
   const allSigned   = signers.every(s => s.status === 'signed')
+  const [payingDeposit, setPayingDeposit] = useState(false)
 
   return (
     <>
@@ -950,6 +959,58 @@ export default function Lease({ lease, property, access_info, contacts, signers,
               </div>
             )}
           </Section>
+
+          {/* Security Deposit — lessee only; amount derives from the listing */}
+          {deposit && (
+            <Section title="Security Deposit">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+                <div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.1em', color: TAN, marginBottom: '5px' }}>
+                    {deposit.can_pay ? 'Amount Due' : 'Deposit'}
+                  </div>
+                  <div style={{ fontFamily: 'var(--body)', fontSize: '22px', fontWeight: 700, color: INK }}>${deposit.amount}</div>
+                  {deposit.status === 'held' && (
+                    <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginTop: '4px' }}>
+                      Held in full — refundable at the end of your lease.
+                    </div>
+                  )}
+                  {deposit.status === 'released' && (
+                    <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginTop: '4px' }}>
+                      Released — ${deposit.refunded} refunded to you.
+                    </div>
+                  )}
+                  {(deposit.status === 'forfeited' || deposit.status === 'partially_released') && (
+                    <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: '#9a3412', marginTop: '4px' }}>
+                      ${deposit.forfeited} forfeited{Number(deposit.refunded) > 0 ? ` · $${deposit.refunded} refunded` : ''}.
+                    </div>
+                  )}
+                </div>
+
+                {deposit.can_pay ? (
+                  <button
+                    type="button"
+                    disabled={payingDeposit}
+                    onClick={() => {
+                      setPayingDeposit(true)
+                      router.post(deposit.pay_url, {}, { onFinish: () => setPayingDeposit(false) })
+                    }}
+                    style={{ ...btnAccent, whiteSpace: 'nowrap', opacity: payingDeposit ? 0.6 : 1 }}
+                  >
+                    {payingDeposit ? 'Redirecting…' : 'Pay Deposit'}
+                  </button>
+                ) : (
+                  <span style={{
+                    display: 'inline-block', padding: '4px 12px',
+                    border: `1px solid ${deposit.status === 'held' ? OLIVE : TAN}`,
+                    fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em',
+                    textTransform: 'uppercase', color: deposit.status === 'held' ? OLIVE : TAN,
+                  }}>
+                    {deposit.status === 'held' ? 'Held' : deposit.status === 'released' ? 'Released' : deposit.status === 'partially_released' ? 'Partial' : 'Forfeited'}
+                  </span>
+                )}
+              </div>
+            </Section>
+          )}
 
           {/* Signing Status — shown when pending or not all signed */}
           {signers.length > 0 && (lease.status === 'pending_signatures' || !allSigned) && (

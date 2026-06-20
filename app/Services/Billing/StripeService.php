@@ -371,6 +371,55 @@ class StripeService
     }
 
     /**
+     * Create a one-time hosted Checkout Session (mode=payment) to capture a
+     * refundable security deposit. There is no recurring plan, so the amount is
+     * passed inline via price_data. The lease + party references ride in metadata
+     * (mirrored onto the PaymentIntent) so the webhook can author the held deposit
+     * row — no local write happens on the runtime path.
+     *
+     * @param array<string,string> $metadata
+     */
+    public function createDepositCheckoutSession(User $payer, int $amountCents, array $metadata, string $successUrl, string $cancelUrl): Session
+    {
+        return Session::create([
+            'mode'                => 'payment',
+            'customer'            => $this->getOrCreateCustomer($payer),
+            'client_reference_id' => $payer->id,
+            'line_items'          => [[
+                'quantity'   => 1,
+                'price_data' => [
+                    'currency'     => 'usd',
+                    'unit_amount'  => $amountCents,
+                    'product_data' => ['name' => 'Refundable security deposit'],
+                ],
+            ]],
+            'payment_intent_data' => ['metadata' => $metadata],
+            'metadata'            => $metadata,
+            'success_url'         => $successUrl,
+            'cancel_url'          => $cancelUrl,
+        ]);
+    }
+
+    /**
+     * Refund a PaymentIntent directly — used to return a security deposit, which
+     * is a one-time charge rather than an invoice. A null amount refunds the full
+     * remaining balance; a cents amount issues a partial refund. An optional note
+     * rides in refund metadata. Returns the Stripe Refund.
+     */
+    public function refundPaymentIntent(string $paymentIntentId, ?int $amountCents = null, ?string $note = null): Refund
+    {
+        $params = ['payment_intent' => $paymentIntentId];
+        if ($amountCents !== null) {
+            $params['amount'] = $amountCents;
+        }
+        if ($note !== null && $note !== '') {
+            $params['metadata'] = ['note' => $note];
+        }
+
+        return Refund::create($params);
+    }
+
+    /**
      * Switch an existing subscription to a different plan, immediately and with
      * proration (Stripe credits unused time on the old price and charges the
      * difference). The billing interval is preserved: we read the current item's

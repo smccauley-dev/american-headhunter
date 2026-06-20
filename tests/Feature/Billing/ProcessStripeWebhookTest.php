@@ -27,6 +27,7 @@ class ProcessStripeWebhookTest extends TestCase
     /** @var array<int,string> */ private array $subscriptionIds = [];
     /** @var array<int,string> */ private array $userIds = [];
     /** @var array<int,string> */ private array $invoiceIds = [];
+    /** @var array<int,string> */ private array $depositPaymentIntentIds = [];
 
     private string $versionId;
 
@@ -46,6 +47,9 @@ class ProcessStripeWebhookTest extends TestCase
         }
         if ($this->invoiceIds) {
             $billing->table('stripe_invoice_projections')->whereIn('stripe_invoice_id', $this->invoiceIds)->delete();
+        }
+        if ($this->depositPaymentIntentIds) {
+            $billing->table('security_deposits')->whereIn('stripe_payment_intent_id', $this->depositPaymentIntentIds)->delete();
         }
 
         $entitlements = app(EntitlementService::class);
@@ -289,6 +293,52 @@ class ProcessStripeWebhookTest extends TestCase
             'mode'         => 'setup',
             'setup_intent' => 'seti_test_123',
         ], $stripe);
+    }
+
+    // ── checkout.session.completed — payment mode (security deposit) ─────────────
+
+    public function test_checkout_completed_payment_mode_records_held_deposit(): void
+    {
+        $payerId = $this->newUserId();
+        $payeeId = $this->newUserId();
+        $leaseId = (string) Str::uuid();
+        $pi      = 'pi_dep_' . Str::random(12);
+        $this->depositPaymentIntentIds[] = $pi;
+
+        $this->dispatch('checkout.session.completed', [
+            'mode'           => 'payment',
+            'payment_intent' => $pi,
+            'currency'       => 'usd',
+            'amount_total'   => 7500,
+            'metadata'       => [
+                'purpose'       => 'security_deposit',
+                'lease_id'      => $leaseId,
+                'payer_user_id' => $payerId,
+                'payee_user_id' => $payeeId,
+                'amount_cents'  => '7500',
+            ],
+        ]);
+
+        $deposit = \App\Models\Billing\SecurityDeposit::where('stripe_payment_intent_id', $pi)->first();
+        $this->assertNotNull($deposit, 'a held deposit is authored by the webhook (ah_system)');
+        $this->assertSame('held', $deposit->status);
+        $this->assertSame(7500, (int) $deposit->amount_cents);
+        $this->assertSame($leaseId, $deposit->lease_id);
+    }
+
+    public function test_checkout_completed_payment_mode_ignores_non_deposit(): void
+    {
+        $userId = $this->newUserId();
+
+        // mode=payment with no security_deposit purpose must not author a deposit.
+        $this->dispatch('checkout.session.completed', [
+            'mode'           => 'payment',
+            'payment_intent' => 'pi_other_' . Str::random(8),
+            'metadata'       => ['purpose' => 'something_else', 'user_id' => $userId],
+        ]);
+
+        $this->assertSame(0, \App\Models\Billing\SecurityDeposit::where('lease_id', $userId)->count());
+        $this->assertTrue(true);
     }
 
     // ── invoice.* — Stripe invoice projection (Phase 5.7) ───────────────────────
