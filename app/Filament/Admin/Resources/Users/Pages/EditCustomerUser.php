@@ -601,41 +601,6 @@ class EditCustomerUser extends EditRecord
                                             }
                                         }),
                                 ]),
-
-                            Section::make('Membership Activity')
-                                ->description('Audit trail of subscription changes — created, plan changes, cancellations, resumes.')
-                                ->schema([
-                                    Placeholder::make('membership_audit')
-                                        ->hiddenLabel()
-                                        ->content(function () {
-                                            try {
-                                                $subIds = Subscription::query()
-                                                    ->where('user_id', $this->getRecord()->id)
-                                                    ->pluck('id')
-                                                    ->all();
-
-                                                if (empty($subIds)) {
-                                                    return 'No membership activity.';
-                                                }
-
-                                                $events = \App\Models\Audit\AuditLog::on('audit')
-                                                    ->where('table_name', 'subscriptions')
-                                                    ->whereIn('record_id', $subIds)
-                                                    ->orderByDesc('occurred_at')
-                                                    ->limit(50)
-                                                    ->get();
-
-                                                if ($events->isEmpty()) {
-                                                    return 'No membership activity.';
-                                                }
-
-                                                return view('filament.admin.users.audit-log', ['events' => $events]);
-                                            } catch (\Throwable $e) {
-                                                report($e);
-                                                return 'Membership activity unavailable.';
-                                            }
-                                        }),
-                                ]),
                         ]),
 
                     // ── Admin Notes ───────────────────────────────────────────
@@ -675,8 +640,19 @@ class EditCustomerUser extends EditRecord
                                         ->label('')
                                         ->content(function () {
                                             try {
+                                                // Audit events are keyed by record_id. User-level events use the
+                                                // user id; subscription events (membership activity) use the
+                                                // subscription id — include both so this is the full picture.
+                                                $recordIds = array_merge(
+                                                    [$this->getRecord()->id],
+                                                    Subscription::query()
+                                                        ->where('user_id', $this->getRecord()->id)
+                                                        ->pluck('id')
+                                                        ->all(),
+                                                );
+
                                                 $events = \App\Models\Audit\AuditLog::on('audit')
-                                                    ->where('record_id', $this->getRecord()->id)
+                                                    ->whereIn('record_id', $recordIds)
                                                     ->orderByDesc('occurred_at')
                                                     ->limit(50)
                                                     ->get();
