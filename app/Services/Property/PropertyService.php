@@ -3,6 +3,7 @@
 namespace App\Services\Property;
 
 use App\Database\ConnectionRole;
+use App\Models\Identity\User;
 use App\Models\Property\Property;
 use App\Models\Property\PropertyListing;
 use App\Models\Property\PropertyManager;
@@ -16,12 +17,14 @@ use App\Models\Property\PropertyPhoto;
 use App\Models\Property\PropertyRule;
 use App\Models\Property\PropertySpecies;
 use App\Services\BaseService;
+use App\Services\Billing\PromotionAutoApplyService;
 use App\Services\Documents\DocumentService;
 use App\Support\PhoneNumber;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class PropertyService extends BaseService
@@ -758,7 +761,46 @@ class PropertyService extends BaseService
         $listing->update(['status' => 'active']);
         $this->invalidate("listing:{$listingId}", "property:{$listing->property_id}");
 
+        $this->maybeApplyFirstListingPromo($listing);
+
         return $listing->fresh();
+    }
+
+    /**
+     * Grant any first-listing promotion when an owner's first listing goes live.
+     * "First" = the owner now has exactly one active listing (the one just
+     * published). The auto-apply service also dedupes per user+period, so a
+     * concurrent double-publish can't double-grant. Wrapped so a promo failure
+     * never breaks listing publication.
+     */
+    private function maybeApplyFirstListingPromo(PropertyListing $listing): void
+    {
+        try {
+            $ownerId = Property::on('property')->whereKey($listing->property_id)->value('owner_user_id');
+            if (! $ownerId) {
+                return;
+            }
+
+            $propertyIds = Property::on('property')->where('owner_user_id', $ownerId)->pluck('id');
+            $activeListings = PropertyListing::on('property')
+                ->whereIn('property_id', $propertyIds)
+                ->where('status', 'active')
+                ->count();
+
+            if ($activeListings !== 1) {
+                return;
+            }
+
+            $owner = User::with('profile')->find($ownerId);
+            if ($owner) {
+                app(PromotionAutoApplyService::class)->applyForFirstListing($owner);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('First-listing promotion auto-apply failed', [
+                'listing_id' => $listing->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

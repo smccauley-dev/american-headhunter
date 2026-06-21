@@ -231,9 +231,13 @@ class PromotionalPeriodResource extends Resource
                     Toggle::make('stackable_with_other_promos')
                         ->label('Stackable With Other Promos'),
                     Toggle::make('auto_apply_on_signup')
-                        ->label('Auto-apply on Signup'),
+                        ->label('Auto-apply on Signup')
+                        ->helperText('Grants this plan automatically to matching new signups. Requires a Grants Plan; discounts apply at checkout instead.')
+                        ->visible(fn (Get $get): bool => in_array($get('promotion_type'), ['tier_grant', 'free_period'], true)),
                     Toggle::make('auto_apply_on_first_listing')
-                        ->label('Auto-apply on First Listing'),
+                        ->label('Auto-apply on First Listing')
+                        ->helperText("Grants this plan when an owner's first listing goes live. Requires a Grants Plan.")
+                        ->visible(fn (Get $get): bool => in_array($get('promotion_type'), ['tier_grant', 'free_period'], true)),
                 ]),
 
             Section::make('Display')

@@ -12,8 +12,10 @@ use App\Models\Identity\UserProfile;
 use App\Services\Audit\AuditService;
 use App\Services\Auth\MfaService;
 use App\Services\BaseService;
+use App\Services\Billing\PromotionAutoApplyService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 class UserService extends BaseService
@@ -89,6 +91,17 @@ class UserService extends BaseService
         $this->assignSignupRole($user);
 
         $this->audit->logAccountCreated($user->id, $user->account_type);
+
+        // Auto-apply any signup-triggered grant promotions (e.g. Honeymoon,
+        // Veteran). Never let a promo failure break registration.
+        try {
+            app(PromotionAutoApplyService::class)->applyForSignup($user);
+        } catch (\Throwable $e) {
+            Log::warning('Signup promotion auto-apply failed', [
+                'user_id' => $user->id,
+                'error'   => $e->getMessage(),
+            ]);
+        }
 
         return $user;
     }
