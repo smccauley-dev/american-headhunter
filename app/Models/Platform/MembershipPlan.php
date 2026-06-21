@@ -76,4 +76,13 @@ class MembershipPlan extends BaseModelWithSoftDeletes
                     ->whereNull('superseded_at')
                     ->orderByDesc('version_number');
     }
+
+    /**
+     * Promo codes linked to this plan (same connection — DB 12). The linked
+     * promo_code_id is a cross-DB reference to billing.promo_codes (DB 4).
+     */
+    public function promoCodeLinks(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PlanPromoCode::class, 'plan_id');
+    }
 }

@@ -2,12 +2,16 @@
 
 namespace App\Services\Platform;
 
+use App\Models\Billing\PromoCode;
 use App\Models\Billing\Subscription;
 use App\Models\Platform\FeatureEntitlement;
 use App\Models\Platform\MembershipPlan;
+use App\Models\Platform\PlanPromoCode;
 use App\Models\Platform\PlanVersion;
+use App\Models\Platform\PromotionalPeriod;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
+use Illuminate\Support\Collection;
 
 /**
  * Plan version management for DB 12 membership plans.
@@ -110,6 +114,25 @@ class PlanService extends BaseService
             ->orderBy('sort_order')
             ->get();
 
+        // Promo codes advertised on each plan's pricing card. Assembled in PHP
+        // across DB 12 (links + periods) and DB 4 (codes) — never joined. Only
+        // currently-valid codes whose period is active are shown.
+        $links = PlanPromoCode::on('platform')
+            ->whereIn('plan_id', $plans->pluck('id'))
+            ->where('show_on_pricing_card', true)
+            ->get()
+            ->groupBy('plan_id');
+
+        $codes = PromoCode::on('billing')
+            ->whereIn('id', $links->flatten()->pluck('promo_code_id')->unique())
+            ->get()
+            ->keyBy('id');
+
+        $periods = PromotionalPeriod::on('platform')
+            ->whereIn('id', $codes->pluck('promotional_period_id')->unique())
+            ->get()
+            ->keyBy('id');
+
         $groups = [];
 
         foreach ($plans as $plan) {
@@ -134,10 +157,76 @@ class PlanService extends BaseService
                     'label'       => $e->display_label ?: $e->feature_key,
                     'description' => $e->display_description,
                 ])->values()->all(),
+                'promo_codes'         => $this->pricingPromoCodes(
+                    $links->get($plan->id, collect()),
+                    $codes,
+                    $periods,
+                ),
             ];
         }
 
         return $groups;
+    }
+
+    /**
+     * Shape the pricing-card promo codes for a plan, keeping only codes that are
+     * currently redeemable and whose promotional period is active.
+     *
+     * @param  Collection<int,PlanPromoCode>      $links
+     * @param  Collection<string,PromoCode>       $codes
+     * @param  Collection<string,PromotionalPeriod> $periods
+     * @return array<int,array<string,?string>>
+     */
+    private function pricingPromoCodes(Collection $links, Collection $codes, Collection $periods): array
+    {
+        $out = [];
+
+        foreach ($links as $link) {
+            $code = $codes->get($link->promo_code_id);
+            if (! $code || ! $code->is_active) {
+                continue;
+            }
+            if ($code->starts_at && $code->starts_at->isFuture()) {
+                continue;
+            }
+            if ($code->expires_at && $code->expires_at->isPast()) {
+                continue;
+            }
+            if (! is_null($code->max_redemptions) && $code->redemption_count >= $code->max_redemptions) {
+                continue;
+            }
+
+            $period = $periods->get($code->promotional_period_id);
+            if (! $period || ! $period->isActive()) {
+                continue;
+            }
+
+            $out[] = [
+                'code'             => $code->code,
+                'label'            => $period->display_name,
+                'discount_summary' => $this->discountSummary($period),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * A short human label for a period's monetary discount, or null for none.
+     */
+    private function discountSummary(PromotionalPeriod $period): ?string
+    {
+        if ($period->discount_percentage && $period->discount_percentage > 0) {
+            $pct = rtrim(rtrim(number_format((float) $period->discount_percentage, 2), '0'), '.');
+
+            return "{$pct}% off";
+        }
+
+        if ($period->discount_amount_cents && $period->discount_amount_cents > 0) {
+            return '$' . number_format($period->discount_amount_cents / 100, 2) . ' off';
+        }
+
+        return null;
     }
 
     /**

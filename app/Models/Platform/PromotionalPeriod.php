@@ -44,6 +44,7 @@ class PromotionalPeriod extends BaseModel
         'pricing_badge_text',
         'dashboard_callout_text',
         'created_by_user_id',
+        'stripe_coupon_id',
     ];
 
     protected function casts(): array

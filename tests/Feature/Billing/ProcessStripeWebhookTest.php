@@ -28,6 +28,10 @@ class ProcessStripeWebhookTest extends TestCase
     /** @var array<int,string> */ private array $userIds = [];
     /** @var array<int,string> */ private array $invoiceIds = [];
     /** @var array<int,string> */ private array $depositPaymentIntentIds = [];
+    /** @var array<int,string> */ private array $persistedUserIds = [];
+    /** @var array<int,string> */ private array $promoCodeIds = [];
+    /** @var array<int,string> */ private array $promoPeriodIds = [];
+    /** @var array<int,string> */ private array $claimIds = [];
 
     private string $versionId;
 
@@ -51,6 +55,10 @@ class ProcessStripeWebhookTest extends TestCase
         if ($this->depositPaymentIntentIds) {
             $billing->table('security_deposits')->whereIn('stripe_payment_intent_id', $this->depositPaymentIntentIds)->delete();
         }
+        if ($this->claimIds)      { $billing->table('promotion_claims')->whereIn('id', $this->claimIds)->delete(); }
+        if ($this->promoCodeIds)  { $billing->table('promo_codes')->whereIn('id', $this->promoCodeIds)->delete(); }
+        if ($this->promoPeriodIds) { DB::connection('platform')->table('promotional_periods')->whereIn('id', $this->promoPeriodIds)->delete(); }
+        if ($this->persistedUserIds) { DB::connection('identity')->table('users')->whereIn('id', $this->persistedUserIds)->delete(); }
 
         $entitlements = app(EntitlementService::class);
         foreach ($this->userIds as $uid) {
@@ -58,6 +66,8 @@ class ProcessStripeWebhookTest extends TestCase
         }
 
         try { $billing->disconnect(); } catch (\Throwable) {}
+        try { DB::connection('platform')->disconnect(); } catch (\Throwable) {}
+        try { DB::connection('identity')->disconnect(); } catch (\Throwable) {}
         parent::tearDown();
     }
 
@@ -77,6 +87,7 @@ class ProcessStripeWebhookTest extends TestCase
             app(AuditService::class),
             app(SubscriptionService::class),
             $stripe ?? app(StripeService::class),
+            app(\App\Services\Billing\PromoCodeService::class),
         );
     }
 
@@ -144,6 +155,102 @@ class ProcessStripeWebhookTest extends TestCase
         $rows = Subscription::where('stripe_subscription_id', $subId)->get();
         $this->assertCount(1, $rows, 'a replayed checkout never creates a duplicate subscription');
         $this->subscriptionIds[] = $rows->first()->id;
+    }
+
+    // ── checkout.session.completed — promo-code redemption ──────────────────────
+
+    /** A persisted hunter the webhook's User::find can resolve. */
+    private function persistedUserId(): string
+    {
+        $id = (string) Str::uuid();
+        DB::connection('identity')->table('users')->insert([
+            'id'            => $id,
+            'email'         => "promo-{$id}@test.invalid",
+            'password_hash' => 'test-hash',
+            'status'        => 'active',
+            'account_type'  => 'hunter',
+        ]);
+        $this->persistedUserIds[] = $id;
+        $this->userIds[]          = $id; // also flush the entitlement cache
+
+        return $id;
+    }
+
+    /** An active percentage promo with a code, returns [periodId, code model]. */
+    private function makePromoCode(): \App\Models\Billing\PromoCode
+    {
+        $periodId = (string) Str::uuid();
+        DB::connection('platform')->table('promotional_periods')->insert([
+            'id'                  => $periodId,
+            'promo_key'           => 'wh_promo_' . Str::random(8),
+            'display_name'        => 'Webhook Promo',
+            'promotion_type'      => 'percentage_discount',
+            'status'              => 'active',
+            'discount_percentage' => 15,
+        ]);
+        $this->promoPeriodIds[] = $periodId;
+
+        $code = \App\Models\Billing\PromoCode::on('billing')->create([
+            'promotional_period_id' => $periodId,
+            'code'                  => 'WH' . strtoupper(Str::random(6)),
+            'is_active'             => true,
+            'max_redemptions'       => 50,
+            'redemption_count'      => 0,
+        ]);
+        $this->promoCodeIds[] = $code->id;
+
+        return $code;
+    }
+
+    public function test_checkout_completed_with_promo_records_redemption(): void
+    {
+        $userId = $this->persistedUserId();
+        $subId  = 'sub_' . Str::random(14);
+        $code   = $this->makePromoCode();
+
+        $object = $this->checkoutObject($userId, $subId, 'cus_promo');
+        $object['metadata']['promo_code_id'] = $code->id;
+
+        $this->dispatch('checkout.session.completed', $object);
+
+        $sub = Subscription::where('user_id', $userId)->first();
+        $this->assertNotNull($sub, 'a local subscription is created');
+        $this->subscriptionIds[] = $sub->id;
+
+        $this->assertSame(1, (int) $code->fresh()->redemption_count, 'the code redemption_count is incremented');
+
+        $claim = DB::connection('billing')->table('promotion_claims')
+            ->where('user_id', $userId)->where('promo_code_used', $code->code)->first();
+        $this->assertNotNull($claim, 'a promotion claim is authored');
+        $this->claimIds[] = $claim->id;
+        $this->assertSame('promo_code', $claim->trigger_event);
+
+        $sub->refresh();
+        $this->assertSame($claim->id, $sub->active_promotion_claim_id, 'the active subscription links the claim');
+    }
+
+    public function test_checkout_completed_with_promo_is_idempotent(): void
+    {
+        $userId = $this->persistedUserId();
+        $subId  = 'sub_' . Str::random(14);
+        $code   = $this->makePromoCode();
+
+        $object = $this->checkoutObject($userId, $subId, 'cus_promo2');
+        $object['metadata']['promo_code_id'] = $code->id;
+
+        // The first event creates the subscription + records the redemption; the
+        // replay early-returns on the existing subscription, so no second increment.
+        $this->dispatch('checkout.session.completed', $object);
+        $this->dispatch('checkout.session.completed', $object);
+
+        $sub = Subscription::where('user_id', $userId)->first();
+        $this->subscriptionIds[] = $sub->id;
+
+        $this->assertSame(1, (int) $code->fresh()->redemption_count, 'a replayed checkout never double-counts a redemption');
+        $claims = DB::connection('billing')->table('promotion_claims')
+            ->where('user_id', $userId)->where('promo_code_used', $code->code)->get();
+        $this->assertCount(1, $claims, 'a replayed checkout authors only one claim');
+        $this->claimIds[] = $claims->first()->id;
     }
 
     // ── customer.subscription.deleted ───────────────────────────────────────────

@@ -8,6 +8,12 @@ interface Perk {
     description: string | null
 }
 
+interface PromoCode {
+    code: string
+    label: string | null
+    discount_summary: string | null
+}
+
 interface Plan {
     id: string
     plan_key: string
@@ -24,6 +30,7 @@ interface Plan {
     badge_label: string | null
     is_featured: boolean
     perks: Perk[]
+    promo_codes: PromoCode[]
 }
 
 interface Props {
@@ -229,6 +236,8 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, has
     const accent = plan.accent_color || 'var(--blaze)'
     const price = formatPrice(plan, cycle)
     const [submitting, setSubmitting] = useState(false)
+    const [promoOpen, setPromoOpen] = useState(false)
+    const [promoInput, setPromoInput] = useState('')
 
     const isPaid = !plan.is_default_free && ((priceCents(plan, cycle) ?? 0) > 0)
     // An existing subscriber switches plans (immediate + prorated); a logged-in
@@ -240,8 +249,11 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, has
 
     const startCheckout = () => {
         setSubmitting(true)
+        // An explicitly typed code overrides auto-apply; when blank, the server
+        // auto-applies any code advertised on this plan's card.
+        const code = promoInput.trim()
         router.post('/member/membership/checkout',
-            { plan_key: plan.plan_key, interval: cycle },
+            { plan_key: plan.plan_key, interval: cycle, ...(code ? { promo_code: code } : {}) },
             { onFinish: () => setSubmitting(false) },
         )
     }
@@ -353,6 +365,66 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, has
                             </li>
                         ))}
                     </ul>
+                )}
+
+                {/* Advertised promo codes — auto-applied at checkout */}
+                {plan.promo_codes.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {plan.promo_codes.map(promo => (
+                            <div
+                                key={promo.code}
+                                style={{
+                                    display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap',
+                                    border: `1px dashed ${accent}`, background: 'var(--parch)',
+                                    padding: '8px 10px',
+                                }}
+                            >
+                                <span style={{
+                                    fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
+                                    letterSpacing: '.08em', textTransform: 'uppercase', color: accent,
+                                }}>
+                                    {promo.code}
+                                </span>
+                                <span style={{ fontFamily: 'var(--body)', fontSize: 12, color: 'var(--ink)' }}>
+                                    {promo.discount_summary
+                                        ? `${promo.discount_summary} — applied automatically`
+                                        : (promo.label ?? 'applied automatically')}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Optional manual promo code (for codes not advertised on the card) */}
+                {showCheckout && (
+                    promoOpen ? (
+                        <input
+                            type="text"
+                            value={promoInput}
+                            onChange={e => setPromoInput(e.target.value.toUpperCase())}
+                            placeholder="Promo code"
+                            autoFocus
+                            style={{
+                                fontFamily: 'var(--mono)', fontSize: 12, letterSpacing: '.06em',
+                                textTransform: 'uppercase', color: 'var(--ink)',
+                                padding: '9px 10px', background: 'var(--bone)',
+                                border: '1px solid var(--parch-dim)', outline: 'none',
+                            }}
+                        />
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => setPromoOpen(true)}
+                            style={{
+                                alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0,
+                                fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em',
+                                textTransform: 'uppercase', color: 'var(--sage-dim)',
+                                cursor: 'pointer', textDecoration: 'underline',
+                            }}
+                        >
+                            Have a promo code?
+                        </button>
+                    )
                 )}
 
                 {/* CTA */}
