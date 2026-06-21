@@ -230,9 +230,6 @@ class PromotionalPeriodResource extends Resource
                         ->label('Requires Promo Code'),
                     Toggle::make('stackable_with_other_promos')
                         ->label('Stackable With Other Promos'),
-                    Toggle::make('stackable_with_veteran')
-                        ->label('Stackable With Veteran Discount')
-                        ->default(true),
                     Toggle::make('auto_apply_on_signup')
                         ->label('Auto-apply on Signup'),
                     Toggle::make('auto_apply_on_first_listing')
