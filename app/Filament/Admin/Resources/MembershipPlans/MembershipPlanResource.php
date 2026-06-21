@@ -13,6 +13,7 @@ use App\Models\Platform\PromotionalPeriod;
 use App\Services\Platform\PlanService;
 use App\Support\AdminAuth;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
@@ -30,12 +31,15 @@ use Filament\Schemas\Components\Livewire;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class MembershipPlanResource extends Resource
 {
@@ -236,11 +240,24 @@ class MembershipPlanResource extends Resource
 
                             Section::make('Promo Codes')
                                 ->description('Link promo codes to this plan. Linking a code restricts it so it is only valid on this plan. Codes themselves are managed under Promo Codes.')
+                                ->headerActions([
+                                    Action::make('linkPromoCode')
+                                        ->label('Link a promo code')
+                                        ->icon(Heroicon::OutlinedTicket)
+                                        ->action(function (Get $get, Set $set): void {
+                                            $items = $get('promoCodeLinks') ?? [];
+                                            $items[(string) Str::uuid()] = [
+                                                'promo_code_id'        => null,
+                                                'show_on_pricing_card' => false,
+                                            ];
+                                            $set('promoCodeLinks', $items);
+                                        }),
+                                ])
                                 ->schema([
                                     Repeater::make('promoCodeLinks')
                                         ->relationship()
                                         ->hiddenLabel()
-                                        ->addActionLabel('Link a promo code')
+                                        ->addable(false)
                                         ->columns(3)
                                         ->schema([
                                             Select::make('promo_code_id')
