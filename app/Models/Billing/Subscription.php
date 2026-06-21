@@ -19,6 +19,7 @@ class Subscription extends BaseModel
         'stripe_subscription_id',
         'stripe_customer_id',
         'status',
+        'billing_interval',
         'current_period_start',
         'current_period_end',
         'trial_ends_at',

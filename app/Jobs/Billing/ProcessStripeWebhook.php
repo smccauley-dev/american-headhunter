@@ -84,8 +84,9 @@ class ProcessStripeWebhook implements ShouldQueue
     /**
      * A hosted Checkout completed — create the local subscription locked to the
      * plan version carried in metadata. SubscriptionService::start audits and
-     * invalidates entitlements. Period dates default to monthly here and are
-     * reconciled by the following customer.subscription.updated event.
+     * invalidates entitlements. The billing interval and period window are read
+     * from the Stripe subscription so the renew date and price cadence are
+     * authoritative rather than locally guessed.
      */
     private function checkoutCompleted(SubscriptionService $subscriptions, StripeService $stripe, PromoCodeService $promoCodes): void
     {
@@ -126,13 +127,29 @@ class ProcessStripeWebhook implements ShouldQueue
             return;
         }
 
+        // Read the real interval + period window from Stripe so the renew date and
+        // price cadence on the membership card are authoritative rather than a
+        // local guess. A read failure must not block creating the subscription —
+        // fall back to start()'s estimate (monthly).
+        $periodOpts = [];
+        try {
+            $period = $stripe->subscriptionPeriod($stripeSubId);
+            $periodOpts = [
+                'interval'             => $period['interval'],
+                'current_period_start' => $period['current_period_start'],
+                'current_period_end'   => $period['current_period_end'],
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('StripeWebhook: could not read subscription period', ['error' => $e->getMessage(), 'stripe_subscription_id' => $stripeSubId]);
+        }
+
         $created = false;
         try {
-            $subscriptions->start($userId, $planVersionId, [
+            $subscriptions->start($userId, $planVersionId, array_merge([
                 'stripe_subscription_id' => $stripeSubId,
                 'stripe_customer_id'     => $stripeCustId,
                 'status'                 => 'active',
-            ]);
+            ], $periodOpts));
             $created = true;
         } catch (\RuntimeException $e) {
             // start() throws if the user already holds an active subscription —

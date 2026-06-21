@@ -505,6 +505,32 @@ class StripeService
     }
 
     /**
+     * Read a subscription's billing interval and current period window from
+     * Stripe — the authoritative source for both. Under the dahlia API the period
+     * fields live on the subscription item, so we read those first and fall back
+     * to the (legacy) top-level fields. Used by the webhook to record the real
+     * renew date and interval instead of guessing them locally.
+     *
+     * @return array{interval:string, current_period_start:\Carbon\Carbon, current_period_end:\Carbon\Carbon}
+     */
+    public function subscriptionPeriod(string $stripeSubscriptionId): array
+    {
+        $sub  = StripeSubscription::retrieve($stripeSubscriptionId);
+        $item = $sub->items->data[0] ?? null;
+
+        $interval = (($item->price->recurring->interval ?? 'month') === 'year') ? 'annual' : 'monthly';
+
+        $start = $item->current_period_start ?? $sub->current_period_start ?? null;
+        $end   = $item->current_period_end   ?? $sub->current_period_end   ?? null;
+
+        return [
+            'interval'             => $interval,
+            'current_period_start' => $start ? \Carbon\Carbon::createFromTimestamp($start) : now(),
+            'current_period_end'   => $end ? \Carbon\Carbon::createFromTimestamp($end) : now()->addMonth(),
+        ];
+    }
+
+    /**
      * Create a hosted Checkout Session (mode=setup) to collect a new payment
      * method for an existing customer — used by the dunning flow when a payment
      * has failed. The card is captured by Stripe (never touches our server); the

@@ -120,6 +120,32 @@ class ProcessStripeWebhookTest extends TestCase
         $this->assertSame('cus_abc', $sub->getRawOriginal('stripe_customer_id'));
     }
 
+    public function test_checkout_completed_records_interval_and_period_from_stripe(): void
+    {
+        $userId = $this->newUserId();
+        $subId  = 'sub_' . Str::random(14);
+
+        $stripe = \Mockery::mock(StripeService::class);
+        $stripe->shouldReceive('subscriptionPeriod')->with($subId)->andReturn([
+            'interval'             => 'annual',
+            'current_period_start' => now()->startOfDay(),
+            'current_period_end'   => now()->startOfDay()->addYear(),
+        ]);
+
+        $this->dispatch('checkout.session.completed', $this->checkoutObject($userId, $subId), $stripe);
+
+        $sub = Subscription::where('user_id', $userId)->first();
+        $this->assertNotNull($sub);
+        $this->subscriptionIds[] = $sub->id;
+
+        $this->assertSame('annual', $sub->billing_interval, 'interval is read from Stripe, not defaulted to monthly');
+        $this->assertSame(
+            now()->startOfDay()->addYear()->toDateString(),
+            $sub->current_period_end->toDateString(),
+            'renew date is the real Stripe period end, not a local +1 month guess',
+        );
+    }
+
     public function test_checkout_completed_ignores_non_subscription_mode(): void
     {
         $userId = $this->newUserId();
