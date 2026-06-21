@@ -913,6 +913,90 @@ Keeps guests out of non-featured details exactly as today; lets logged-in member
 
 ---
 
+## SEC-050 — Admin Document View/Download Routes Unscoped + Unaudited; Now Serving Applicant DL/License PII
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low (staff-gated; defense-in-depth + audit gap) |
+| **Status** | OPEN |
+| **Found** | 2026-06-21 |
+| **File** | `routes/web.php` (`admin.documents.view`, `admin.documents.download`) |
+| **Lineage** | Promotes the 2026-06-14 out-of-window Auditing Note to a tracked finding; PII exposure escalated by commit `1f3f57d` |
+
+**Description:**
+`GET /admin/documents/{documentId}/view` and `/download` do a bare `Document::findOrFail($documentId)` + `Storage::response()/download()` with **no per-document ownership/authorization check** and **no audit logging** (unlike the lease-document download path, which audits via `LeaseDocumentService::adminDownload`). They are gated only by `['db.system','auth:web']`. Commit `1f3f57d` (this window) added applicant **driver's-license and hunting-license numbers + front/back images** to the admin hunter roster, all served through `admin.documents.view`, and renders the document UUIDs into the page (`<img src>`), increasing both the volume of PII behind the route and the surface from which a UUID can be harvested.
+
+**Why this is Low, not an IDOR:** only Filament login issues a standard `web`-guard session, and Filament login enforces `User::canAccessPanel()`, which restricts to staff/admin roles (`super_admin, global_admin, property_admin, security_admin, article_admin, staff`). Landowners are **not** in that list, and the member/landowner portals authenticate via a separate custom session guard (`auth.session` / `RequireSessionAuth`) that does not satisfy `auth:web`. The routes are therefore effectively staff-only. The residual gaps are (a) any staff user can fetch **any** document by UUID regardless of which application/property it belongs to (no least-privilege scoping), and (b) viewing/downloading applicant PII (driver's licenses) leaves **no audit trail**.
+
+**Recommended fix:**
+- Audit-log every access through these routes (document id + acting staff user id), mirroring `LeaseDocumentService::adminDownload`.
+- Optionally scope access to documents the staff member's role/assignment should legitimately see (resolve the document's owning application/property), so e.g. a `property_admin` cannot pull unrelated applicants' DLs by raw UUID.
+
+**Verification (when fixed):** access writes an `AuditService` event; a staff user without scope on a document receives 403/404.
+
+---
+
+## SEC-051 — Stripe Subscription/Account IDs Written to Webhook Diagnostic Logs
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low |
+| **Status** | OPEN |
+| **Found** | 2026-06-21 |
+| **File** | `app/Jobs/Billing/ProcessStripeWebhook.php` |
+
+**Description:**
+Several webhook diagnostic log lines include `stripe_subscription_id` / `stripe_account_id` (≈ lines 120, 143, 217, 353). Line 143 was added in this window (commit `3c110ee`, the billing-interval fix) and follows the file's pre-existing logging pattern. CLAUDE.md's billing rule states *"even Stripe IDs should not appear in general application logs."* These are correlation identifiers — not PANs or payment-method/charge tokens — so impact is limited to internal-identifier disclosure should application logs be exposed.
+
+**Root Cause:**
+Webhook handlers log the subscription/account id as a correlation key when an event can't be matched to a local record.
+
+**Recommended fix (pick one):** drop the Stripe IDs from these payloads (log only `user_id` / event type), **or** add an explicit, documented carve-out in CLAUDE.md that webhook *correlation* IDs (subscription/account/event ids — never payment-method/charge/PAN data) are permitted in logs and keep them. The defect is the undocumented mismatch with the written rule, not the IDs themselves.
+
+**Verification:** webhook diagnostic logs contain no `stripe_*_id` values (if removed), or CLAUDE.md documents the carve-out (if kept).
+
+---
+
+## SEC-052 — Promo Per-User Limit Has a TOCTOU Window Between Checkout Validation and Webhook Redemption
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low / Informational |
+| **Status** | OPEN |
+| **Found** | 2026-06-21 |
+| **File** | `app/Services/Billing/PromoCodeService.php` (`validateForPlan` vs `recordRedemption`) |
+
+**Description:**
+`validateForPlan` enforces `per_user_limit` by counting existing `promotion_claims` (`promo_code_used = code`) at checkout-**start** time, but the claim is only authored later, at **webhook** time, in `recordRedemption`. A user who opens N hosted-checkout sessions before any completes passes the per-user check N times and could redeem the code beyond `per_user_limit`. The **global** `max_redemptions` is protected (`recordRedemption` increments via an atomic guarded UPDATE); only the per-user cap is racy.
+
+**Impact (why Low):** each bypass requires actually completing a paid Stripe checkout (the user pays each time), the benefit is at most an extra discounted/granted cycle, and one-active-subscription enforcement (`SubscriptionService::activeFor`) further limits the practical effect. (Note: the per-user check is functional — `BillingService::applyPromotion` persists `promo_code_used` — so this is a race, not a dead check.)
+
+**Recommended fix:** make per-user redemption atomic at record time — e.g. a unique constraint on `(user_id, promo_code_used)` when `per_user_limit = 1`, or a guarded conditional insert in `recordRedemption` that no-ops once the user is at the limit, mirroring the global increment guard.
+
+**Verification:** concurrent completed checkouts for the same user + code create at most `per_user_limit` claims.
+
+---
+
+## SEC-053 — First-Listing Auto-Apply Eligibility Check Is Existence-Based, Not Atomic
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low / Informational |
+| **Status** | OPEN |
+| **Found** | 2026-06-21 |
+| **File** | `app/Services/Billing/PromotionAutoApplyService.php` (`isEligible` / `applyTrigger`) |
+
+**Description:**
+`isEligible` enforces once-per-user-per-period with a `PromotionClaim::exists()` check, then `applyTrigger` increments `claim_count` (atomic, guarded against `claim_limit`) and authors the claim. The existence check and the claim write are not a single atomic operation, so two concurrent first-listing creations for the same user could both pass `isEligible` and both author a claim. The **global** `claim_limit` is still protected by the atomic increment; only the per-user-once invariant is racy.
+
+**Impact (why Low):** `applyForSignup` fires once and is not concurrent; `applyForFirstListing` requires a user to create two listings near-simultaneously, and grant claims are additive (EntitlementService resolves the highest-precedence active claim), so a duplicate grants no extra benefit — this is a data-cleanliness issue more than an exposure.
+
+**Recommended fix:** enforce uniqueness on `(user_id, promotion_period_id)` for trigger-based claims, or perform the eligibility check + claim insert atomically.
+
+**Verification:** concurrent first-listing creations create at most one claim per user per period.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -924,6 +1008,10 @@ Keeps guests out of non-featured details exactly as today; lets logged-in member
 | SEC-047 | Member-portal property check-in log shows "Unknown user" — cross-DB hunter name lookup default-denied by `users` RLS under `ah_runtime` | Low | **FIXED (2026-06-17)** — name lookup wrapped in `ConnectionRole::asSystem` (viewer already property-authorized) | — |
 | SEC-048 | Public property detail gate uses `auth()->check()` (always false for session-authed members) → logged-in members wrongly redirected from non-featured detail pages; fail-closed (no exposure) | Low | OPEN — fix: gate on `session('auth.user_id')` | Next property pass |
 | SEC-049 | Contact directory (`getContactDirectory`) resolves identity users under `ah_runtime` without `asSystem` → owner/manager contacts may render blank for lessees; fail-closed (no exposure) | Low | OPEN — verify reach under `ah_runtime`, then mirror SEC-047 fix if blank | Next property pass |
+| SEC-050 | Admin document view/download routes unscoped + unaudited; now serve applicant DL/license PII (staff-gated, not an IDOR) | Low | OPEN — add audit logging (+ optional per-document scoping) | Next admin/billing pass |
+| SEC-051 | Stripe subscription/account IDs in webhook diagnostic logs (deviates from "no Stripe IDs in logs" rule) | Low | OPEN — drop IDs or document a correlation-ID carve-out | Pre-launch hardening |
+| SEC-052 | Promo per-user-limit TOCTOU between checkout validation and webhook redemption (global cap safe) | Low | OPEN — atomic per-user guard / unique constraint | Next billing pass |
+| SEC-053 | First-listing auto-apply once-per-user check not atomic → possible duplicate claim (no extra benefit) | Low | OPEN — unique `(user, period)` or atomic check+insert | Next billing pass |
 
 ---
 
@@ -936,6 +1024,7 @@ Keeps guests out of non-featured details exactly as today; lets logged-in member
 - Last-24h feature audit (2026-06-13): reviewed the DB-managed email template system (`EmailTemplateService`, `MailSettingsService`, `EmailSettings`, version preview), the property-map feature (`PropertyMapService`, `ExifGps`, map editor, public map route), the configurable post-login redirect, and the new encrypted UserProfile contact fields. Findings: SEC-024 (EXIF GPS published by default) and SEC-025 (map route ignored property status) — both fixed same session. **No issue found** in: email template rendering (variables HTML-escaped in HTML bodies via `htmlspecialchars`; admin-only authorship; preview iframe uses `sandbox=""`), SMTP settings (password encrypted at rest via `Crypt`, never echoed to the form, change audit-logged, access gated by `canManageSystem`), or the post-login redirect (value comes from admin-controlled tenant settings, not user input).
 - Last-24h feature audit (2026-06-14): reviewed the member field-check-in + QR system (`CheckInController`, `CheckInService`), the stand-map / boundary overlay (`PropertyMapService::getBoundaryOverlay`, `MemberController`), the property contact directory (`PropertyService::getContactDirectory`, admin Contacts tab, `Api/PropertyContactController`), the opt-in manager-contact flow (`is_field_contact` migration + `PropertyManager` model + `EditPropertyV2::removeManagerContact`), and the executed-lease PDF download (`LeaseSignController`, `EsignatureService::downloadSignedLease`). Finding: SEC-042 (`manager_id` UUID disclosed to lessees) — fixed same session. **No issue found** in: check-in (`checkIn`/`checkOut` enforce `abort_unless(mayCheckIn, 403)` — lessee or approved LeaseHunter only; check-out scoped to the user's own open record), stand-map markers + access info (served only for the lessee's own `active` lease, GPS member-only per SEC-024), contact directory (gated by `userHasActiveLeaseForProperty`, returns 404 not 403 to non-lessees per SEC-024; intended landowner/manager contact details are by design), the opt-in manager flow (admin-only writes via `AdminAuth::canManageProperties`; managers no longer auto-listed to hunters), lease PDF download (`abort_if(403)` unless lessee or lessor; download audit-logged via AuditService), and the PDF/QR/check-in-log blades (all output escaped — no `{!! !!}`). **Out-of-window note:** the admin `auth:web` document download/view routes (`/admin/documents/{documentId}/download`, `/view`) do a bare `findOrFail` + `Storage::download` with no per-document ownership check. These predate this window (commit `05df4a5`) and are reachable only through the `web` (admin) guard — members authenticate via the separate `auth.session`/`RequireSessionAuth` system — so they are effectively admin-restricted, but lack defense-in-depth ownership scoping. Logged here; not assigned a SEC ID this pass.
 - Last-24h security scan (2026-06-15): reviewed all code committed in the prior 24h — the DB 4 billing schema (12 tables / migrations), the `w9_records` table + `W9Record` model + `HasEncryptedFields` TIN encryption, `promo_codes`/`PromoCode`, the billing service layer (`SubscriptionService`, `BillingService`, rewired `EntitlementService`), the `PgTextArray` cast, the ClamAV virus-scan path (`VirusScanService` + `ScanDocumentForViruses`), the entitlement-snapshot backfill migration, the BaseModel platform-model sweep, `config/services.php`, `routes/api.php`, and the env-example diffs. Findings: **SEC-043** (High — RLS bypassed platform-wide; app role owns all tables and `FORCE ROW LEVEL SECURITY` is unset, so every policy including the new W-9/billing ones is a no-op; verified live via `pg_class.relforcerowsecurity`) and **SEC-044** (Low — encrypted-field plaintext + key flow through query bindings, log-exposure risk). **No issue found** in: TIN handling (encrypted via pgcrypto Key D, `tin` in `$hidden`, `tin_last_four` display-only, never logged), the virus-scan job (fail-closed — scanner errors and missing files throw and retry, never `markReady`; infected → quarantine + audit), `PgTextArray` (values are bound parameters — no SQL injection; admin-controlled inputs), billing services (audit-logged, entitlement cache invalidated on every mutation, one-active-subscription enforced, no hardcoded prices/tiers — all DB-12-driven via snapshots), the backfill migration (drops/recreates the `plan_versions_no_update` immutability RULE around a `WHERE entitlements_snapshot = '{}'`-guarded one-time update), `config/services.php` (all secrets via `env()`, no literals), `routes/api.php` (billing/W-9 not yet HTTP-exposed; existing routes auth+throttle gated), and the committed env-example files (placeholder values only — no real keys/secrets).
+- Last-24h security scan (2026-06-21): reviewed all commits in the prior 24h — signup→Stripe Checkout (`3498f7a`: `MembershipCheckoutService`, `AuthController::register`, `UserService::create`, `RegisterRequest`), promo codes on plans (`5aa04be`: `PromoCodeService`, `plan_promo_codes`, Stripe coupon sync, checkout/webhook wiring), trigger-based promo auto-apply (`6faf2d4` / `ed522cb`: `PromotionAutoApplyService`, `intended_plan_key`), the billing-interval fix (`3c110ee`: `subscriptions.billing_interval`, `StripeService::subscriptionPeriod`, webhook), the avatar cache-bust (`f41639b`), and the DL/license roster images + expired-license guard (`1f3f57d`). Findings: **SEC-050** (Low — unscoped/unaudited admin document routes now serving applicant DL PII), **SEC-051** (Low — Stripe IDs in webhook logs), **SEC-052** (Low — promo per-user-limit TOCTOU), **SEC-053** (Low — first-listing auto-apply not atomic). **No exploitable issue found.** Specifically clean: signup (no mass assignment — `UserService::create` cherry-picks fields; `account_type` enum-validated; `assignSignupRole` maps via a fixed const with no admin/staff entry → no privilege escalation; `intended_plan_key` re-verified against a real public plan), checkout (plan version + price server-locked; coupon server-resolved from `period.stripe_coupon_id`; subscription written only by the webhook after real payment; account-type match enforced; free/duplicate-subscription rejected), promo redemption (global `max_redemptions` atomically guarded; restriction + window + account-type targeting enforced; per-user check functional via persisted `promo_code_used`), DL/license PII display (staff-only `auth:web` route; `canAccessPanel` excludes landowners; members use a separate session guard), and avatar serving (own-avatar only via `avatar_document_id`; `?v=` is just the doc UUID, no arbitrary-document access).
 - Open-items remediation pass (2026-06-14): cleared the entire Open/Deferred backlog highest-to-lowest — SEC-003-P4 (High, structural access-info lease gate), SEC-006/D01 (Medium, explicit Filament mutation gates + AdminUser privilege-escalation fix), SEC-008 (Medium, read-API throttles), SEC-007/SEC-010/SEC-023/D02/SEC-037/SEC-038 (Low). All `php -l` clean; full suite 72 passed (the lone failure was Postgres connection-slot exhaustion under parallel 14-DB load, not a code defect — passes in isolation).
 - No SQL injection surfaces found — all queries use parameterized bindings or Eloquent ORM.
 - No hardcoded credentials or keys found in application code — all sourced from env/config.
