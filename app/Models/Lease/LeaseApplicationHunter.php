@@ -56,11 +56,13 @@ class LeaseApplicationHunter extends BaseModel
         'dl_state',
         'dl_expiry',
         'dl_document_id',
+        'dl_document_id_back',
         'dl_confirmed_current',
         'hunting_license_number',
         'hunting_license_state',
         'hunting_license_expiry',
         'hunting_license_document_id',
+        'hunting_license_document_id_back',
         'hunting_license_confirmed_current',
     ];
 

@@ -51,33 +51,75 @@
                     <div style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#888;margin-bottom:4px">Driver's License</div>
                     <div>
                         @if ($h->dl_number)
-                            {{ $h->dl_number }} · {{ $h->dl_state ?? '' }}@if ($h->dl_expiry) · Exp {{ $h->dl_expiry->format('m/Y') }}@endif
+                            @php ($dlExpired = $h->dl_expiry && $h->dl_expiry->lt(\Illuminate\Support\Carbon::today()))
+                            {{ $h->dl_number }} · {{ $h->dl_state ?? '' }}@if ($h->dl_expiry) · <span @if ($dlExpired) style="color:#b00020;font-weight:600" @endif>Exp {{ $h->dl_expiry->format('m/Y') }}</span>@endif
+                            @if ($dlExpired)
+                                <span style="background:#fde8e8;color:#b00020;font-size:10px;padding:2px 8px;font-family:monospace;text-transform:uppercase;letter-spacing:.08em;border-radius:2px;margin-left:4px">Expired</span>
+                            @endif
                             &nbsp;
                             @if ($h->dl_confirmed_current)
-                                <span style="color:#2d7a3a;font-weight:600">✓ Confirmed current</span>
+                                <span style="color:#2d7a3a;font-weight:600">✓ Certified current by applicant</span>
                             @else
-                                <span style="color:#b05a00;font-weight:600">⚠ Not confirmed</span>
+                                <span style="color:#b05a00;font-weight:600">⚠ Not certified by applicant</span>
                             @endif
                         @else
                             <span style="color:#aaa">—</span>
                         @endif
                     </div>
+                    @if ($h->dl_document_id || $h->dl_document_id_back)
+                        <div style="display:flex;gap:12px;margin-top:10px">
+                            @foreach (['Front' => $h->dl_document_id, 'Back' => $h->dl_document_id_back] as $side => $docId)
+                                <figure style="margin:0;flex:0 0 auto">
+                                    <figcaption style="font-family:monospace;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#aaa;margin-bottom:4px">{{ $side }}</figcaption>
+                                    @if ($docId)
+                                        <a href="{{ route('admin.documents.view', $docId) }}" target="_blank" rel="noopener">
+                                            <img src="{{ route('admin.documents.view', $docId) }}" alt="Driver's license {{ strtolower($side) }}" loading="lazy"
+                                                 style="width:220px;height:140px;object-fit:cover;border:1px solid #e5e0d8;border-radius:4px;display:block;background:#f5f1eb">
+                                        </a>
+                                    @else
+                                        <div style="width:220px;height:140px;display:flex;align-items:center;justify-content:center;border:1px dashed #d8d2c8;border-radius:4px;color:#bbb;font-size:11px;background:#faf8f4">No image</div>
+                                    @endif
+                                </figure>
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
                 <div style="grid-column:1/-1">
                     <div style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#888;margin-bottom:4px">Hunting License</div>
                     <div>
                         @if ($h->hunting_license_number)
-                            {{ $h->hunting_license_number }} · {{ $h->hunting_license_state ?? '' }}@if ($h->hunting_license_expiry) · Exp {{ $h->hunting_license_expiry->format('m/Y') }}@endif
+                            @php ($licExpired = $h->hunting_license_expiry && $h->hunting_license_expiry->lt(\Illuminate\Support\Carbon::today()))
+                            {{ $h->hunting_license_number }} · {{ $h->hunting_license_state ?? '' }}@if ($h->hunting_license_expiry) · <span @if ($licExpired) style="color:#b00020;font-weight:600" @endif>Exp {{ $h->hunting_license_expiry->format('m/Y') }}</span>@endif
+                            @if ($licExpired)
+                                <span style="background:#fde8e8;color:#b00020;font-size:10px;padding:2px 8px;font-family:monospace;text-transform:uppercase;letter-spacing:.08em;border-radius:2px;margin-left:4px">Expired</span>
+                            @endif
                             &nbsp;
                             @if ($h->hunting_license_confirmed_current)
-                                <span style="color:#2d7a3a;font-weight:600">✓ Confirmed current</span>
+                                <span style="color:#2d7a3a;font-weight:600">✓ Certified current by applicant</span>
                             @else
-                                <span style="color:#b05a00;font-weight:600">⚠ Not confirmed</span>
+                                <span style="color:#b05a00;font-weight:600">⚠ Not certified by applicant</span>
                             @endif
                         @else
                             <span style="color:#aaa">—</span>
                         @endif
                     </div>
+                    @if ($h->hunting_license_document_id || $h->hunting_license_document_id_back)
+                        <div style="display:flex;gap:12px;margin-top:10px">
+                            @foreach (['Front' => $h->hunting_license_document_id, 'Back' => $h->hunting_license_document_id_back] as $side => $docId)
+                                <figure style="margin:0;flex:0 0 auto">
+                                    <figcaption style="font-family:monospace;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#aaa;margin-bottom:4px">{{ $side }}</figcaption>
+                                    @if ($docId)
+                                        <a href="{{ route('admin.documents.view', $docId) }}" target="_blank" rel="noopener">
+                                            <img src="{{ route('admin.documents.view', $docId) }}" alt="Hunting license {{ strtolower($side) }}" loading="lazy"
+                                                 style="width:220px;height:140px;object-fit:cover;border:1px solid #e5e0d8;border-radius:4px;display:block;background:#f5f1eb">
+                                        </a>
+                                    @else
+                                        <div style="width:220px;height:140px;display:flex;align-items:center;justify-content:center;border:1px dashed #d8d2c8;border-radius:4px;color:#bbb;font-size:11px;background:#faf8f4">No image</div>
+                                    @endif
+                                </figure>
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
             </div>
         </div>
