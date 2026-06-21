@@ -563,7 +563,11 @@ class ProfileController extends Controller
         try {
             $doc = Document::find($profile->avatar_document_id);
             if ($doc && Storage::disk('local')->exists($doc->storage_key)) {
-                return route('member.profile.avatar', $profile->user_id);
+                // The serve URL is keyed by user_id (stable) and the response is
+                // cached for an hour, so without a version token a new upload shows
+                // the stale cached image. avatar_document_id is a fresh UUID per
+                // upload — append it to bust the cache only when the avatar changes.
+                return route('member.profile.avatar', $profile->user_id) . '?v=' . $profile->avatar_document_id;
             }
         } catch (\Throwable) {}
 
