@@ -48,6 +48,15 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\UseSystemDatabaseRole::class,
         );
 
+        // The admin web-guard routes (document/print views) use `auth:web`. For an
+        // unauthenticated request Laravel's Authenticate middleware redirects to a
+        // route named `login`, which does not exist here — Filament's panel uses
+        // `filament.admin.auth.login` — so it threw RouteNotFoundException (500).
+        // Point guests at the Filament admin login so anonymous access bounces
+        // cleanly. Only affects `auth:web`; the portals use `auth.session`, which
+        // handles its own redirect.
+        $middleware->redirectGuestsTo(fn () => route('filament.admin.auth.login'));
+
         $middleware->alias([
             'guest'        => \App\Http\Middleware\RedirectIfAuthenticated::class,
             'auth.session' => \App\Http\Middleware\RequireSessionAuth::class,
