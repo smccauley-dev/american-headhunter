@@ -9,13 +9,18 @@ use App\Jobs\Identity\SendEmailVerificationJob;
 use App\Services\Auth\AuthService;
 use App\Services\Auth\MfaService;
 use App\Services\Auth\SessionService;
+use App\Services\Billing\MembershipCheckoutService;
+use App\Services\Billing\PromotionAutoApplyService;
 use App\Services\Identity\OfacService;
 use App\Services\Identity\UserService;
+use App\Services\Platform\PlanService;
 use App\Services\Mfa\MfaMethodRegistry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class AuthController extends Controller
 {
@@ -28,25 +33,47 @@ class AuthController extends Controller
         private readonly MfaMethodRegistry $mfaRegistry,
     ) {}
 
-    public function getStarted(): Response
+    public function getStarted(Request $request): Response
     {
-        return Inertia::render('Auth/GetStarted');
+        $planKey = $request->query('plan');
+        $plan    = $planKey ? app(PlanService::class)->findPublicPlan($planKey) : null;
+
+        return Inertia::render('Auth/GetStarted', [
+            // {plan_key, display_name, account_type, is_paid, …prices} | null —
+            // pre-selects the matching role and follows the user to register.
+            'plan'     => $plan,
+            // Billing cycle carried from the pricing page's toggle.
+            'interval' => $request->query('interval') === 'annual' ? 'annual' : 'monthly',
+        ]);
     }
 
     public function showRegister(Request $request): Response
     {
         $accountType = $request->query('type', 'hunter');
 
+        $planKey = $request->query('plan');
+        $plan    = $planKey ? app(PlanService::class)->findPublicPlan($planKey) : null;
+
+        // Only carry a plan that matches the chosen account type.
+        if ($plan && $plan['account_type'] !== $accountType) {
+            $plan = null;
+        }
+
         return Inertia::render('Auth/Register', [
-            'accountType' => $accountType,
-            'legalUrls'   => config('platform.legal'),
+            'accountType'    => $accountType,
+            'legalUrls'      => config('platform.legal'),
+            'signupPromo'    => app(PromotionAutoApplyService::class)->previewForSignup($accountType),
+            'signupPlan'     => $plan,
+            'signupInterval' => $request->query('interval') === 'annual' ? 'annual' : 'monthly',
         ]);
     }
 
-    public function register(RegisterRequest $request): RedirectResponse
+    public function register(RegisterRequest $request): HttpResponse|RedirectResponse
     {
+        $validated = $request->validated();
+
         $user = $this->users->create(array_merge(
-            $request->validated(),
+            $validated,
             [
                 'ip_address'  => $request->ip(),
                 'user_agent'  => $request->userAgent(),
@@ -64,7 +91,56 @@ class AuthController extends Controller
         $request->session()->regenerate();
         $request->session()->put('auth.user_id', $user->id);
 
+        // A paid plan chosen at signup goes straight to Stripe Checkout — payment
+        // happens now, while intent is high; email verification continues in
+        // parallel via the notice screen. Free/unknown plans skip checkout.
+        if ($redirect = $this->startSignupCheckout($user, $validated)) {
+            return $redirect;
+        }
+
         return redirect()->route('auth.verify-email.notice');
+    }
+
+    /**
+     * If the user picked a paid plan for their account type, start a hosted Stripe
+     * Checkout and return the redirect to it. Returns null (so registration falls
+     * through to the email-verification notice) for free/unknown plans, or if the
+     * session can't be created — a Stripe hiccup must never block signup, and the
+     * stored intended_plan_key still routes them to checkout at first login.
+     */
+    private function startSignupCheckout(\App\Models\Identity\User $user, array $validated): ?HttpResponse
+    {
+        $planKey = $validated['plan'] ?? null;
+        $plan    = $planKey ? app(PlanService::class)->findPublicPlan($planKey) : null;
+
+        if (! $plan || ! $plan['is_paid'] || $plan['account_type'] !== $user->account_type) {
+            return null;
+        }
+
+        $interval = ($validated['interval'] ?? null) === 'annual' ? 'annual' : 'monthly';
+
+        $result = app(MembershipCheckoutService::class)->start(
+            user:       $user,
+            planKey:    $plan['plan_key'],
+            interval:   $interval,
+            promoCode:  null,
+            successUrl: route('auth.verify-email.notice') . '?checkout=success',
+            cancelUrl:  route('auth.verify-email.notice') . '?checkout=cancel',
+        );
+
+        if (! isset($result['url'])) {
+            Log::warning('Signup checkout could not start; falling back to email notice', [
+                'user_id' => $user->id,
+                'error'   => $result['error'] ?? 'unknown',
+            ]);
+            return null;
+        }
+
+        // Acted on the choice — clear the deferred fallback so it can't re-route
+        // the user at first login on top of the checkout they just started.
+        $this->users->clearIntendedPlan($user);
+
+        return Inertia::location($result['url']);
     }
 
     public function showVerifyEmailNotice(): Response
@@ -83,6 +159,28 @@ class AuthController extends Controller
         }
 
         return back()->with('success', 'Verification email sent. Check your inbox.');
+    }
+
+    /**
+     * Polled by the post-signup notice screen. Reads the waiting session's user
+     * fresh (the verification link may have been clicked on another device, so a
+     * cached copy could be stale) and, once verified, hands back where to send
+     * this tab — the same paid→checkout / free→member destination login uses, so
+     * no second sign-in is required.
+     */
+    public function verifyEmailStatus(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $userId = $request->session()->get('auth.user_id');
+        $user   = $userId ? $this->users->findFresh($userId) : null;
+
+        if (! $user || ! $user->email_verified_at) {
+            return response()->json(['verified' => false]);
+        }
+
+        $redirect = $this->users->takeIntendedPlanRedirect($user)
+            ?? app(\App\Services\Platform\TenantService::class)->getSetting('nav.login_redirect', '/member/profile');
+
+        return response()->json(['verified' => true, 'redirect' => $redirect]);
     }
 
     public function verifyEmail(Request $request, string $token): RedirectResponse
@@ -141,6 +239,12 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
         $request->session()->put('auth.user_id', $user->id);
+
+        // First login after signing up with a chosen plan: a paid plan routes to
+        // checkout, a free plan needs no action. Consumed once, then cleared.
+        if ($planRedirect = $this->users->takeIntendedPlanRedirect($user)) {
+            return redirect()->to($planRedirect);
+        }
 
         return redirect()->intended(
             app(\App\Services\Platform\TenantService::class)->getSetting('nav.login_redirect', '/member/profile')

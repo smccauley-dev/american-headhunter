@@ -7,16 +7,20 @@ use App\Filament\Admin\Resources\MembershipPlans\Pages\EditMembershipPlan;
 use App\Filament\Admin\Resources\MembershipPlans\Pages\ListMembershipPlans;
 use App\Filament\Admin\Resources\MembershipPlans\RelationManagers\EntitlementsRelationManager;
 use App\Filament\Admin\Resources\MembershipPlans\RelationManagers\VersionsRelationManager;
+use App\Models\Billing\PromoCode;
 use App\Models\Platform\MembershipPlan;
+use App\Models\Platform\PromotionalPeriod;
 use App\Services\Platform\PlanService;
 use App\Support\AdminAuth;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -27,12 +31,15 @@ use Filament\Schemas\Components\Livewire;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class MembershipPlanResource extends Resource
 {
@@ -230,6 +237,42 @@ class MembershipPlanResource extends Resource
                                         ->label('Featured')
                                         ->helperText('Visually highlight this plan on the pricing page.'),
                                 ]),
+
+                            Section::make('Promo Codes')
+                                ->description('Link promo codes to this plan. Linking a code restricts it so it is only valid on this plan. Codes themselves are managed under Promo Codes.')
+                                ->headerActions([
+                                    Action::make('linkPromoCode')
+                                        ->label('Link a promo code')
+                                        ->icon(Heroicon::OutlinedTicket)
+                                        ->action(function (Get $get, Set $set): void {
+                                            $items = $get('promoCodeLinks') ?? [];
+                                            $items[(string) Str::uuid()] = [
+                                                'promo_code_id'        => null,
+                                                'show_on_pricing_card' => false,
+                                            ];
+                                            $set('promoCodeLinks', $items);
+                                        }),
+                                ])
+                                ->schema([
+                                    Repeater::make('promoCodeLinks')
+                                        ->relationship()
+                                        ->hiddenLabel()
+                                        ->addable(false)
+                                        ->columns(3)
+                                        ->schema([
+                                            Select::make('promo_code_id')
+                                                ->label('Promo Code')
+                                                ->options(fn (): array => self::promoCodeOptions())
+                                                ->searchable()
+                                                ->required()
+                                                ->distinct()
+                                                ->columnSpan(2),
+                                            Toggle::make('show_on_pricing_card')
+                                                ->label('Show on pricing card')
+                                                ->helperText('Advertises the code on the public card and auto-applies its discount at checkout.')
+                                                ->inline(false),
+                                        ]),
+                                ]),
                         ]),
 
                     Tab::make('Stripe')
@@ -255,6 +298,28 @@ class MembershipPlanResource extends Resource
                         ]),
                 ]),
         ]);
+    }
+
+    /**
+     * Promo-code options for the Pricing-tab Repeater, labelled
+     * `CODE — Promotion Name`. The codes live in DB 4 (billing) and their
+     * promotion names in DB 12 (platform) — assembled in PHP, never joined.
+     */
+    protected static function promoCodeOptions(): array
+    {
+        $codes = PromoCode::on('billing')
+            ->orderBy('code')
+            ->get(['id', 'code', 'promotional_period_id']);
+
+        $names = PromotionalPeriod::on('platform')
+            ->whereIn('id', $codes->pluck('promotional_period_id')->unique()->all())
+            ->pluck('display_name', 'id');
+
+        return $codes->mapWithKeys(function (PromoCode $code) use ($names): array {
+            $name = $names[$code->promotional_period_id] ?? null;
+
+            return [$code->id => $name ? "{$code->code} — {$name}" : $code->code];
+        })->all();
     }
 
     public static function table(Table $table): Table

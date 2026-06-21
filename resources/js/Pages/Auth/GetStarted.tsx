@@ -1,6 +1,18 @@
 import { useState } from 'react';
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import AuthLayout from '@/Components/Auth/AuthLayout';
+
+interface SelectedPlan {
+    plan_key: string;
+    display_name: string;
+    account_type: string;
+    is_paid: boolean;
+}
+
+interface GetStartedProps {
+    plan?: SelectedPlan | null;
+    interval?: 'monthly' | 'annual';
+}
 
 const ACCOUNT_TYPES = [
     { value: 'hunter',             label: 'Hunt',                       description: 'Find and lease hunting land' },
@@ -12,10 +24,18 @@ const ACCOUNT_TYPES = [
 ] as const;
 
 export default function GetStarted() {
-    const [selected, setSelected] = useState<string>('hunter');
+    const { plan, interval = 'monthly' } = usePage<GetStartedProps>().props;
+    const [selected, setSelected] = useState<string>(plan?.account_type ?? 'hunter');
 
     function handleContinue() {
-        router.get('/register', { type: selected });
+        // Carry the chosen plan only while the selected role still matches it —
+        // switching roles away from the plan drops it. Interval rides along so the
+        // register step (and Stripe) bill the cycle picked on the pricing page.
+        const carryPlan = plan && plan.account_type === selected;
+        router.get('/register', {
+            type: selected,
+            ...(carryPlan ? { plan: plan.plan_key, interval } : {}),
+        });
     }
 
     return (
@@ -27,9 +47,20 @@ export default function GetStarted() {
             <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 28, fontWeight: 400, color: '#0a1512', marginBottom: 8 }}>
                 I want to…
             </h1>
-            <p style={{ fontSize: 15, color: '#4a5440', marginBottom: 28, fontFamily: "'Crimson Pro', Georgia, serif" }}>
+            <p style={{ fontSize: 15, color: '#4a5440', marginBottom: plan ? 16 : 28, fontFamily: "'Crimson Pro', Georgia, serif" }}>
                 Choose your primary role. You can add more later.
             </p>
+
+            {plan && (
+                <div style={{ marginBottom: 28, padding: '12px 14px', background: '#0a1512', borderLeft: '4px solid #b8934a' }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#b8934a' }}>
+                        Continuing with{' '}
+                    </span>
+                    <span style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 16, color: '#f4ecdc' }}>
+                        {plan.display_name}
+                    </span>
+                </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
                 {ACCOUNT_TYPES.map(({ value, label, description }) => (

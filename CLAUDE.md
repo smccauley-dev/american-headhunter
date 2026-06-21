@@ -256,7 +256,8 @@ Role selection is centralized — **do not set DB usernames ad hoc.** `App\Datab
 ### Billing Database (DB 4)
 
 - **Never store raw card numbers, CVVs, or full PANs.** Stripe tokenized IDs only (`stripe_payment_method_id`, `stripe_charge_id`, etc.). The `payment_methods` table stores last four digits and brand only.
-- **Never log payment method details** — even Stripe IDs should not appear in general application logs.
+- **Never log payment method details** — payment-method, charge, and card data (`stripe_payment_method_id`, `stripe_charge_id`, last-four, brand, PANs/CVVs) must never appear in application logs.
+- **Webhook correlation IDs are the one exception** (SEC-051): `stripe_subscription_id`, `stripe_customer_id`, `stripe_account_id`, and Stripe event IDs may appear in webhook/diagnostic logs as correlation keys, because they are needed to trace an event back to a record and carry no payment-instrument data. Never log them alongside amounts tied to a card, and never log the payment-method/charge IDs above.
 
 ### Pricing & Entitlements — Database-Driven Only
 

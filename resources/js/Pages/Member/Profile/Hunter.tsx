@@ -442,6 +442,7 @@ interface Membership {
   status_label: string
   monthly_price: string | null
   annual_price: string | null
+  billing_interval: 'monthly' | 'annual' | null
   currency: string
   renews_at: string | null
   trial_ends_at: string | null
@@ -1602,13 +1603,22 @@ function MembershipTab({ membership, checkout, billing, invoices }: { membership
   }
   const pill = palette[membership.status] ?? palette.free
 
+  // Show the price for the interval the member actually bought. Fall back to the
+  // old monthly-preferred logic only when the interval is unknown (legacy rows /
+  // promo memberships that carry no interval).
+  const hasMonthly = membership.monthly_price && membership.monthly_price !== '0.00'
+  const hasAnnual = membership.annual_price && membership.annual_price !== '0.00'
   const priceLabel = membership.is_free
     ? 'Free'
-    : membership.monthly_price && membership.monthly_price !== '0.00'
-      ? `$${membership.monthly_price}/mo`
-      : membership.annual_price && membership.annual_price !== '0.00'
-        ? `$${membership.annual_price}/yr`
-        : 'Free'
+    : membership.billing_interval === 'annual' && hasAnnual
+      ? `$${membership.annual_price}/yr`
+      : membership.billing_interval === 'monthly' && hasMonthly
+        ? `$${membership.monthly_price}/mo`
+        : hasMonthly
+          ? `$${membership.monthly_price}/mo`
+          : hasAnnual
+            ? `$${membership.annual_price}/yr`
+            : 'Free'
 
   const renewLabel = membership.source === 'promotion' ? 'Promo Ends' : 'Renews'
 

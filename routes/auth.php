@@ -35,6 +35,10 @@ Route::post('/mfa/resend', [MfaController::class, 'resend'])->name('auth.mfa.res
 // account (not yet active) must be able to see the notice, resend, and log out.
 Route::middleware('auth.session:allow-pending')->group(function () {
     Route::get('/email/verify', [AuthController::class, 'showVerifyEmailNotice'])->name('auth.verify-email.notice');
+    // Polled by the notice screen so it advances on its own once the link is
+    // clicked (possibly on another device). Distinct path so it isn't captured
+    // by the /email/verify/{token} wildcard above.
+    Route::get('/email/verification-status', [AuthController::class, 'verifyEmailStatus'])->name('auth.verify-email.status');
     Route::post('/email/verify/resend', [AuthController::class, 'resendVerification'])->name('auth.verify-email.resend');
 
     Route::post('/logout', [AuthController::class, 'logout'])->name('auth.logout');

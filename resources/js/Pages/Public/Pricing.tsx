@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, usePage, Head, router } from '@inertiajs/react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -6,6 +6,12 @@ import { Link, usePage, Head, router } from '@inertiajs/react'
 interface Perk {
     label: string
     description: string | null
+}
+
+interface PromoCode {
+    code: string
+    label: string | null
+    discount_summary: string | null
 }
 
 interface Plan {
@@ -24,6 +30,7 @@ interface Plan {
     badge_label: string | null
     is_featured: boolean
     perks: Perk[]
+    promo_codes: PromoCode[]
 }
 
 interface Props {
@@ -71,7 +78,14 @@ export default function Pricing({ groups, current_account_type, current_plan_key
     const { auth } = usePage<{ auth?: { authenticated: boolean } }>().props
 
     const availableTypes = ACCOUNT_ORDER.filter(t => (groups[t]?.length ?? 0) > 0)
-    const [activeType, setActiveType] = useState(availableTypes[0] ?? 'hunter')
+
+    // A ?plan= deep link (e.g. after signing up with a chosen plan) opens this page
+    // on that plan's tab with the card highlighted, so the choice carries through.
+    const [highlightKey] = useState<string | null>(() => new URLSearchParams(window.location.search).get('plan'))
+    const initialType = (highlightKey && ACCOUNT_ORDER.find(t => (groups[t] ?? []).some(p => p.plan_key === highlightKey)))
+        || availableTypes[0] || 'hunter'
+
+    const [activeType, setActiveType] = useState(initialType)
     const [cycle, setCycle] = useState<Cycle>('monthly')
 
     useEffect(() => {
@@ -213,6 +227,7 @@ export default function Pricing({ groups, current_account_type, current_plan_key
                                     canSubscribe={(auth?.authenticated ?? false) && current_account_type === activeType}
                                     isCurrentPlan={has_active_subscription && current_account_type === activeType && plan.plan_key === current_plan_key}
                                     hasActiveSubscription={has_active_subscription && current_account_type === activeType}
+                                    highlight={plan.plan_key === highlightKey}
                                 />
                             ))}
                         </div>
@@ -225,10 +240,20 @@ export default function Pricing({ groups, current_account_type, current_plan_key
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, hasActiveSubscription }: { plan: Plan; cycle: Cycle; authenticated: boolean; canSubscribe: boolean; isCurrentPlan: boolean; hasActiveSubscription: boolean }) {
+function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, hasActiveSubscription, highlight }: { plan: Plan; cycle: Cycle; authenticated: boolean; canSubscribe: boolean; isCurrentPlan: boolean; hasActiveSubscription: boolean; highlight: boolean }) {
     const accent = plan.accent_color || 'var(--blaze)'
     const price = formatPrice(plan, cycle)
     const [submitting, setSubmitting] = useState(false)
+    const [promoOpen, setPromoOpen] = useState(false)
+    const [promoInput, setPromoInput] = useState('')
+    const cardRef = useRef<HTMLDivElement>(null)
+
+    // When deep-linked via ?plan=, bring this card into view once on mount.
+    useEffect(() => {
+        if (highlight && cardRef.current) {
+            cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+    }, [highlight])
 
     const isPaid = !plan.is_default_free && ((priceCents(plan, cycle) ?? 0) > 0)
     // An existing subscriber switches plans (immediate + prorated); a logged-in
@@ -236,12 +261,15 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, has
     // free plan and everyone else follow the marketing/get-started path.
     const showSwitch   = hasActiveSubscription && isPaid && !isCurrentPlan
     const showCheckout = canSubscribe && isPaid && !hasActiveSubscription
-    const ctaHref = authenticated ? `/member` : `/get-started?plan=${encodeURIComponent(plan.plan_key)}`
+    const ctaHref = authenticated ? `/member` : `/get-started?plan=${encodeURIComponent(plan.plan_key)}&interval=${cycle}`
 
     const startCheckout = () => {
         setSubmitting(true)
+        // An explicitly typed code overrides auto-apply; when blank, the server
+        // auto-applies any code advertised on this plan's card.
+        const code = promoInput.trim()
         router.post('/member/membership/checkout',
-            { plan_key: plan.plan_key, interval: cycle },
+            { plan_key: plan.plan_key, interval: cycle, ...(code ? { promo_code: code } : {}) },
             { onFinish: () => setSubmitting(false) },
         )
     }
@@ -270,11 +298,13 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, has
     }
 
     return (
-        <div style={{
+        <div ref={cardRef} style={{
             background: 'var(--bone)',
-            border: plan.is_featured ? `2px solid ${accent}` : '1px solid var(--parch-dim)',
+            border: (highlight || plan.is_featured) ? `2px solid ${accent}` : '1px solid var(--parch-dim)',
             display: 'flex', flexDirection: 'column', height: '100%',
-            boxShadow: plan.is_featured ? '0 8px 24px rgba(10,21,18,0.12)' : 'none',
+            boxShadow: highlight
+                ? `0 0 0 3px ${accent}55, 0 8px 24px rgba(10,21,18,0.18)`
+                : plan.is_featured ? '0 8px 24px rgba(10,21,18,0.12)' : 'none',
         }}>
 
             {/* ── Header image / accent banner ──────────────────────────── */}
@@ -353,6 +383,66 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, has
                             </li>
                         ))}
                     </ul>
+                )}
+
+                {/* Advertised promo codes — auto-applied at checkout */}
+                {plan.promo_codes.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {plan.promo_codes.map(promo => (
+                            <div
+                                key={promo.code}
+                                style={{
+                                    display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap',
+                                    border: `1px dashed ${accent}`, background: 'var(--parch)',
+                                    padding: '8px 10px',
+                                }}
+                            >
+                                <span style={{
+                                    fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
+                                    letterSpacing: '.08em', textTransform: 'uppercase', color: accent,
+                                }}>
+                                    {promo.code}
+                                </span>
+                                <span style={{ fontFamily: 'var(--body)', fontSize: 12, color: 'var(--ink)' }}>
+                                    {promo.discount_summary
+                                        ? `${promo.discount_summary} — applied automatically`
+                                        : (promo.label ?? 'applied automatically')}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Optional manual promo code (for codes not advertised on the card) */}
+                {showCheckout && (
+                    promoOpen ? (
+                        <input
+                            type="text"
+                            value={promoInput}
+                            onChange={e => setPromoInput(e.target.value.toUpperCase())}
+                            placeholder="Promo code"
+                            autoFocus
+                            style={{
+                                fontFamily: 'var(--mono)', fontSize: 12, letterSpacing: '.06em',
+                                textTransform: 'uppercase', color: 'var(--ink)',
+                                padding: '9px 10px', background: 'var(--bone)',
+                                border: '1px solid var(--parch-dim)', outline: 'none',
+                            }}
+                        />
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => setPromoOpen(true)}
+                            style={{
+                                alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0,
+                                fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em',
+                                textTransform: 'uppercase', color: 'var(--sage-dim)',
+                                cursor: 'pointer', textDecoration: 'underline',
+                            }}
+                        >
+                            Have a promo code?
+                        </button>
+                    )
                 )}
 
                 {/* CTA */}

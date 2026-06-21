@@ -7,6 +7,7 @@ use App\Models\Platform\MembershipPlan;
 use App\Models\Platform\PlanVersion;
 use App\Services\Audit\AuditService;
 use App\Services\Platform\EntitlementService;
+use Carbon\Carbon;
 
 /**
  * Record-level subscription mechanics: locking a plan version at creation,
@@ -70,11 +71,15 @@ class SubscriptionService
      * Create a subscription locked to a plan version.
      *
      * Options:
-     *   interval            'monthly' (default) | 'annual'  — drives period_end
-     *   trial_days          int — if set, status is 'trialing' and the period
-     *                       runs to the trial end
-     *   status              explicit status override (when not a trial)
-     *   promotion_claim_id  link to an active promotion claim
+     *   interval               'monthly' (default) | 'annual'  — recorded and,
+     *                          absent explicit dates, drives the period estimate
+     *   current_period_start /
+     *   current_period_end     real period window from Stripe (the webhook passes
+     *                          these so the renew date is authoritative, not guessed)
+     *   trial_days             int — if set, status is 'trialing' and the period
+     *                          runs to the trial end
+     *   status                 explicit status override (when not a trial)
+     *   promotion_claim_id     link to an active promotion claim
      *   stripe_subscription_id / stripe_customer_id  (deferred — null for now)
      */
     public function start(string $userId, string $planVersionId, array $opts = []): Subscription
@@ -83,6 +88,7 @@ class SubscriptionService
             throw new \RuntimeException("User {$userId} already has an active subscription.");
         }
 
+        $interval  = ($opts['interval'] ?? 'monthly') === 'annual' ? 'annual' : 'monthly';
         $start     = now()->startOfDay();
         $trialDays = $opts['trial_days'] ?? null;
 
@@ -93,10 +99,16 @@ class SubscriptionService
         } else {
             $status    = $opts['status'] ?? 'active';
             $trialEnds = null;
-            $end       = ($opts['interval'] ?? 'monthly') === 'annual'
+            $end       = $interval === 'annual'
                 ? $start->copy()->addYear()
                 : $start->copy()->addMonth();
         }
+
+        // Stripe is the source of truth for the period window — when the caller
+        // passes the real dates (the webhook reads them off the Stripe
+        // subscription) use those instead of the locally-computed estimate.
+        $periodStart = isset($opts['current_period_start']) ? Carbon::parse($opts['current_period_start']) : $start;
+        $periodEnd   = isset($opts['current_period_end'])   ? Carbon::parse($opts['current_period_end'])   : $end;
 
         $sub = Subscription::create([
             'user_id'                   => $userId,
@@ -105,8 +117,9 @@ class SubscriptionService
             'stripe_subscription_id'    => $opts['stripe_subscription_id'] ?? null,
             'stripe_customer_id'        => $opts['stripe_customer_id'] ?? null,
             'status'                    => $status,
-            'current_period_start'      => $start->toDateString(),
-            'current_period_end'        => $end->toDateString(),
+            'billing_interval'          => $interval,
+            'current_period_start'      => $periodStart->toDateString(),
+            'current_period_end'        => $periodEnd->toDateString(),
             'trial_ends_at'             => $trialEnds,
         ]);
 

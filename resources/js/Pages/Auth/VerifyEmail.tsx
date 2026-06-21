@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import AuthLayout from '@/Components/Auth/AuthLayout';
 
@@ -9,6 +9,36 @@ interface VerifyEmailProps {
 export default function VerifyEmail() {
     const { flash = {} } = usePage<VerifyEmailProps>().props;
     const [resending, setResending] = useState(false);
+    const [verified, setVerified] = useState(false);
+    // Set when returning from Stripe Checkout started at signup: 'success' paid,
+    // 'cancel' backed out (they stay on the free tier and can upgrade later).
+    const [checkout] = useState<string | null>(() => new URLSearchParams(window.location.search).get('checkout'));
+
+    // Poll for verification so this screen advances on its own the moment the
+    // link is clicked — even from a different device or browser.
+    useEffect(() => {
+        let active = true;
+        const tick = async () => {
+            try {
+                const res = await fetch('/email/verification-status', {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin',
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (active && data.verified) {
+                    setVerified(true);
+                    clearInterval(id);
+                    window.location.href = data.redirect ?? '/member/profile';
+                }
+            } catch {
+                // transient network error — the next tick retries
+            }
+        };
+        const id = setInterval(tick, 4000);
+        tick();
+        return () => { active = false; clearInterval(id); };
+    }, []);
 
     function handleResend() {
         setResending(true);
@@ -29,6 +59,26 @@ export default function VerifyEmail() {
             <p style={{ fontSize: 16, color: '#4a5440', marginBottom: 28, fontFamily: "'Crimson Pro', Georgia, serif", lineHeight: 1.6 }}>
                 We sent a verification link to your email address. Click it to activate your account. The link expires in 24 hours.
             </p>
+
+            {verified && (
+                <div style={{ marginBottom: 20, padding: '12px 16px', background: '#0a1512', borderLeft: '4px solid #6b7856', fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 15, color: '#f4ecdc' }}>
+                    Email verified — taking you to the next step…
+                </div>
+            )}
+
+            {checkout === 'success' && (
+                <div style={{ marginBottom: 20, padding: '12px 16px', background: '#0a1512', borderLeft: '4px solid #b8934a', fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 15, color: '#f4ecdc' }}>
+                    Payment received — verify your email to finish setting up your membership.
+                </div>
+            )}
+
+            {checkout === 'cancel' && (
+                <div style={{ marginBottom: 20, padding: '12px 16px', background: '#f4ecdc', border: '1px solid #a89874', fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 15, color: '#142420', lineHeight: 1.5 }}>
+                    No payment was taken — your account starts on the free plan. You can upgrade anytime from your{' '}
+                    <a href="/member/membership" style={{ color: '#c84c21', textDecoration: 'none' }}>membership settings</a>{' '}
+                    once your email is verified.
+                </div>
+            )}
 
             {flash.success && (
                 <div style={{ marginBottom: 20, padding: '12px 16px', background: '#f4ecdc', border: '1px solid #6b7856', fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 15, color: '#142420' }}>

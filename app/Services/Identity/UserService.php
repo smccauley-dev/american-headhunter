@@ -12,8 +12,10 @@ use App\Models\Identity\UserProfile;
 use App\Services\Audit\AuditService;
 use App\Services\Auth\MfaService;
 use App\Services\BaseService;
+use App\Services\Billing\PromotionAutoApplyService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 class UserService extends BaseService
@@ -59,14 +61,26 @@ class UserService extends BaseService
         return User::where('email', strtolower($email))->first();
     }
 
+    /**
+     * Bust the read cache, then return the user freshly from the DB (re-caching
+     * it). Use when another device may have mutated the row — e.g. an email
+     * verification link clicked elsewhere while this session waits.
+     */
+    public function findFresh(string $id): ?User
+    {
+        $this->invalidate("user:{$id}");
+        return $this->findById($id);
+    }
+
     public function create(array $data): User
     {
         $user = User::create([
-            'email'         => strtolower($data['email']),
-            'phone'         => $data['phone'] ?? null,
-            'password_hash' => Hash::make($data['password']),
-            'account_type'  => $data['account_type'],
-            'status'        => 'pending_verification',
+            'email'             => strtolower($data['email']),
+            'phone'             => $data['phone'] ?? null,
+            'password_hash'     => Hash::make($data['password']),
+            'account_type'      => $data['account_type'],
+            'status'            => 'pending_verification',
+            'intended_plan_key' => $this->resolveIntendedPlanKey($data),
         ]);
 
         UserProfile::create([
@@ -90,7 +104,81 @@ class UserService extends BaseService
 
         $this->audit->logAccountCreated($user->id, $user->account_type);
 
+        // Auto-apply any signup-triggered grant promotions (e.g. Honeymoon,
+        // Veteran). Never let a promo failure break registration.
+        try {
+            app(PromotionAutoApplyService::class)->applyForSignup($user);
+        } catch (\Throwable $e) {
+            Log::warning('Signup promotion auto-apply failed', [
+                'user_id' => $user->id,
+                'error'   => $e->getMessage(),
+            ]);
+        }
+
         return $user;
+    }
+
+    /**
+     * The membership plan the user chose before signing up, kept only if it is a
+     * real public plan for this account type. A mismatched, stale, or unknown key
+     * is dropped so we never persist a plan the user cannot actually buy.
+     */
+    private function resolveIntendedPlanKey(array $data): ?string
+    {
+        $key = $data['plan'] ?? null;
+        if (! $key) {
+            return null;
+        }
+
+        $plan = app(\App\Services\Platform\PlanService::class)->findPublicPlan($key);
+
+        return ($plan && $plan['account_type'] === $data['account_type']) ? $plan['plan_key'] : null;
+    }
+
+    /**
+     * Consume the user's stored signup plan choice at first post-verification
+     * login and decide where to send them: a paid plan (with no active
+     * subscription yet) routes to the pricing page to complete checkout; a free
+     * or unknown plan needs no action (free access is already the default). The
+     * key is always cleared first, so this fires at most once.
+     */
+    /**
+     * Drop the stored signup plan choice without redirecting. Used when the
+     * choice has already been acted on (e.g. checkout started right at signup),
+     * so it can't re-fire at first login.
+     */
+    public function clearIntendedPlan(User $user): void
+    {
+        if ($user->intended_plan_key === null) {
+            return;
+        }
+
+        $user->intended_plan_key = null;
+        $user->save();
+        $this->invalidate("user:{$user->id}");
+    }
+
+    public function takeIntendedPlanRedirect(User $user): ?string
+    {
+        $key = $user->intended_plan_key;
+        if (! $key) {
+            return null;
+        }
+
+        $user->intended_plan_key = null;
+        $user->save();
+        $this->invalidate("user:{$user->id}");
+
+        $plan = app(\App\Services\Platform\PlanService::class)->findPublicPlan($key);
+        if (! $plan || ! $plan['is_paid']) {
+            return null;
+        }
+
+        if (app(\App\Services\Billing\SubscriptionService::class)->activeFor($user->id)) {
+            return null;
+        }
+
+        return '/pricing?plan=' . urlencode($plan['plan_key']);
     }
 
     /**

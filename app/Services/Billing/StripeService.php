@@ -5,8 +5,10 @@ namespace App\Services\Billing;
 use App\Models\Billing\Subscription;
 use App\Models\Identity\User;
 use App\Models\Platform\MembershipPlan;
+use App\Models\Platform\PromotionalPeriod;
 use Stripe\Charge;
 use Stripe\Checkout\Session;
+use Stripe\Coupon;
 use Stripe\Customer;
 use Stripe\Event;
 use Stripe\Invoice;
@@ -125,7 +127,13 @@ class StripeService
      * holding the original price on existing subscriptions). The locked
      * plan_version_id rides in metadata so the webhook records it verbatim.
      *
+     * A promo code's discount is applied by passing the synced Stripe Coupon id
+     * (run stripe:sync-promos) — hosted Checkout has no other way to discount a
+     * subscription. The redemption metadata (promo_code_id / promotional_period_id)
+     * rides in both metadata bags so the webhook can record the claim.
+     *
      * @param 'monthly'|'annual' $interval
+     * @param array<string,string> $extraMetadata
      */
     public function createSubscriptionCheckoutSession(
         User $user,
@@ -134,6 +142,8 @@ class StripeService
         string $interval,
         string $successUrl,
         string $cancelUrl,
+        ?string $couponId = null,
+        array $extraMetadata = [],
     ): Session {
         $priceId = $interval === 'annual'
             ? $plan->stripe_annual_price_id
@@ -143,25 +153,65 @@ class StripeService
             throw new \RuntimeException("Plan {$plan->plan_key} has no Stripe price for interval '{$interval}'. Run stripe:sync-plans.");
         }
 
-        return Session::create([
+        $params = [
             'mode'                => 'subscription',
             'customer'            => $this->getOrCreateCustomer($user),
             'client_reference_id' => $user->id,
             'line_items'          => [['price' => $priceId, 'quantity' => 1]],
             'success_url'         => $successUrl,
             'cancel_url'          => $cancelUrl,
-            'metadata'            => [
+            'metadata'            => array_merge([
                 'user_id'         => $user->id,
                 'plan_version_id' => $planVersionId,
                 'plan_key'        => $plan->plan_key,
-            ],
+            ], $extraMetadata),
             'subscription_data'   => [
-                'metadata' => [
+                'metadata' => array_merge([
                     'user_id'         => $user->id,
                     'plan_version_id' => $planVersionId,
-                ],
+                ], $extraMetadata),
             ],
-        ]);
+        ];
+
+        if ($couponId) {
+            $params['discounts'] = [['coupon' => $couponId]];
+        }
+
+        return Session::create($params);
+    }
+
+    /**
+     * Create (or reuse) a Stripe Coupon mirroring a promotional period's monetary
+     * discount, so it can be applied at hosted Checkout. Returns the coupon id, or
+     * null for promos with no monetary discount (e.g. tier_grant). Idempotent:
+     * reuses the period's stored stripe_coupon_id; the caller persists a new id.
+     */
+    public function upsertCoupon(PromotionalPeriod $promo): ?string
+    {
+        if ($promo->stripe_coupon_id) {
+            return $promo->stripe_coupon_id;
+        }
+
+        $params = ['name' => $promo->display_name];
+
+        if ($promo->discount_percentage && $promo->discount_percentage > 0) {
+            $params['percent_off'] = (float) $promo->discount_percentage;
+        } elseif ($promo->discount_amount_cents && $promo->discount_amount_cents > 0) {
+            $params['amount_off'] = (int) $promo->discount_amount_cents;
+            $params['currency']   = 'usd';
+        } else {
+            return null; // nothing monetary to mirror
+        }
+
+        // A fixed-day promo repeats over whole months; no duration means once.
+        if ($promo->duration_days) {
+            $params['duration']           = 'repeating';
+            $params['duration_in_months'] = max(1, (int) round($promo->duration_days / 30));
+        } else {
+            $params['duration'] = 'once';
+        }
+
+        return Coupon::create($params)->id;
     }
 
     /**
@@ -452,6 +502,32 @@ class StripeService
                 'plan_version_id' => $newPlanVersionId,
             ],
         ]);
+    }
+
+    /**
+     * Read a subscription's billing interval and current period window from
+     * Stripe — the authoritative source for both. Under the dahlia API the period
+     * fields live on the subscription item, so we read those first and fall back
+     * to the (legacy) top-level fields. Used by the webhook to record the real
+     * renew date and interval instead of guessing them locally.
+     *
+     * @return array{interval:string, current_period_start:\Carbon\Carbon, current_period_end:\Carbon\Carbon}
+     */
+    public function subscriptionPeriod(string $stripeSubscriptionId): array
+    {
+        $sub  = StripeSubscription::retrieve($stripeSubscriptionId);
+        $item = $sub->items->data[0] ?? null;
+
+        $interval = (($item->price->recurring->interval ?? 'month') === 'year') ? 'annual' : 'monthly';
+
+        $start = $item->current_period_start ?? $sub->current_period_start ?? null;
+        $end   = $item->current_period_end   ?? $sub->current_period_end   ?? null;
+
+        return [
+            'interval'             => $interval,
+            'current_period_start' => $start ? \Carbon\Carbon::createFromTimestamp($start) : now(),
+            'current_period_end'   => $end ? \Carbon\Carbon::createFromTimestamp($end) : now()->addMonth(),
+        ];
     }
 
     /**

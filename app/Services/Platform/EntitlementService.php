@@ -121,16 +121,17 @@ class EntitlementService extends BaseService
             $membership = $this->membershipFromVersion($subscription->plan_version_id);
             if ($membership !== null) {
                 return array_merge($membership, [
-                    'source'        => 'subscription',
-                    'status'        => $subscription->status,
-                    'status_label'  => match ($subscription->status) {
+                    'source'           => 'subscription',
+                    'status'           => $subscription->status,
+                    'status_label'     => match ($subscription->status) {
                         'trialing' => 'Trial',
                         'past_due' => 'Past Due',
                         default    => 'Active',
                     },
-                    'renews_at'     => $this->formatMembershipDate($subscription->current_period_end),
-                    'trial_ends_at' => $this->formatMembershipDate($subscription->trial_ends_at),
-                    'cancelled_at'  => $this->formatMembershipDate($subscription->cancelled_at),
+                    'billing_interval' => $subscription->billing_interval,
+                    'renews_at'        => $this->formatMembershipDate($subscription->current_period_end),
+                    'trial_ends_at'    => $this->formatMembershipDate($subscription->trial_ends_at),
+                    'cancelled_at'     => $this->formatMembershipDate($subscription->cancelled_at),
                 ]);
             }
         }
@@ -161,11 +162,12 @@ class EntitlementService extends BaseService
             'account_type'  => $plan?->account_type ?? '',
             'accent_color'  => $plan?->accent_color,
             'is_free'       => (int) $version->monthly_price_cents === 0 && (int) $version->annual_price_cents === 0,
-            'monthly_price' => $this->formatMoney($version->monthly_price_cents),
-            'annual_price'  => $this->formatMoney($version->annual_price_cents),
-            'currency'      => $plan?->currency ?? 'USD',
-            'trial_ends_at' => null,
-            'cancelled_at'  => null,
+            'monthly_price'    => $this->formatMoney($version->monthly_price_cents),
+            'annual_price'     => $this->formatMoney($version->annual_price_cents),
+            'currency'         => $plan?->currency ?? 'USD',
+            'billing_interval' => null,
+            'trial_ends_at'    => null,
+            'cancelled_at'     => null,
         ];
     }
 
