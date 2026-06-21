@@ -222,4 +222,34 @@ class PromotionAutoApplyServiceTest extends TestCase
 
         $this->assertSame(0, $this->claimCount($user->id), 'a first-listing promo is not granted at signup');
     }
+
+    // ── signup-page preview ─────────────────────────────────────────────────────────
+
+    public function test_preview_returns_offer_for_matching_account_type(): void
+    {
+        $this->makeGrant('auto_apply_on_signup', [
+            'target_account_types' => '{hunter}',
+            'pricing_badge_text'   => 'FOUNDING HUNTER',
+            'landing_banner_text'  => 'Your first 90 days are on us.',
+        ]);
+
+        $preview = $this->service()->previewForSignup('hunter');
+
+        $this->assertNotNull($preview);
+        $this->assertSame('FOUNDING HUNTER', $preview['headline']);
+        $this->assertSame('Your first 90 days are on us.', $preview['detail']);
+    }
+
+    public function test_preview_excludes_state_targeted_promo(): void
+    {
+        $this->makeGrant('auto_apply_on_signup', [
+            'target_states'       => '{TX}',
+            'landing_banner_text' => 'STATE-ONLY-BANNER',
+        ]);
+
+        $preview = $this->service()->previewForSignup('hunter');
+
+        // State is unknown at page render, so a state-targeted grant is never advertised.
+        $this->assertTrue($preview === null || $preview['detail'] !== 'STATE-ONLY-BANNER');
+    }
 }

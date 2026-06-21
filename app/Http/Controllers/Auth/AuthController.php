@@ -9,8 +9,10 @@ use App\Jobs\Identity\SendEmailVerificationJob;
 use App\Services\Auth\AuthService;
 use App\Services\Auth\MfaService;
 use App\Services\Auth\SessionService;
+use App\Services\Billing\PromotionAutoApplyService;
 use App\Services\Identity\OfacService;
 use App\Services\Identity\UserService;
+use App\Services\Platform\PlanService;
 use App\Services\Mfa\MfaMethodRegistry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -28,18 +30,35 @@ class AuthController extends Controller
         private readonly MfaMethodRegistry $mfaRegistry,
     ) {}
 
-    public function getStarted(): Response
+    public function getStarted(Request $request): Response
     {
-        return Inertia::render('Auth/GetStarted');
+        $planKey = $request->query('plan');
+        $plan    = $planKey ? app(PlanService::class)->findPublicPlan($planKey) : null;
+
+        return Inertia::render('Auth/GetStarted', [
+            // {plan_key, display_name, account_type, is_paid} | null — pre-selects
+            // the matching role and follows the user through to register.
+            'plan' => $plan,
+        ]);
     }
 
     public function showRegister(Request $request): Response
     {
         $accountType = $request->query('type', 'hunter');
 
+        $planKey = $request->query('plan');
+        $plan    = $planKey ? app(PlanService::class)->findPublicPlan($planKey) : null;
+
+        // Only carry a plan that matches the chosen account type.
+        if ($plan && $plan['account_type'] !== $accountType) {
+            $plan = null;
+        }
+
         return Inertia::render('Auth/Register', [
             'accountType' => $accountType,
             'legalUrls'   => config('platform.legal'),
+            'signupPromo' => app(PromotionAutoApplyService::class)->previewForSignup($accountType),
+            'signupPlan'  => $plan,
         ]);
     }
 
@@ -141,6 +160,12 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
         $request->session()->put('auth.user_id', $user->id);
+
+        // First login after signing up with a chosen plan: a paid plan routes to
+        // checkout, a free plan needs no action. Consumed once, then cleared.
+        if ($planRedirect = $this->users->takeIntendedPlanRedirect($user)) {
+            return redirect()->to($planRedirect);
+        }
 
         return redirect()->intended(
             app(\App\Services\Platform\TenantService::class)->getSetting('nav.login_redirect', '/member/profile')

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, usePage, Head, router } from '@inertiajs/react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -78,7 +78,14 @@ export default function Pricing({ groups, current_account_type, current_plan_key
     const { auth } = usePage<{ auth?: { authenticated: boolean } }>().props
 
     const availableTypes = ACCOUNT_ORDER.filter(t => (groups[t]?.length ?? 0) > 0)
-    const [activeType, setActiveType] = useState(availableTypes[0] ?? 'hunter')
+
+    // A ?plan= deep link (e.g. after signing up with a chosen plan) opens this page
+    // on that plan's tab with the card highlighted, so the choice carries through.
+    const [highlightKey] = useState<string | null>(() => new URLSearchParams(window.location.search).get('plan'))
+    const initialType = (highlightKey && ACCOUNT_ORDER.find(t => (groups[t] ?? []).some(p => p.plan_key === highlightKey)))
+        || availableTypes[0] || 'hunter'
+
+    const [activeType, setActiveType] = useState(initialType)
     const [cycle, setCycle] = useState<Cycle>('monthly')
 
     useEffect(() => {
@@ -220,6 +227,7 @@ export default function Pricing({ groups, current_account_type, current_plan_key
                                     canSubscribe={(auth?.authenticated ?? false) && current_account_type === activeType}
                                     isCurrentPlan={has_active_subscription && current_account_type === activeType && plan.plan_key === current_plan_key}
                                     hasActiveSubscription={has_active_subscription && current_account_type === activeType}
+                                    highlight={plan.plan_key === highlightKey}
                                 />
                             ))}
                         </div>
@@ -232,12 +240,20 @@ export default function Pricing({ groups, current_account_type, current_plan_key
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, hasActiveSubscription }: { plan: Plan; cycle: Cycle; authenticated: boolean; canSubscribe: boolean; isCurrentPlan: boolean; hasActiveSubscription: boolean }) {
+function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, hasActiveSubscription, highlight }: { plan: Plan; cycle: Cycle; authenticated: boolean; canSubscribe: boolean; isCurrentPlan: boolean; hasActiveSubscription: boolean; highlight: boolean }) {
     const accent = plan.accent_color || 'var(--blaze)'
     const price = formatPrice(plan, cycle)
     const [submitting, setSubmitting] = useState(false)
     const [promoOpen, setPromoOpen] = useState(false)
     const [promoInput, setPromoInput] = useState('')
+    const cardRef = useRef<HTMLDivElement>(null)
+
+    // When deep-linked via ?plan=, bring this card into view once on mount.
+    useEffect(() => {
+        if (highlight && cardRef.current) {
+            cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+    }, [highlight])
 
     const isPaid = !plan.is_default_free && ((priceCents(plan, cycle) ?? 0) > 0)
     // An existing subscriber switches plans (immediate + prorated); a logged-in
@@ -282,11 +298,13 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, has
     }
 
     return (
-        <div style={{
+        <div ref={cardRef} style={{
             background: 'var(--bone)',
-            border: plan.is_featured ? `2px solid ${accent}` : '1px solid var(--parch-dim)',
+            border: (highlight || plan.is_featured) ? `2px solid ${accent}` : '1px solid var(--parch-dim)',
             display: 'flex', flexDirection: 'column', height: '100%',
-            boxShadow: plan.is_featured ? '0 8px 24px rgba(10,21,18,0.12)' : 'none',
+            boxShadow: highlight
+                ? `0 0 0 3px ${accent}55, 0 8px 24px rgba(10,21,18,0.18)`
+                : plan.is_featured ? '0 8px 24px rgba(10,21,18,0.12)' : 'none',
         }}>
 
             {/* ── Header image / accent banner ──────────────────────────── */}

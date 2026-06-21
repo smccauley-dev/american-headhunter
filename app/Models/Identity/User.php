@@ -39,6 +39,7 @@ class User extends BaseModelWithSoftDeletes implements AuthenticatableContract, 
         'last_login_ip',
         'email_verified_at',
         'phone_verified_at',
+        'intended_plan_key',
     ];
 
     protected $hidden = ['password_hash'];

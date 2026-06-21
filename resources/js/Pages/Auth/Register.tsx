@@ -3,6 +3,7 @@ import { router, usePage } from '@inertiajs/react';
 import AuthLayout from '@/Components/Auth/AuthLayout';
 import AuthInput from '@/Components/Auth/AuthInput';
 import { US_STATES } from '@/lib/usStates';
+import { formatPhoneInput } from '@/lib/phone';
 
 interface LegalUrls {
     tos_url: string;
@@ -10,9 +11,23 @@ interface LegalUrls {
     ccpa_url: string;
 }
 
+interface SignupPromo {
+    headline: string;
+    detail: string;
+}
+
+interface SignupPlan {
+    plan_key: string;
+    display_name: string;
+    account_type: string;
+    is_paid: boolean;
+}
+
 interface RegisterProps {
     accountType: string;
     legalUrls: LegalUrls;
+    signupPromo?: SignupPromo | null;
+    signupPlan?: SignupPlan | null;
     errors?: Record<string, string>;
 }
 
@@ -26,7 +41,7 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function Register() {
-    const { accountType, legalUrls, errors = {} } = usePage<RegisterProps>().props;
+    const { accountType, legalUrls, signupPromo, signupPlan, errors = {} } = usePage<RegisterProps>().props;
 
     const [form, setForm] = useState({
         account_type:      accountType,
@@ -40,6 +55,7 @@ export default function Register() {
         phone:             '',
         tos_accepted:      false,
         privacy_accepted:  false,
+        plan:              signupPlan?.plan_key ?? '',
     });
     const [processing, setProcessing] = useState(false);
 
@@ -69,6 +85,16 @@ export default function Register() {
                         {typeLabel}
                     </span>
                 </div>
+                {signupPlan && (
+                    <div style={{ padding: '8px 12px', border: '1px solid #b8934a', flexShrink: 0 }}>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.12em', color: '#8a6d2f', textTransform: 'uppercase' }}>
+                            Plan:{' '}
+                        </span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.12em', color: '#0a1512' }}>
+                            {signupPlan.display_name}
+                        </span>
+                    </div>
+                )}
                 <a
                     href="/get-started"
                     style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.1em', color: '#a89874', textDecoration: 'none', textTransform: 'uppercase', whiteSpace: 'nowrap' }}
@@ -76,6 +102,27 @@ export default function Register() {
                     ← Wrong account type?
                 </a>
             </div>
+
+            {signupPromo && (
+                <div style={{
+                    marginBottom: 24, padding: '14px 16px',
+                    background: '#0a1512', borderLeft: '4px solid #b8934a',
+                }}>
+                    <p style={{
+                        fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                        letterSpacing: '0.18em', textTransform: 'uppercase',
+                        color: '#b8934a', margin: '0 0 6px',
+                    }}>
+                        {signupPromo.headline}
+                    </p>
+                    <p style={{
+                        fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 16,
+                        color: '#f4ecdc', margin: 0, lineHeight: 1.4,
+                    }}>
+                        {signupPromo.detail}
+                    </p>
+                </div>
+            )}
 
             {Object.keys(errors).length > 0 && (
                 <div style={{
@@ -137,7 +184,8 @@ export default function Register() {
                     type="tel"
                     autoComplete="tel"
                     value={form.phone}
-                    onChange={e => set('phone', e.target.value)}
+                    onChange={e => set('phone', formatPhoneInput(e.target.value))}
+                    placeholder="(555) 123-4567"
                     error={errors.phone}
                     required
                 />

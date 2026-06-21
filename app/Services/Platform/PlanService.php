@@ -49,6 +49,36 @@ class PlanService extends BaseService
     }
 
     /**
+     * Resolve a single public, active plan by key from the cached pricing payload,
+     * reduced to what the signup flow needs. Returns null when the key is not a
+     * currently-advertised plan, so a stale or hand-edited ?plan param is ignored.
+     *
+     * @return array{plan_key: string, display_name: string, account_type: string, is_paid: bool}|null
+     */
+    public function findPublicPlan(string $planKey): ?array
+    {
+        foreach ($this->publicPricing() as $accountType => $plans) {
+            foreach ($plans as $plan) {
+                if ($plan['plan_key'] !== $planKey) {
+                    continue;
+                }
+
+                $isPaid = ! $plan['is_default_free']
+                    && (($plan['monthly_price_cents'] ?? 0) > 0 || ($plan['annual_price_cents'] ?? 0) > 0);
+
+                return [
+                    'plan_key'     => $plan['plan_key'],
+                    'display_name' => $plan['display_name'],
+                    'account_type' => $accountType,
+                    'is_paid'      => $isPaid,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Whether any live subscription is locked to one of this plan's versions.
      * Cross-DB: subscriptions live in DB 4 (billing) and reference plan_versions
      * in DB 12 (platform) by UUID — assembled here, never via an Eloquent join.

@@ -29,6 +29,10 @@ class RegisterRequest extends FormRequest
             'state_code'   => ['required', 'string', 'size:2', Rule::in(array_keys(UsStates::names()))],
             'tos_accepted' => ['required', 'accepted'],
             'privacy_accepted' => ['required', 'accepted'],
+            // Carried from the pricing page; lenient on purpose — a stale or bad
+            // plan param must never block signup. UserService verifies it against
+            // a real public plan before persisting and drops it otherwise.
+            'plan'         => ['nullable', 'string', 'max:80'],
         ];
     }
 
