@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\Billing\PromotionClaim;
 use App\Models\Identity\User;
 use App\Models\Platform\PromotionalPeriod;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -109,9 +110,16 @@ class PromotionAutoApplyService
                 continue;
             }
 
-            $this->billing->applyPromotion($user, $period, [
-                'trigger_event' => $triggerEvent,
-            ]);
+            try {
+                $this->billing->applyPromotion($user, $period, [
+                    'trigger_event' => $triggerEvent,
+                ]);
+            } catch (UniqueConstraintViolationException) {
+                // SEC-053: lost a concurrent race for the same user + period — the
+                // partial unique index rejected the duplicate trigger claim. Undo
+                // our speculative claim_count bump so the global count stays exact.
+                PromotionalPeriod::on('platform')->whereKey($period->id)->decrement('claim_count');
+            }
         }
     }
 

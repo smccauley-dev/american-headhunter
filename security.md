@@ -918,9 +918,9 @@ Keeps guests out of non-featured details exactly as today; lets logged-in member
 | Field | Detail |
 |---|---|
 | **Severity** | Low (staff-gated; defense-in-depth + audit gap) |
-| **Status** | OPEN |
+| **Status** | **FIXED (2026-06-21)** |
 | **Found** | 2026-06-21 |
-| **File** | `routes/web.php` (`admin.documents.view`, `admin.documents.download`) |
+| **File** | `routes/web.php` (`admin.documents.view`, `admin.documents.download`); `app/Http/Controllers/Admin/AdminDocumentController.php` |
 | **Lineage** | Promotes the 2026-06-14 out-of-window Auditing Note to a tracked finding; PII exposure escalated by commit `1f3f57d` |
 
 **Description:**
@@ -934,6 +934,8 @@ Keeps guests out of non-featured details exactly as today; lets logged-in member
 
 **Verification (when fixed):** access writes an `AuditService` event; a staff user without scope on a document receives 403/404.
 
+**Fix (2026-06-21):** the two inline route closures were replaced with `AdminDocumentController` (`view`/`download`), which audit-logs every access via `AuditService::log` (`document.viewed` / `document.downloaded`, acting staff user id) before streaming the file. The disk resolution and staff-only `['db.system','auth:web']` gating are unchanged. Per-document role scoping (gap (a)) was deliberately **deferred** — the audit trail is the priority gap and scoping needs an application/property-ownership resolver; it remains noted for the next admin pass. Regression: `tests/Feature/Admin/AdminDocumentAccessTest` (view + download write an audit row; guest is rejected).
+
 ---
 
 ## SEC-051 — Stripe Subscription/Account IDs Written to Webhook Diagnostic Logs
@@ -941,9 +943,9 @@ Keeps guests out of non-featured details exactly as today; lets logged-in member
 | Field | Detail |
 |---|---|
 | **Severity** | Low |
-| **Status** | OPEN |
+| **Status** | **FIXED (2026-06-21)** |
 | **Found** | 2026-06-21 |
-| **File** | `app/Jobs/Billing/ProcessStripeWebhook.php` |
+| **File** | `app/Jobs/Billing/ProcessStripeWebhook.php`; `CLAUDE.md` (Billing DB rule) |
 
 **Description:**
 Several webhook diagnostic log lines include `stripe_subscription_id` / `stripe_account_id` (≈ lines 120, 143, 217, 353). Line 143 was added in this window (commit `3c110ee`, the billing-interval fix) and follows the file's pre-existing logging pattern. CLAUDE.md's billing rule states *"even Stripe IDs should not appear in general application logs."* These are correlation identifiers — not PANs or payment-method/charge tokens — so impact is limited to internal-identifier disclosure should application logs be exposed.
@@ -955,6 +957,8 @@ Webhook handlers log the subscription/account id as a correlation key when an ev
 
 **Verification:** webhook diagnostic logs contain no `stripe_*_id` values (if removed), or CLAUDE.md documents the carve-out (if kept).
 
+**Fix (2026-06-21):** chose the carve-out. CLAUDE.md's Billing DB (DB 4) rule now states explicitly that webhook *correlation* IDs (`stripe_subscription_id`, `stripe_customer_id`, `stripe_account_id`, Stripe event ids) MAY appear in webhook/diagnostic logs as correlation keys — and that this never extends to payment-method, charge, last-four/brand, or PAN/CVV data, which remain banned from logs. The existing webhook log lines carry only these correlation ids, so no code change was needed; the defect was the undocumented mismatch with the written rule, which is now resolved.
+
 ---
 
 ## SEC-052 — Promo Per-User Limit Has a TOCTOU Window Between Checkout Validation and Webhook Redemption
@@ -962,7 +966,7 @@ Webhook handlers log the subscription/account id as a correlation key when an ev
 | Field | Detail |
 |---|---|
 | **Severity** | Low / Informational |
-| **Status** | OPEN |
+| **Status** | **FIXED (2026-06-21)** |
 | **Found** | 2026-06-21 |
 | **File** | `app/Services/Billing/PromoCodeService.php` (`validateForPlan` vs `recordRedemption`) |
 
@@ -975,6 +979,8 @@ Webhook handlers log the subscription/account id as a correlation key when an ev
 
 **Verification:** concurrent completed checkouts for the same user + code create at most `per_user_limit` claims.
 
+**Fix (2026-06-21):** `recordRedemption` now runs inside a `billing` transaction that `lockForUpdate()`s the promo-code row and **re-checks both** the global `max_redemptions` cap and the per-user limit (count of this user's `promo_code_used` claims) under that lock before incrementing and authoring the claim. Concurrent redemptions of the same code serialize on the row lock, closing the TOCTOU window; different codes never contend. A unique constraint was rejected because `per_user_limit` may legitimately be > 1. Regression: `PromoCodeServiceTest::test_record_redemption_respects_per_user_limit` (a user already at the per-user limit is not redeemed again even with global headroom).
+
 ---
 
 ## SEC-053 — First-Listing Auto-Apply Eligibility Check Is Existence-Based, Not Atomic
@@ -982,9 +988,9 @@ Webhook handlers log the subscription/account id as a correlation key when an ev
 | Field | Detail |
 |---|---|
 | **Severity** | Low / Informational |
-| **Status** | OPEN |
+| **Status** | **FIXED (2026-06-21)** |
 | **Found** | 2026-06-21 |
-| **File** | `app/Services/Billing/PromotionAutoApplyService.php` (`isEligible` / `applyTrigger`) |
+| **File** | `app/Services/Billing/PromotionAutoApplyService.php` (`isEligible` / `applyTrigger`); `database/migrations/billing/2026_06_21_000002_add_unique_trigger_claim_per_user_period.php` |
 
 **Description:**
 `isEligible` enforces once-per-user-per-period with a `PromotionClaim::exists()` check, then `applyTrigger` increments `claim_count` (atomic, guarded against `claim_limit`) and authors the claim. The existence check and the claim write are not a single atomic operation, so two concurrent first-listing creations for the same user could both pass `isEligible` and both author a claim. The **global** `claim_limit` is still protected by the atomic increment; only the per-user-once invariant is racy.
@@ -994,6 +1000,8 @@ Webhook handlers log the subscription/account id as a correlation key when an ev
 **Recommended fix:** enforce uniqueness on `(user_id, promotion_period_id)` for trigger-based claims, or perform the eligibility check + claim insert atomically.
 
 **Verification:** concurrent first-listing creations create at most one claim per user per period.
+
+**Fix (2026-06-21):** added a **partial unique index** `uq_promo_claims_user_period_trigger` on `promotion_claims (user_id, promotion_period_id) WHERE trigger_event IN ('signup','first_listing')`, making the once-per-user trigger grant atomic at the DB. The predicate scopes it to trigger grants only — `promo_code` / `manual_admin` claims may legitimately repeat for the same user + period. `applyTrigger` now catches `UniqueConstraintViolationException` from the lost-race insert and **decrements** the speculative `claim_count` bump so the global count stays exact. Regression: `PromotionAutoApplyServiceTest::test_duplicate_trigger_claim_is_rejected_at_db` and `::test_non_trigger_claims_may_repeat_for_same_user_period`.
 
 ---
 
@@ -1008,10 +1016,10 @@ Webhook handlers log the subscription/account id as a correlation key when an ev
 | SEC-047 | Member-portal property check-in log shows "Unknown user" — cross-DB hunter name lookup default-denied by `users` RLS under `ah_runtime` | Low | **FIXED (2026-06-17)** — name lookup wrapped in `ConnectionRole::asSystem` (viewer already property-authorized) | — |
 | SEC-048 | Public property detail gate uses `auth()->check()` (always false for session-authed members) → logged-in members wrongly redirected from non-featured detail pages; fail-closed (no exposure) | Low | OPEN — fix: gate on `session('auth.user_id')` | Next property pass |
 | SEC-049 | Contact directory (`getContactDirectory`) resolves identity users under `ah_runtime` without `asSystem` → owner/manager contacts may render blank for lessees; fail-closed (no exposure) | Low | OPEN — verify reach under `ah_runtime`, then mirror SEC-047 fix if blank | Next property pass |
-| SEC-050 | Admin document view/download routes unscoped + unaudited; now serve applicant DL/license PII (staff-gated, not an IDOR) | Low | OPEN — add audit logging (+ optional per-document scoping) | Next admin/billing pass |
-| SEC-051 | Stripe subscription/account IDs in webhook diagnostic logs (deviates from "no Stripe IDs in logs" rule) | Low | OPEN — drop IDs or document a correlation-ID carve-out | Pre-launch hardening |
-| SEC-052 | Promo per-user-limit TOCTOU between checkout validation and webhook redemption (global cap safe) | Low | OPEN — atomic per-user guard / unique constraint | Next billing pass |
-| SEC-053 | First-listing auto-apply once-per-user check not atomic → possible duplicate claim (no extra benefit) | Low | OPEN — unique `(user, period)` or atomic check+insert | Next billing pass |
+| SEC-050 | Admin document view/download routes unscoped + unaudited; now serve applicant DL/license PII (staff-gated, not an IDOR) | Low | **FIXED (2026-06-21)** — routed via `AdminDocumentController`, every access audit-logged; per-document scoping deferred; regression test green | — |
+| SEC-051 | Stripe subscription/account IDs in webhook diagnostic logs (deviates from "no Stripe IDs in logs" rule) | Low | **FIXED (2026-06-21)** — CLAUDE.md documents a correlation-ID carve-out (never payment-method/charge/PAN data); IDs kept | — |
+| SEC-052 | Promo per-user-limit TOCTOU between checkout validation and webhook redemption (global cap safe) | Low | **FIXED (2026-06-21)** — `recordRedemption` re-checks per-user + global caps under a `lockForUpdate` row lock; regression test green | — |
+| SEC-053 | First-listing auto-apply once-per-user check not atomic → possible duplicate claim (no extra benefit) | Low | **FIXED (2026-06-21)** — partial unique index on `(user, period)` for trigger claims + decrement-on-violation; regression tests green | — |
 
 ---
 

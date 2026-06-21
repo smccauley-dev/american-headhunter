@@ -311,4 +311,36 @@ class PromoCodeServiceTest extends TestCase
             ->where('user_id', $user->id)->where('promo_code_used', $code->code)->count(),
             'no claim is authored when the increment is refused');
     }
+
+    /**
+     * SEC-052: recordRedemption re-checks the per-user limit under the row lock.
+     * A user who already holds a claim for this code (per_user_limit=1) must not
+     * get a second redemption even though the global cap has headroom — this is
+     * the TOCTOU window between checkout-time validation and webhook-time record.
+     */
+    public function test_record_redemption_respects_per_user_limit(): void
+    {
+        $period = $this->makePeriod();
+        $code   = $this->makeCode($period, ['max_redemptions' => 10, 'redemption_count' => 1, 'per_user_limit' => 1]);
+        $user   = $this->makeUser('hunter');
+
+        // A prior claim of this code by this user already exhausts their allowance.
+        $claimId = (string) Str::uuid();
+        DB::connection('billing')->table('promotion_claims')->insert([
+            'id'                  => $claimId,
+            'user_id'             => $user->id,
+            'promotion_period_id' => $period,
+            'status'              => 'active',
+            'trigger_event'       => 'promo_code',
+            'promo_code_used'     => $code->code,
+        ]);
+        $this->claimIds[] = $claimId;
+
+        $this->service()->recordRedemption($user, $code);
+
+        $this->assertSame(1, (int) $code->fresh()->redemption_count, 'the per-user limit blocks a second redemption');
+        $this->assertSame(1, DB::connection('billing')->table('promotion_claims')
+            ->where('user_id', $user->id)->where('promo_code_used', $code->code)->count(),
+            'no second claim is authored for the same user');
+    }
 }

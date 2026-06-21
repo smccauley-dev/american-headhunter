@@ -128,21 +128,39 @@ class PromoCodeService
             return;
         }
 
-        $incremented = PromoCode::on('billing')
-            ->whereKey($code->id)
-            ->where(function ($q): void {
-                $q->whereNull('max_redemptions')
-                    ->orWhereColumn('redemption_count', '<', 'max_redemptions');
-            })
-            ->update(['redemption_count' => DB::raw('redemption_count + 1')]);
+        // SEC-052: lock the code row so concurrent redemptions serialize on it,
+        // and re-check BOTH the global cap and the per-user limit under the lock.
+        // Validation happens at checkout-start but redemption is recorded later
+        // at webhook time, so without this a user opening several checkouts could
+        // pass the per-user check more than once. Different codes never contend.
+        DB::connection('billing')->transaction(function () use ($user, $code, $period): void {
+            $locked = PromoCode::on('billing')->whereKey($code->id)->lockForUpdate()->first();
+            if ($locked === null) {
+                return;
+            }
 
-        if (! $incremented) {
-            return;
-        }
+            if (! is_null($locked->max_redemptions) && $locked->redemption_count >= $locked->max_redemptions) {
+                return;
+            }
 
-        $this->billing->applyPromotion($user, $period, [
-            'trigger_event' => 'promo_code',
-            'promo_code'    => $code->code,
-        ]);
+            $perUser = $locked->per_user_limit ?? 1;
+            if ($perUser > 0) {
+                $used = PromotionClaim::on('billing')
+                    ->where('user_id', $user->id)
+                    ->where('promo_code_used', $locked->code)
+                    ->count();
+
+                if ($used >= $perUser) {
+                    return;
+                }
+            }
+
+            $locked->increment('redemption_count');
+
+            $this->billing->applyPromotion($user, $period, [
+                'trigger_event' => 'promo_code',
+                'promo_code'    => $code->code,
+            ]);
+        });
     }
 }

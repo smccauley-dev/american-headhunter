@@ -89,26 +89,13 @@ Route::middleware(['db.system', 'auth:web'])->group(function () {
         );
     })->name('admin.lease-documents.download');
 
-    // Admin document download
-    Route::get('/admin/documents/{documentId}/download', function (string $documentId) {
-        $doc = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
-        $disk = config('filesystems.defaults.documents', 'local');
-        return \Illuminate\Support\Facades\Storage::disk($disk)->download(
-            $doc->storage_key,
-            $doc->original_filename ?? 'document.pdf',
-        );
-    })->name('admin.documents.download');
-
-    // Admin inline document view (images in admin galleries)
-    Route::get('/admin/documents/{documentId}/view', function (string $documentId) {
-        $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
-        $disk = config('filesystems.defaults.documents', 'local');
-        return \Illuminate\Support\Facades\Storage::disk($disk)->response(
-            $doc->storage_key,
-            $doc->original_filename,
-            ['Content-Type' => $doc->mime_type ?? 'application/octet-stream'],
-        );
-    })->name('admin.documents.view');
+    // Admin document download / inline view. SEC-050: routed through a controller
+    // that audit-logs every access — these serve applicant PII (DL/license images
+    // in the hunter roster). Staff-only via the web guard (canAccessPanel).
+    Route::get('/admin/documents/{documentId}/download', [\App\Http\Controllers\Admin\AdminDocumentController::class, 'download'])
+        ->name('admin.documents.download');
+    Route::get('/admin/documents/{documentId}/view', [\App\Http\Controllers\Admin\AdminDocumentController::class, 'view'])
+        ->name('admin.documents.view');
 });
 
 // Public property photo — only documents referenced by a live property_photos

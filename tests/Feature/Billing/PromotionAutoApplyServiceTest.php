@@ -6,6 +6,7 @@ use App\Models\Identity\User;
 use App\Models\Platform\MembershipPlan;
 use App\Services\Billing\PromotionAutoApplyService;
 use App\Services\Platform\EntitlementService;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -251,5 +252,47 @@ class PromotionAutoApplyServiceTest extends TestCase
 
         // State is unknown at page render, so a state-targeted grant is never advertised.
         $this->assertTrue($preview === null || $preview['detail'] !== 'STATE-ONLY-BANNER');
+    }
+
+    // ── partial unique index (SEC-053) ──────────────────────────────────────────────
+
+    private function insertClaim(string $userId, string $periodId, string $triggerEvent): void
+    {
+        DB::connection('billing')->table('promotion_claims')->insert([
+            'id'                  => (string) Str::uuid(),
+            'user_id'             => $userId,
+            'promotion_period_id' => $periodId,
+            'status'              => 'active',
+            'trigger_event'       => $triggerEvent,
+        ]);
+    }
+
+    /**
+     * SEC-053: a partial unique index on (user_id, promotion_period_id) scoped to
+     * trigger_event IN ('signup','first_listing') makes the once-per-user grant
+     * atomic at the DB, so a concurrent race can't author a duplicate trigger claim.
+     */
+    public function test_duplicate_trigger_claim_is_rejected_at_db(): void
+    {
+        $periodId = $this->makeGrant('auto_apply_on_signup');
+        $user     = $this->makeUser('hunter');
+
+        $this->insertClaim($user->id, $periodId, 'signup');
+
+        $this->expectException(UniqueConstraintViolationException::class);
+        $this->insertClaim($user->id, $periodId, 'signup');
+    }
+
+    public function test_non_trigger_claims_may_repeat_for_same_user_period(): void
+    {
+        $periodId = $this->makeGrant('auto_apply_on_signup');
+        $user     = $this->makeUser('hunter');
+
+        // promo_code claims are outside the partial index predicate — they may
+        // legitimately repeat for the same user + period.
+        $this->insertClaim($user->id, $periodId, 'promo_code');
+        $this->insertClaim($user->id, $periodId, 'promo_code');
+
+        $this->assertSame(2, $this->claimCount($user->id));
     }
 }
