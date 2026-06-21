@@ -53,7 +53,7 @@ class PlanService extends BaseService
      * reduced to what the signup flow needs. Returns null when the key is not a
      * currently-advertised plan, so a stale or hand-edited ?plan param is ignored.
      *
-     * @return array{plan_key: string, display_name: string, account_type: string, is_paid: bool}|null
+     * @return array{plan_key: string, display_name: string, account_type: string, is_paid: bool, monthly_price_cents: int, annual_price_cents: int}|null
      */
     public function findPublicPlan(string $planKey): ?array
     {
@@ -67,10 +67,12 @@ class PlanService extends BaseService
                     && (($plan['monthly_price_cents'] ?? 0) > 0 || ($plan['annual_price_cents'] ?? 0) > 0);
 
                 return [
-                    'plan_key'     => $plan['plan_key'],
-                    'display_name' => $plan['display_name'],
-                    'account_type' => $accountType,
-                    'is_paid'      => $isPaid,
+                    'plan_key'            => $plan['plan_key'],
+                    'display_name'        => $plan['display_name'],
+                    'account_type'        => $accountType,
+                    'is_paid'             => $isPaid,
+                    'monthly_price_cents' => (int) ($plan['monthly_price_cents'] ?? 0),
+                    'annual_price_cents'  => (int) ($plan['annual_price_cents'] ?? 0),
                 ];
             }
         }

@@ -142,6 +142,22 @@ class UserService extends BaseService
      * or unknown plan needs no action (free access is already the default). The
      * key is always cleared first, so this fires at most once.
      */
+    /**
+     * Drop the stored signup plan choice without redirecting. Used when the
+     * choice has already been acted on (e.g. checkout started right at signup),
+     * so it can't re-fire at first login.
+     */
+    public function clearIntendedPlan(User $user): void
+    {
+        if ($user->intended_plan_key === null) {
+            return;
+        }
+
+        $user->intended_plan_key = null;
+        $user->save();
+        $this->invalidate("user:{$user->id}");
+    }
+
     public function takeIntendedPlanRedirect(User $user): ?string
     {
         $key = $user->intended_plan_key;

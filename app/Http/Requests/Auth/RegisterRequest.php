@@ -33,6 +33,8 @@ class RegisterRequest extends FormRequest
             // plan param must never block signup. UserService verifies it against
             // a real public plan before persisting and drops it otherwise.
             'plan'         => ['nullable', 'string', 'max:80'],
+            // Billing cycle for a paid plan chosen at signup; defaults to monthly.
+            'interval'     => ['nullable', 'in:monthly,annual'],
         ];
     }
 

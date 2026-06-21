@@ -21,6 +21,8 @@ interface SignupPlan {
     display_name: string;
     account_type: string;
     is_paid: boolean;
+    monthly_price_cents: number;
+    annual_price_cents: number;
 }
 
 interface RegisterProps {
@@ -28,7 +30,12 @@ interface RegisterProps {
     legalUrls: LegalUrls;
     signupPromo?: SignupPromo | null;
     signupPlan?: SignupPlan | null;
+    signupInterval?: 'monthly' | 'annual';
     errors?: Record<string, string>;
+}
+
+function dollars(cents: number): string {
+    return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: cents % 100 === 0 ? 0 : 2 });
 }
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -41,7 +48,11 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function Register() {
-    const { accountType, legalUrls, signupPromo, signupPlan, errors = {} } = usePage<RegisterProps>().props;
+    const { accountType, legalUrls, signupPromo, signupPlan, signupInterval = 'monthly', errors = {} } = usePage<RegisterProps>().props;
+
+    const paid       = signupPlan?.is_paid ?? false;
+    const hasMonthly = (signupPlan?.monthly_price_cents ?? 0) > 0;
+    const hasAnnual  = (signupPlan?.annual_price_cents ?? 0) > 0;
 
     const [form, setForm] = useState({
         account_type:      accountType,
@@ -56,6 +67,9 @@ export default function Register() {
         tos_accepted:      false,
         privacy_accepted:  false,
         plan:              signupPlan?.plan_key ?? '',
+        // Billing cycle for a paid plan — defaults to the cycle picked on the
+        // pricing page, falling back to whichever the plan actually offers.
+        interval:          (signupInterval === 'annual' && hasAnnual) ? 'annual' : (hasMonthly ? 'monthly' : 'annual'),
     });
     const [processing, setProcessing] = useState(false);
 
@@ -102,6 +116,44 @@ export default function Register() {
                     ← Wrong account type?
                 </a>
             </div>
+
+            {paid && signupPlan && (
+                <div style={{ marginBottom: 24, padding: 16, background: '#f4ecdc', border: '1px solid #a89874' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                        <div>
+                            <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 30, fontWeight: 400, color: '#0a1512' }}>
+                                {dollars(form.interval === 'annual' ? signupPlan.annual_price_cents : signupPlan.monthly_price_cents)}
+                            </span>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: '0.1em', color: '#6b7856', marginLeft: 6 }}>
+                                {form.interval === 'annual' ? '/ year' : '/ month'}
+                            </span>
+                        </div>
+                        {hasMonthly && hasAnnual && (
+                            <div style={{ display: 'inline-flex', border: '1px solid #a89874' }}>
+                                {(['monthly', 'annual'] as const).map(cycle => (
+                                    <button
+                                        key={cycle}
+                                        type="button"
+                                        onClick={() => set('interval', cycle)}
+                                        style={{
+                                            padding: '6px 14px', border: 'none', cursor: 'pointer',
+                                            background: form.interval === cycle ? '#0a1512' : 'transparent',
+                                            color: form.interval === cycle ? '#e8dcc4' : '#4a5440',
+                                            fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                                            letterSpacing: '0.12em', textTransform: 'uppercase',
+                                        }}
+                                    >
+                                        {cycle}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14, color: '#4a5440', margin: '10px 0 0', lineHeight: 1.4 }}>
+                        After creating your account you'll continue to secure checkout to start your {signupPlan.display_name} membership.
+                    </p>
+                </div>
+            )}
 
             {signupPromo && (
                 <div style={{
@@ -329,7 +381,9 @@ export default function Register() {
                         textTransform: 'uppercase', marginBottom: 20,
                     }}
                 >
-                    {processing ? 'Creating Account…' : 'Create Account →'}
+                    {processing
+                        ? (paid ? 'Redirecting to Checkout…' : 'Creating Account…')
+                        : (paid ? 'Continue to Payment →' : 'Create Account →')}
                 </button>
             </form>
 

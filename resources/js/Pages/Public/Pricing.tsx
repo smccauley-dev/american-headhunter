@@ -261,7 +261,7 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, has
     // free plan and everyone else follow the marketing/get-started path.
     const showSwitch   = hasActiveSubscription && isPaid && !isCurrentPlan
     const showCheckout = canSubscribe && isPaid && !hasActiveSubscription
-    const ctaHref = authenticated ? `/member` : `/get-started?plan=${encodeURIComponent(plan.plan_key)}`
+    const ctaHref = authenticated ? `/member` : `/get-started?plan=${encodeURIComponent(plan.plan_key)}&interval=${cycle}`
 
     const startCheckout = () => {
         setSubmitting(true)
