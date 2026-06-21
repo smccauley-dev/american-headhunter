@@ -61,6 +61,17 @@ class UserService extends BaseService
         return User::where('email', strtolower($email))->first();
     }
 
+    /**
+     * Bust the read cache, then return the user freshly from the DB (re-caching
+     * it). Use when another device may have mutated the row — e.g. an email
+     * verification link clicked elsewhere while this session waits.
+     */
+    public function findFresh(string $id): ?User
+    {
+        $this->invalidate("user:{$id}");
+        return $this->findById($id);
+    }
+
     public function create(array $data): User
     {
         $user = User::create([

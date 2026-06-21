@@ -104,6 +104,28 @@ class AuthController extends Controller
         return back()->with('success', 'Verification email sent. Check your inbox.');
     }
 
+    /**
+     * Polled by the post-signup notice screen. Reads the waiting session's user
+     * fresh (the verification link may have been clicked on another device, so a
+     * cached copy could be stale) and, once verified, hands back where to send
+     * this tab — the same paid→checkout / free→member destination login uses, so
+     * no second sign-in is required.
+     */
+    public function verifyEmailStatus(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $userId = $request->session()->get('auth.user_id');
+        $user   = $userId ? $this->users->findFresh($userId) : null;
+
+        if (! $user || ! $user->email_verified_at) {
+            return response()->json(['verified' => false]);
+        }
+
+        $redirect = $this->users->takeIntendedPlanRedirect($user)
+            ?? app(\App\Services\Platform\TenantService::class)->getSetting('nav.login_redirect', '/member/profile');
+
+        return response()->json(['verified' => true, 'redirect' => $redirect]);
+    }
+
     public function verifyEmail(Request $request, string $token): RedirectResponse
     {
         $userId = $request->query('id');
