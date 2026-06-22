@@ -232,6 +232,40 @@ export default function Pricing({ groups, current_account_type, current_plan_key
                             ))}
                         </div>
                     )}
+
+                    {activeType === 'hunter' && (
+                        <div style={{
+                            marginTop: 40, padding: '28px 32px',
+                            background: 'var(--ink, #0a1512)', color: '#f4ecdc',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            gap: 24, flexWrap: 'wrap', borderLeft: '4px solid var(--blaze)',
+                        }}>
+                            <div>
+                                <p style={{
+                                    fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+                                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                                    color: 'var(--blaze)', margin: '0 0 8px',
+                                }}>
+                                    Veteran or First Responder?
+                                </p>
+                                <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 18, margin: 0, lineHeight: 1.45, maxWidth: 560 }}>
+                                    Thank you for your service. Verify your status when you sign up — once approved,
+                                    your Hunter membership is <em>free, for life</em>.
+                                </p>
+                            </div>
+                            <a
+                                href="/get-started?type=hunter"
+                                style={{
+                                    flexShrink: 0, padding: '13px 26px', background: 'var(--blaze)',
+                                    color: '#fff', textDecoration: 'none',
+                                    fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+                                    fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase',
+                                }}
+                            >
+                                Verify &amp; Join →
+                            </a>
+                        </div>
+                    )}
                 </div>
             </div>
         </>
