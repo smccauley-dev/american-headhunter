@@ -16,8 +16,12 @@ class VerificationSettingsSeeder extends Seeder
         // 'manual' so verification works with no third-party integration; flip to
         // 'id_me'/'both' from admin once ID.me is wired — no deploy needed.
         $settings = [
-            ['key' => 'verification.veteran.method',         'value' => 'manual', 'description' => 'Veteran verification method: manual | id_me | both'],
-            ['key' => 'verification.first_responder.method', 'value' => 'manual', 'description' => 'First responder verification method: manual | id_me | both'],
+            ['key' => 'verification.veteran.method',            'value' => 'manual',                        'description' => 'Veteran verification method: manual | id_me | both'],
+            ['key' => 'verification.first_responder.method',    'value' => 'manual',                        'description' => 'First responder verification method: manual | id_me | both'],
+            // promo_key of the promotional_period applied when a verification is
+            // approved (kept in config so the grant is DB-driven, not hardcoded).
+            ['key' => 'verification.veteran.promo_key',         'value' => 'veteran_hunter_permanent',      'description' => 'promo_key granted on veteran verification approval'],
+            ['key' => 'verification.first_responder.promo_key', 'value' => 'first_responder_hunter_permanent', 'description' => 'promo_key granted on first responder verification approval'],
         ];
 
         foreach ($settings as $s) {
