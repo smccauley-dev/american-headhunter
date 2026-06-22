@@ -11,7 +11,9 @@ use App\Services\Auth\MfaService;
 use App\Services\Auth\SessionService;
 use App\Services\Billing\MembershipCheckoutService;
 use App\Services\Billing\PromotionAutoApplyService;
+use App\Services\Documents\DocumentService;
 use App\Services\Identity\OfacService;
+use App\Services\Identity\ServiceVerificationService;
 use App\Services\Identity\UserService;
 use App\Services\Platform\PlanService;
 use App\Services\Mfa\MfaMethodRegistry;
@@ -59,12 +61,20 @@ class AuthController extends Controller
             $plan = null;
         }
 
+        $verifications = app(ServiceVerificationService::class);
+
         return Inertia::render('Auth/Register', [
             'accountType'    => $accountType,
             'legalUrls'      => config('platform.legal'),
             'signupPromo'    => app(PromotionAutoApplyService::class)->previewForSignup($accountType),
             'signupPlan'     => $plan,
             'signupInterval' => $request->query('interval') === 'annual' ? 'annual' : 'monthly',
+            // Method switch per type ('manual' | 'id_me' | 'both') — drives whether
+            // the optional step offers a document upload or defers to ID.me.
+            'serviceMethods' => [
+                'veteran'         => $verifications->methodFor(ServiceVerificationService::TYPE_VETERAN),
+                'first_responder' => $verifications->methodFor(ServiceVerificationService::TYPE_FIRST_RESPONDER),
+            ],
         ]);
     }
 
@@ -84,6 +94,10 @@ class AuthController extends Controller
         // Screen against OFAC — suspends account internally on match
         $this->ofac->screen($user);
 
+        // Optional service-status step: open a pending veteran / first-responder
+        // verification if the applicant declared one and attached proof.
+        $this->submitServiceVerification($request, $user);
+
         // Dispatch verification email
         SendEmailVerificationJob::dispatch($user->id);
 
@@ -99,6 +113,42 @@ class AuthController extends Controller
         }
 
         return redirect()->route('auth.verify-email.notice');
+    }
+
+    /**
+     * Open a pending service-status verification for a just-registered user, when
+     * they declared veteran / first responder and attached proof. Manual-upload
+     * path only — when the type's method switch is 'id_me' the upload is ignored
+     * (ID.me runs post-signup). Skipping the step, omitting the file, or any
+     * failure here must never break registration, so it's all best-effort.
+     */
+    private function submitServiceVerification(RegisterRequest $request, \App\Models\Identity\User $user): void
+    {
+        $type = $request->input('service_status');
+        $file = $request->file('service_proof');
+
+        if (! $type || ! $file) {
+            return;
+        }
+
+        try {
+            $verifications = app(ServiceVerificationService::class);
+
+            // The admin switch can disable the manual path in favour of ID.me;
+            // in that case we don't accept an uploaded document at signup.
+            if ($verifications->methodFor($type) === 'id_me') {
+                return;
+            }
+
+            $document = app(DocumentService::class)->storeUploadedFile($file, $user->id, 'id_document');
+            $verifications->createPending($user, $type, $verifications->uploadMethodFor($type), $document->id);
+        } catch (\Throwable $e) {
+            Log::warning('Service-status verification submission failed at signup', [
+                'user_id' => $user->id,
+                'type'    => $type,
+                'error'   => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

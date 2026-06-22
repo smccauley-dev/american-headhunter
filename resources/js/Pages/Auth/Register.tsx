@@ -31,8 +31,22 @@ interface RegisterProps {
     signupPromo?: SignupPromo | null;
     signupPlan?: SignupPlan | null;
     signupInterval?: 'monthly' | 'annual';
+    serviceMethods?: { veteran: string; first_responder: string };
     errors?: Record<string, string>;
 }
+
+type ServiceStatus = '' | 'veteran' | 'first_responder';
+
+const SERVICE_LABELS: Record<Exclude<ServiceStatus, ''>, string> = {
+    veteran:         'Veteran',
+    first_responder: 'First Responder',
+};
+
+// What proof each path accepts, shown under the upload control.
+const SERVICE_PROOF_HINT: Record<Exclude<ServiceStatus, ''>, string> = {
+    veteran:         'DD-214, military ID, or VA card (PDF, JPG, or PNG).',
+    first_responder: 'Department ID, badge, or certification (PDF, JPG, or PNG).',
+};
 
 function dollars(cents: number): string {
     return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: cents % 100 === 0 ? 0 : 2 });
@@ -48,7 +62,7 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function Register() {
-    const { accountType, legalUrls, signupPromo, signupPlan, signupInterval = 'monthly', errors = {} } = usePage<RegisterProps>().props;
+    const { accountType, legalUrls, signupPromo, signupPlan, signupInterval = 'monthly', serviceMethods, errors = {} } = usePage<RegisterProps>().props;
 
     const paid       = signupPlan?.is_paid ?? false;
     const hasMonthly = (signupPlan?.monthly_price_cents ?? 0) > 0;
@@ -70,6 +84,10 @@ export default function Register() {
         // Billing cycle for a paid plan — defaults to the cycle picked on the
         // pricing page, falling back to whichever the plan actually offers.
         interval:          (signupInterval === 'annual' && hasAnnual) ? 'annual' : (hasMonthly ? 'monthly' : 'annual'),
+        // Optional service-status step (empty = skipped). A File here makes the
+        // POST multipart so the proof reaches the server.
+        service_status:    '' as ServiceStatus,
+        service_proof:     null as File | null,
     });
     const [processing, setProcessing] = useState(false);
 
@@ -316,6 +334,84 @@ export default function Register() {
                     error={errors.password_confirmation}
                     required
                 />
+
+                {/* Optional service-status step — skippable. Declaring veteran /
+                    first responder and attaching proof opens a verification the
+                    team reviews; the benefit unlocks on approval. */}
+                <div style={{ marginBottom: 24, padding: 16, background: '#f4ecdc', border: '1px solid #a89874' }}>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#4a5440', margin: '0 0 6px' }}>
+                        Veteran or First Responder? <span style={{ color: '#8a7a5a' }}>· Optional</span>
+                    </p>
+                    <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14, color: '#4a5440', margin: '0 0 12px', lineHeight: 1.45 }}>
+                        Verify your service to unlock your member benefit. You can skip this and add it later from your profile.
+                    </p>
+
+                    <div style={{ display: 'inline-flex', flexWrap: 'wrap', border: '1px solid #a89874' }}>
+                        {([['', 'No, skip'], ['veteran', 'Veteran'], ['first_responder', 'First Responder']] as const).map(([value, label]) => {
+                            const active = form.service_status === value;
+                            return (
+                                <button
+                                    key={value || 'none'}
+                                    type="button"
+                                    onClick={() => {
+                                        set('service_status', value);
+                                        if (value === '') set('service_proof', null);
+                                    }}
+                                    style={{
+                                        padding: '7px 14px', border: 'none', cursor: 'pointer',
+                                        borderRight: value === 'first_responder' ? 'none' : '1px solid #a89874',
+                                        background: active ? '#0a1512' : 'transparent',
+                                        color: active ? '#e8dcc4' : '#4a5440',
+                                        fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                                        letterSpacing: '0.1em', textTransform: 'uppercase',
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {form.service_status !== '' && serviceMethods?.[form.service_status] === 'id_me' ? (
+                        <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14, color: '#4a5440', margin: '14px 0 0', lineHeight: 1.45 }}>
+                            We verify {SERVICE_LABELS[form.service_status].toLowerCase()} status through ID.me — you'll be prompted to verify after signing in.
+                        </p>
+                    ) : form.service_status !== '' ? (
+                        <div style={{ marginTop: 14 }}>
+                            <label
+                                htmlFor="service_proof"
+                                style={{
+                                    display: 'inline-block', padding: '9px 16px', cursor: 'pointer',
+                                    background: '#0a1512', color: '#e8dcc4',
+                                    fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                                    letterSpacing: '0.12em', textTransform: 'uppercase',
+                                }}
+                            >
+                                {form.service_proof ? 'Change file' : 'Upload proof'}
+                            </label>
+                            <input
+                                id="service_proof"
+                                type="file"
+                                accept="application/pdf,image/jpeg,image/png"
+                                onChange={e => set('service_proof', e.target.files?.[0] ?? null)}
+                                style={{ display: 'none' }}
+                            />
+                            {form.service_proof && (
+                                <span style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14, color: '#0a1512', marginLeft: 12 }}>
+                                    {form.service_proof.name}
+                                </span>
+                            )}
+                            <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: '0.08em', color: '#6b7856', textTransform: 'uppercase', margin: '8px 0 0' }}>
+                                {SERVICE_PROOF_HINT[form.service_status]}
+                            </p>
+                            {errors.service_proof && (
+                                <p style={{ marginTop: 4, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.1em', color: '#c84c21' }}>
+                                    {errors.service_proof}
+                                </p>
+                            )}
+                        </div>
+                    ) : null}
+                </div>
 
                 {/* Consent checkboxes */}
                 <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
