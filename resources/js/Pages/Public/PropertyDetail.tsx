@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
+import PublicNav from '@/Components/Public/PublicNav';
 
 interface PropertySpecies {
     species_code: string;
@@ -121,7 +122,6 @@ function GalleryTile({ photo, onClick, moreCount = 0 }: { photo: PropertyPhoto; 
 }
 
 export default function PropertyDetail({ property }: PropertyDetailProps) {
-    const [scrolled, setScrolled] = useState(false);
     const [lightbox, setLightbox] = useState<number | null>(null);
     const listing = property.active_listings?.[0] ?? null;
     const { auth } = usePage<{ auth: { authenticated: boolean } }>().props;
@@ -143,38 +143,7 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
         <div className="ah-page">
 
             {/* ── NAV ─────────────────────────────────────────────────────── */}
-            <nav className={`ah-nav${scrolled ? ' scrolled' : ''}`}>
-                <div className="nav-strip">
-                    <div className="nav-strip-left">
-                        <span><span className="strip-dot" />Hunting Lease Marketplace</span>
-                    </div>
-                    <div className="nav-strip-right">
-                        <span>Hunters</span>
-                        <span>Landowners</span>
-                    </div>
-                </div>
-                <div className="nav-main">
-                    <Link href="/" className="logo">
-                        <div className="logo-mark">
-                            <span className="logo-mark-letters">AH</span>
-                        </div>
-                        <div className="logo-text">
-                            <span className="logo-name">American Headhunter</span>
-                            <span className="logo-tag">Est. 2025 · Hunting Leases</span>
-                        </div>
-                    </Link>
-                    <ul className="nav-links">
-                        <li><a href="/properties">Find Land</a></li>
-                        <li><a href="/auctions">Auctions</a></li>
-                        <li><a href="/outfitters">Outfitters</a></li>
-                        <li><a href="/pricing">Pricing</a></li>
-                    </ul>
-                    <div className="nav-actions">
-                        <Link href="/login" className="nav-link-text">Sign In</Link>
-                        <Link href="/get-started" className="nav-cta">Get Started →</Link>
-                    </div>
-                </div>
-            </nav>
+            <PublicNav />
 
             {/* ── PROPERTY HERO ────────────────────────────────────────────── */}
             <div style={{

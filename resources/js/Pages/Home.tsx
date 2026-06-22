@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Link, router } from '@inertiajs/react';
+import PublicNav from '@/Components/Public/PublicNav';
 
 interface PropertySpecies {
     species_code: string;
@@ -45,29 +46,7 @@ interface HeroSettings {
 
 interface StatItem { label: string; num: string; sub: string; }
 
-interface TopBarSettings {
-    tagline: string;
-    phone: string;
-    link1: string;
-    link2: string;
-    link3: string;
-    link4: string;
-}
-
-interface NavLink { label: string; href: string; enabled: boolean; }
-
-interface NavSettings {
-    links: NavLink[];
-    cta_label: string;
-    cta_href: string;
-    signin_label: string;
-    signin_href: string;
-}
-
 interface HomeSettings {
-    site: { logo_url: string | null };
-    topbar: TopBarSettings;
-    nav: NavSettings;
     hero: HeroSettings;
     stats: StatItem[];
     cta: { headline: string; sub: string };
@@ -338,17 +317,10 @@ function formatSeason(start: string | null, end: string | null): string {
 }
 
 export default function Home({ listings, homeSettings }: HomeProps) {
-    const [scrolled, setScrolled]         = useState(false);
     const [testimonialIdx, setIdx]        = useState(0);
     const [state, setState]               = useState('');
     const [species, setSpecies]           = useState('');
     const [leaseType, setLeaseType]       = useState('');
-
-    useEffect(() => {
-        const handler = () => setScrolled(window.scrollY > 40);
-        window.addEventListener('scroll', handler, { passive: true });
-        return () => window.removeEventListener('scroll', handler);
-    }, []);
 
     function handleSearch(e: React.FormEvent) {
         e.preventDefault();
@@ -368,54 +340,7 @@ export default function Home({ listings, homeSettings }: HomeProps) {
         <div className="ah-page">
 
             {/* ── NAV ─────────────────────────────────────────────────────── */}
-            <nav className={`ah-nav${scrolled ? ' scrolled' : ''}`}>
-                <div className="nav-strip">
-                    <div className="nav-strip-left">
-                        <span><span className="strip-dot" />{homeSettings.topbar.tagline}</span>
-                        {homeSettings.topbar.phone && <span>{homeSettings.topbar.phone}</span>}
-                    </div>
-                    <div className="nav-strip-right">
-                        {homeSettings.topbar.link1 && <span>{homeSettings.topbar.link1}</span>}
-                        {homeSettings.topbar.link2 && <span>{homeSettings.topbar.link2}</span>}
-                        {homeSettings.topbar.link3 && <span>{homeSettings.topbar.link3}</span>}
-                        {homeSettings.topbar.link4 && <span>{homeSettings.topbar.link4}</span>}
-                    </div>
-                </div>
-                <div className="nav-main">
-                    <Link href="/" className="logo">
-                        {homeSettings.site.logo_url ? (
-                            <img
-                                src={homeSettings.site.logo_url}
-                                alt="American Headhunter"
-                                className="logo-img"
-                            />
-                        ) : (
-                            <>
-                                <div className="logo-mark">
-                                    <span className="logo-mark-letters">AH</span>
-                                </div>
-                                <div className="logo-text">
-                                    <span className="logo-name">American Headhunter</span>
-                                    <span className="logo-tag">Est. 2025 · Hunting Leases</span>
-                                </div>
-                            </>
-                        )}
-                    </Link>
-                    <ul className="nav-links">
-                        {homeSettings.nav.links.map((link, i) => (
-                            <li key={i}><a href={link.href}>{link.label}</a></li>
-                        ))}
-                    </ul>
-                    <div className="nav-actions">
-                        <Link href={homeSettings.nav.signin_href} className="nav-link-text">
-                            {homeSettings.nav.signin_label}
-                        </Link>
-                        <Link href={homeSettings.nav.cta_href} className="nav-cta">
-                            {homeSettings.nav.cta_label}
-                        </Link>
-                    </div>
-                </div>
-            </nav>
+            <PublicNav />
 
             {/* ── HERO ────────────────────────────────────────────────────── */}
             <section className="ah-hero">
