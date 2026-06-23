@@ -98,6 +98,9 @@ export default function Register() {
     // choice and hide the other options — the "Skip this" link unlocks the full
     // toggle for anyone who clicked the wrong button or doesn't qualify.
     const [serviceLocked, setServiceLocked] = useState<boolean>(!!signupService);
+    // The locked-in service type (set only while a callout deep-link holds), so
+    // the step's title, copy and proof control can all be keyed off it.
+    const lockedService = serviceLocked && form.service_status !== '' ? form.service_status : null;
 
     function set<K extends keyof typeof form>(field: K, value: (typeof form)[K]) {
         setForm(f => ({ ...f, [field]: value }));
@@ -347,22 +350,11 @@ export default function Register() {
                     first responder and attaching proof opens a verification the
                     team reviews; the benefit unlocks on approval. */}
                 <div style={{ marginBottom: 24, padding: 16, background: '#f4ecdc', border: '1px solid #a89874' }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#4a5440', margin: '0 0 6px' }}>
-                        Veteran or First Responder? <span style={{ color: '#8a7a5a' }}>· Optional</span>
-                    </p>
-                    <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14, color: '#4a5440', margin: '0 0 12px', lineHeight: 1.45 }}>
-                        Verify your service to unlock your member benefit. You can skip this and add it later from your profile.
-                    </p>
-
-                    {serviceLocked && form.service_status !== '' ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                            <span style={{
-                                padding: '7px 14px', background: '#0a1512', color: '#e8dcc4',
-                                fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
-                                letterSpacing: '0.1em', textTransform: 'uppercase',
-                            }}>
-                                Verifying as {SERVICE_LABELS[form.service_status]}
-                            </span>
+                    {lockedService ? (
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', margin: '0 0 6px' }}>
+                            <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#4a5440', margin: 0 }}>
+                                {SERVICE_LABELS[lockedService]} Verification <span style={{ color: '#8a7a5a' }}>· Optional</span>
+                            </p>
                             <button
                                 type="button"
                                 onClick={() => {
@@ -376,10 +368,22 @@ export default function Register() {
                                     color: '#8a5a2a', textDecoration: 'underline',
                                 }}
                             >
-                                Not a {SERVICE_LABELS[form.service_status].toLowerCase()}? Skip this
+                                Not a {SERVICE_LABELS[lockedService].toLowerCase()}? Skip this
                             </button>
                         </div>
                     ) : (
+                        <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#4a5440', margin: '0 0 6px' }}>
+                            Veteran or First Responder? <span style={{ color: '#8a7a5a' }}>· Optional</span>
+                        </p>
+                    )}
+
+                    <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14, color: '#4a5440', margin: '0 0 12px', lineHeight: 1.45 }}>
+                        {lockedService
+                            ? `Verify your ${SERVICE_LABELS[lockedService].toLowerCase()} status to unlock your member benefit. You can skip this and add it later from your profile.`
+                            : 'Verify your service to unlock your member benefit. You can skip this and add it later from your profile.'}
+                    </p>
+
+                    {! lockedService && (
                         <div style={{ display: 'inline-flex', flexWrap: 'wrap', border: '1px solid #a89874' }}>
                             {([['', 'No, skip'], ['veteran', 'Veteran'], ['first_responder', 'First Responder']] as const).map(([value, label]) => {
                                 const active = form.service_status === value;
