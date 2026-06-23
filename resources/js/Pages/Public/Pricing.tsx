@@ -33,8 +33,19 @@ interface Plan {
     promo_codes: PromoCode[]
 }
 
+interface Callout {
+    id: string
+    eyebrow: string | null
+    body: string
+    features: Perk[]
+    cta_label: string | null
+    cta_url: string | null
+    accent_color: string | null
+}
+
 interface Props {
     groups: Record<string, Plan[]>
+    callouts: Record<string, Callout[]>
     current_account_type: string | null
     // The member's current paid plan key (null when free / no subscription).
     current_plan_key: string | null
@@ -73,7 +84,7 @@ function formatPrice(plan: Plan, cycle: Cycle): { amount: string; suffix: string
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function Pricing({ groups, current_account_type, current_plan_key, has_active_subscription }: Props) {
+export default function Pricing({ groups, callouts, current_account_type, current_plan_key, has_active_subscription }: Props) {
     const [scrolled, setScrolled] = useState(false)
     const { auth } = usePage<{ auth?: { authenticated: boolean } }>().props
 
@@ -95,6 +106,7 @@ export default function Pricing({ groups, current_account_type, current_plan_key
     }, [])
 
     const plans = groups[activeType] ?? []
+    const activeCallouts = callouts[activeType] ?? []
 
     return (
         <>
@@ -233,39 +245,57 @@ export default function Pricing({ groups, current_account_type, current_plan_key
                         </div>
                     )}
 
-                    {activeType === 'hunter' && (
-                        <div style={{
+                    {activeCallouts.map(callout => (
+                        <div key={callout.id} style={{
                             marginTop: 40, padding: '28px 32px',
                             background: 'var(--ink, #0a1512)', color: '#f4ecdc',
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            gap: 24, flexWrap: 'wrap', borderLeft: '4px solid var(--blaze)',
+                            gap: 24, flexWrap: 'wrap',
+                            borderLeft: `4px solid ${callout.accent_color || 'var(--blaze)'}`,
                         }}>
                             <div>
-                                <p style={{
-                                    fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
-                                    letterSpacing: '0.18em', textTransform: 'uppercase',
-                                    color: 'var(--blaze)', margin: '0 0 8px',
-                                }}>
-                                    Veteran or First Responder?
-                                </p>
+                                {callout.eyebrow && (
+                                    <p style={{
+                                        fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+                                        letterSpacing: '0.18em', textTransform: 'uppercase',
+                                        color: callout.accent_color || 'var(--blaze)', margin: '0 0 8px',
+                                    }}>
+                                        {callout.eyebrow}
+                                    </p>
+                                )}
                                 <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 18, margin: 0, lineHeight: 1.45, maxWidth: 560 }}>
-                                    Thank you for your service. Verify your status when you sign up — once approved,
-                                    your Hunter membership is <em>free, for life</em>.
+                                    {callout.body}
                                 </p>
+                                {callout.features.length > 0 && (
+                                    <ul style={{ listStyle: 'none', padding: 0, margin: '16px 0 0', display: 'grid', gap: 6, maxWidth: 560 }}>
+                                        {callout.features.map((f, i) => (
+                                            <li key={i} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 15 }}>
+                                                <span style={{ color: callout.accent_color || 'var(--blaze)', flexShrink: 0 }}>✓</span>
+                                                <span>
+                                                    {f.label}
+                                                    {f.description && <span style={{ opacity: 0.7 }}> — {f.description}</span>}
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
                             </div>
-                            <a
-                                href="/get-started?type=hunter"
-                                style={{
-                                    flexShrink: 0, padding: '13px 26px', background: 'var(--blaze)',
-                                    color: '#fff', textDecoration: 'none',
-                                    fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
-                                    fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase',
-                                }}
-                            >
-                                Verify &amp; Join →
-                            </a>
+                            {callout.cta_label && callout.cta_url && (
+                                <a
+                                    href={callout.cta_url}
+                                    style={{
+                                        flexShrink: 0, padding: '13px 26px',
+                                        background: callout.accent_color || 'var(--blaze)',
+                                        color: '#fff', textDecoration: 'none',
+                                        fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+                                        fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase',
+                                    }}
+                                >
+                                    {callout.cta_label} →
+                                </a>
+                            )}
                         </div>
-                    )}
+                    ))}
                 </div>
             </div>
         </>

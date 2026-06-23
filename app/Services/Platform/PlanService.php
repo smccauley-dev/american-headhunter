@@ -8,6 +8,7 @@ use App\Models\Platform\FeatureEntitlement;
 use App\Models\Platform\MembershipPlan;
 use App\Models\Platform\PlanPromoCode;
 use App\Models\Platform\PlanVersion;
+use App\Models\Platform\PricingCallout;
 use App\Models\Platform\PromotionalPeriod;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
@@ -25,6 +26,7 @@ use Illuminate\Support\Collection;
 class PlanService extends BaseService
 {
     private const PRICING_CACHE_KEY = 'public_pricing';
+    private const CALLOUTS_CACHE_KEY = 'public_callouts';
 
     public function __construct(
         private readonly EntitlementService $entitlements,
@@ -45,7 +47,50 @@ class PlanService extends BaseService
 
     public function flushPricingCache(): void
     {
-        $this->invalidate(self::PRICING_CACHE_KEY);
+        $this->invalidate(self::PRICING_CACHE_KEY, self::CALLOUTS_CACHE_KEY);
+    }
+
+    /**
+     * Published pricing callouts (horizontal banners) grouped by account type, so
+     * the pricing page can render them beneath the cards on the matching tab.
+     * Cached 15 min in Valkey Cluster 2 — invalidate via flushPricingCache().
+     *
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function publicCallouts(): array
+    {
+        return $this->cache(self::CALLOUTS_CACHE_KEY, fn () => $this->buildPublicCallouts(), ttlMinutes: 15);
+    }
+
+    /**
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function buildPublicCallouts(): array
+    {
+        $groups = [];
+
+        $callouts = PricingCallout::on('platform')
+            ->where('is_published', true)
+            ->orderBy('account_type')
+            ->orderBy('sort_order')
+            ->get();
+
+        foreach ($callouts as $callout) {
+            $groups[$callout->account_type][] = [
+                'id'           => $callout->id,
+                'eyebrow'      => $callout->eyebrow,
+                'body'         => $callout->body,
+                'features'     => array_values(array_map(static fn ($f): array => [
+                    'label'       => $f['label'] ?? '',
+                    'description' => $f['description'] ?? null,
+                ], $callout->features ?? [])),
+                'cta_label'    => $callout->cta_label,
+                'cta_url'      => $callout->cta_url,
+                'accent_color' => $callout->accent_color,
+            ];
+        }
+
+        return $groups;
     }
 
     /**

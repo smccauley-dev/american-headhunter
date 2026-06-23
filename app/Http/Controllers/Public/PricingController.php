@@ -51,6 +51,7 @@ class PricingController extends Controller
 
         return inertia('Public/Pricing', [
             'groups'                 => $groups,
+            'callouts'               => $this->planService->publicCallouts(),
             'current_account_type'   => $currentAccountType,
             'current_plan_key'       => $currentPlanKey,
             'has_active_subscription' => $hasActiveSubscription,
