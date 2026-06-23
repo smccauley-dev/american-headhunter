@@ -31,6 +31,9 @@ interface RegisterProps {
     signupPromo?: SignupPromo | null;
     signupPlan?: SignupPlan | null;
     signupInterval?: 'monthly' | 'annual';
+    // Preselects the veteran / first-responder step when a pricing callout link
+    // carried a ?service= flag through get-started.
+    signupService?: 'veteran' | 'first_responder' | null;
     serviceMethods?: { veteran: string; first_responder: string };
     errors?: Record<string, string>;
 }
@@ -62,7 +65,7 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function Register() {
-    const { accountType, legalUrls, signupPromo, signupPlan, signupInterval = 'monthly', serviceMethods, errors = {} } = usePage<RegisterProps>().props;
+    const { accountType, legalUrls, signupPromo, signupPlan, signupInterval = 'monthly', signupService, serviceMethods, errors = {} } = usePage<RegisterProps>().props;
 
     const paid       = signupPlan?.is_paid ?? false;
     const hasMonthly = (signupPlan?.monthly_price_cents ?? 0) > 0;
@@ -85,8 +88,9 @@ export default function Register() {
         // pricing page, falling back to whichever the plan actually offers.
         interval:          (signupInterval === 'annual' && hasAnnual) ? 'annual' : (hasMonthly ? 'monthly' : 'annual'),
         // Optional service-status step (empty = skipped). A File here makes the
-        // POST multipart so the proof reaches the server.
-        service_status:    '' as ServiceStatus,
+        // POST multipart so the proof reaches the server. Preselected when a
+        // pricing callout deep-linked a veteran / first-responder flag.
+        service_status:    (signupService ?? '') as ServiceStatus,
         service_proof:     null as File | null,
     });
     const [processing, setProcessing] = useState(false);

@@ -33,13 +33,17 @@ interface Plan {
     promo_codes: PromoCode[]
 }
 
+interface CalloutButton {
+    label: string
+    url: string
+}
+
 interface Callout {
     id: string
     eyebrow: string | null
     body: string
     features: Perk[]
-    cta_label: string | null
-    cta_url: string | null
+    buttons: CalloutButton[]
     accent_color: string | null
 }
 
@@ -280,19 +284,24 @@ export default function Pricing({ groups, callouts, current_account_type, curren
                                     </ul>
                                 )}
                             </div>
-                            {callout.cta_label && callout.cta_url && (
-                                <a
-                                    href={callout.cta_url}
-                                    style={{
-                                        flexShrink: 0, padding: '13px 26px',
-                                        background: callout.accent_color || 'var(--blaze)',
-                                        color: '#fff', textDecoration: 'none',
-                                        fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
-                                        fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase',
-                                    }}
-                                >
-                                    {callout.cta_label} →
-                                </a>
+                            {callout.buttons.length > 0 && (
+                                <div style={{ flexShrink: 0, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                                    {callout.buttons.map((button, i) => (
+                                        <a
+                                            key={i}
+                                            href={button.url}
+                                            style={{
+                                                padding: '13px 26px',
+                                                background: callout.accent_color || 'var(--blaze)',
+                                                color: '#fff', textDecoration: 'none',
+                                                fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+                                                fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase',
+                                            }}
+                                        >
+                                            {button.label} →
+                                        </a>
+                                    ))}
+                                </div>
                             )}
                         </div>
                     ))}

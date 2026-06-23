@@ -114,17 +114,31 @@ class PricingCalloutResource extends Resource
                         ]),
                 ]),
 
-            Section::make('Call to Action & Display')
+            Section::make('Buttons')
+                ->description('One or more CTA buttons. Leave empty for none. Add a "service" flag to a link (e.g. /get-started?type=hunter&service=veteran or &service=first_responder) to preselect the signup form\'s veteran / first-responder document step.')
+                ->schema([
+                    Repeater::make('buttons')
+                        ->hiddenLabel()
+                        ->addActionLabel('Add button')
+                        ->columns(2)
+                        ->reorderable()
+                        ->maxItems(3)
+                        ->schema([
+                            TextInput::make('label')
+                                ->label('Button Label')
+                                ->required()
+                                ->maxLength(40),
+                            TextInput::make('url')
+                                ->label('Button Link')
+                                ->required()
+                                ->maxLength(255)
+                                ->helperText('e.g. /get-started?type=hunter&service=veteran'),
+                        ]),
+                ]),
+
+            Section::make('Display')
                 ->columns(2)
                 ->schema([
-                    TextInput::make('cta_label')
-                        ->label('Button Label')
-                        ->maxLength(40)
-                        ->helperText('e.g. "Verify & Join". Leave blank to hide the button.'),
-                    TextInput::make('cta_url')
-                        ->label('Button Link')
-                        ->maxLength(255)
-                        ->helperText('e.g. /get-started?type=hunter'),
                     ColorPicker::make('accent_color')
                         ->label('Accent Color')
                         ->helperText('Hex color for the eyebrow, bullets, border and button. Blank uses the blaze default.'),

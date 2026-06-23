@@ -46,7 +46,19 @@ class AuthController extends Controller
             'plan'     => $plan,
             // Billing cycle carried from the pricing page's toggle.
             'interval' => $request->query('interval') === 'annual' ? 'annual' : 'monthly',
+            // Optional veteran / first-responder flag from a pricing callout link;
+            // carried through to register to preselect the service-status step.
+            'service'  => $this->normalizeService($request->query('service')),
         ]);
+    }
+
+    /**
+     * Accept only the two recognized service flags from a query string; anything
+     * else (including null) becomes null so the signup step stays unselected.
+     */
+    private function normalizeService(?string $service): ?string
+    {
+        return in_array($service, ['veteran', 'first_responder'], true) ? $service : null;
     }
 
     public function showRegister(Request $request): Response
@@ -69,6 +81,9 @@ class AuthController extends Controller
             'signupPromo'    => app(PromotionAutoApplyService::class)->previewForSignup($accountType),
             'signupPlan'     => $plan,
             'signupInterval' => $request->query('interval') === 'annual' ? 'annual' : 'monthly',
+            // Preselects the optional veteran / first-responder step when a pricing
+            // callout link carried a ?service= flag here.
+            'signupService'  => $this->normalizeService($request->query('service')),
             // Method switch per type ('manual' | 'id_me' | 'both') — drives whether
             // the optional step offers a document upload or defers to ID.me.
             'serviceMethods' => [

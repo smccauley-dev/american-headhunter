@@ -84,8 +84,13 @@ class PlanService extends BaseService
                     'label'       => $f['label'] ?? '',
                     'description' => $f['description'] ?? null,
                 ], $callout->features ?? [])),
-                'cta_label'    => $callout->cta_label,
-                'cta_url'      => $callout->cta_url,
+                'buttons'      => array_values(array_map(static fn ($b): array => [
+                    'label' => $b['label'] ?? '',
+                    'url'   => $b['url'] ?? '',
+                ], array_filter(
+                    $callout->buttons ?? [],
+                    static fn ($b): bool => ! empty($b['label']) && ! empty($b['url']),
+                ))),
                 'accent_color' => $callout->accent_color,
             ];
         }

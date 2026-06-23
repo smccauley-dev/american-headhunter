@@ -6,8 +6,8 @@ use App\Models\BaseModel;
 
 /**
  * A publishable horizontal banner shown beneath the plan cards on a pricing tab
- * (DB 12). Not a purchasable plan — just copy, optional feature bullets, and a
- * single CTA link, gated by is_published. See the pricing_callouts migration.
+ * (DB 12). Not a purchasable plan — just copy, optional feature bullets, and one
+ * or more CTA buttons, gated by is_published. See the pricing_callouts migration.
  */
 class PricingCallout extends BaseModel
 {
@@ -19,8 +19,7 @@ class PricingCallout extends BaseModel
         'eyebrow',
         'body',
         'features',
-        'cta_label',
-        'cta_url',
+        'buttons',
         'accent_color',
         'is_published',
         'sort_order',
@@ -30,6 +29,7 @@ class PricingCallout extends BaseModel
     {
         return [
             'features'     => 'array',
+            'buttons'      => 'array',
             'is_published' => 'boolean',
             'sort_order'   => 'integer',
             'created_at'   => 'datetime',

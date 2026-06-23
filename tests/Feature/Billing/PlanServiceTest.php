@@ -224,8 +224,10 @@ class PlanServiceTest extends TestCase
                 ['label' => 'Free for life', 'description' => 'No renewal'],
                 ['label' => 'Priority verification', 'description' => null],
             ],
-            'cta_label'    => 'Verify & Join',
-            'cta_url'      => '/get-started?type=hunter',
+            'buttons'      => [
+                ['label' => 'Verify as Veteran',         'url' => '/get-started?type=hunter&service=veteran'],
+                ['label' => 'Verify as First Responder', 'url' => '/get-started?type=hunter&service=first_responder'],
+            ],
             'is_published' => true,
             'sort_order'   => 5,
         ]);
@@ -237,8 +239,14 @@ class PlanServiceTest extends TestCase
         $mine = collect($callouts['hunter'] ?? [])->firstWhere('id', $callout->id);
 
         $this->assertNotNull($mine, 'a published callout appears under its tab');
-        $this->assertSame('Verify & Join', $mine['cta_label']);
-        $this->assertSame('/get-started?type=hunter', $mine['cta_url']);
+        $this->assertSame(
+            [
+                ['label' => 'Verify as Veteran',         'url' => '/get-started?type=hunter&service=veteran'],
+                ['label' => 'Verify as First Responder', 'url' => '/get-started?type=hunter&service=first_responder'],
+            ],
+            $mine['buttons'],
+            'buttons are shaped to {label, url}',
+        );
         $this->assertSame(
             [
                 ['label' => 'Free for life', 'description' => 'No renewal'],
