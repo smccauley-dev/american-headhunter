@@ -94,6 +94,10 @@ export default function Register() {
         service_proof:     null as File | null,
     });
     const [processing, setProcessing] = useState(false);
+    // When a pricing callout deep-linked a service flag, lock the step to that
+    // choice and hide the other options — the "Skip this" link unlocks the full
+    // toggle for anyone who clicked the wrong button or doesn't qualify.
+    const [serviceLocked, setServiceLocked] = useState<boolean>(!!signupService);
 
     function set<K extends keyof typeof form>(field: K, value: (typeof form)[K]) {
         setForm(f => ({ ...f, [field]: value }));
@@ -350,31 +354,58 @@ export default function Register() {
                         Verify your service to unlock your member benefit. You can skip this and add it later from your profile.
                     </p>
 
-                    <div style={{ display: 'inline-flex', flexWrap: 'wrap', border: '1px solid #a89874' }}>
-                        {([['', 'No, skip'], ['veteran', 'Veteran'], ['first_responder', 'First Responder']] as const).map(([value, label]) => {
-                            const active = form.service_status === value;
-                            return (
-                                <button
-                                    key={value || 'none'}
-                                    type="button"
-                                    onClick={() => {
-                                        set('service_status', value);
-                                        if (value === '') set('service_proof', null);
-                                    }}
-                                    style={{
-                                        padding: '7px 14px', border: 'none', cursor: 'pointer',
-                                        borderRight: value === 'first_responder' ? 'none' : '1px solid #a89874',
-                                        background: active ? '#0a1512' : 'transparent',
-                                        color: active ? '#e8dcc4' : '#4a5440',
-                                        fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
-                                        letterSpacing: '0.1em', textTransform: 'uppercase',
-                                    }}
-                                >
-                                    {label}
-                                </button>
-                            );
-                        })}
-                    </div>
+                    {serviceLocked && form.service_status !== '' ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                            <span style={{
+                                padding: '7px 14px', background: '#0a1512', color: '#e8dcc4',
+                                fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                                letterSpacing: '0.1em', textTransform: 'uppercase',
+                            }}>
+                                Verifying as {SERVICE_LABELS[form.service_status]}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setServiceLocked(false);
+                                    set('service_status', '');
+                                    set('service_proof', null);
+                                }}
+                                style={{
+                                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                                    fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14,
+                                    color: '#8a5a2a', textDecoration: 'underline',
+                                }}
+                            >
+                                Not a {SERVICE_LABELS[form.service_status].toLowerCase()}? Skip this
+                            </button>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'inline-flex', flexWrap: 'wrap', border: '1px solid #a89874' }}>
+                            {([['', 'No, skip'], ['veteran', 'Veteran'], ['first_responder', 'First Responder']] as const).map(([value, label]) => {
+                                const active = form.service_status === value;
+                                return (
+                                    <button
+                                        key={value || 'none'}
+                                        type="button"
+                                        onClick={() => {
+                                            set('service_status', value);
+                                            if (value === '') set('service_proof', null);
+                                        }}
+                                        style={{
+                                            padding: '7px 14px', border: 'none', cursor: 'pointer',
+                                            borderRight: value === 'first_responder' ? 'none' : '1px solid #a89874',
+                                            background: active ? '#0a1512' : 'transparent',
+                                            color: active ? '#e8dcc4' : '#4a5440',
+                                            fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                                            letterSpacing: '0.1em', textTransform: 'uppercase',
+                                        }}
+                                    >
+                                        {label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
 
                     {form.service_status !== '' && serviceMethods?.[form.service_status] === 'id_me' ? (
                         <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14, color: '#4a5440', margin: '14px 0 0', lineHeight: 1.45 }}>
