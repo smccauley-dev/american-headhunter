@@ -346,9 +346,13 @@ export default function Register() {
                     required
                 />
 
-                {/* Optional service-status step — skippable. Declaring veteran /
-                    first responder and attaching proof opens a verification the
-                    team reviews; the benefit unlocks on approval. */}
+                {/* Optional service-status step — shown only when a Veteran / First
+                    Responder pricing callout deep-linked here (signupService set).
+                    Everyone else self-declares later from their profile, so the
+                    step stays out of the default signup. Declaring a status and
+                    attaching proof opens a verification the team reviews; the
+                    benefit unlocks on approval. */}
+                {signupService && (
                 <div style={{ marginBottom: 24, padding: 16, background: '#f4ecdc', border: '1px solid #a89874' }}>
                     {lockedService ? (
                         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', margin: '0 0 6px' }}>
@@ -451,6 +455,7 @@ export default function Register() {
                         </div>
                     ) : null}
                 </div>
+                )}
 
                 {/* Consent checkboxes */}
                 <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
