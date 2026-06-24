@@ -2,7 +2,7 @@
 
 namespace Tests\Feature\Filament;
 
-use App\Filament\Admin\Resources\ServiceVerifications\Pages\ListVeteranVerifications;
+use App\Filament\Admin\Widgets\VeteranVerificationsTable;
 use App\Models\Identity\User;
 use App\Models\Identity\VeteranVerification;
 use Filament\Facades\Filament;
@@ -90,7 +90,7 @@ class VeteranVerificationQueueTest extends TestCase
 
         $record = VeteranVerification::on('identity')->find($this->recordId);
 
-        Livewire::test(ListVeteranVerifications::class)
+        Livewire::test(VeteranVerificationsTable::class)
             ->assertCanSeeTableRecords([$record])
             ->callTableAction('approve', $record)
             ->assertHasNoTableActionErrors();
@@ -102,5 +102,24 @@ class VeteranVerificationQueueTest extends TestCase
             DB::connection('billing')->table('promotion_claims')->where('user_id', $this->applicantId)->count(),
             'approving from the queue grants the configured veteran promotion',
         );
+    }
+
+    public function test_consolidated_page_mounts_with_both_verification_sections(): void
+    {
+        $this->actAsSuperAdmin();
+
+        // The page mounts cleanly (catches import/wiring errors); its two
+        // section tables are lazy header widgets loaded over separate Livewire
+        // requests, so we assert they're wired in rather than rendered inline.
+        // Each widget's table render is covered above and in its own test.
+        $component = Livewire::test(\App\Filament\Admin\Pages\UserVerifications::class)
+            ->assertOk();
+
+        $method = new \ReflectionMethod(\App\Filament\Admin\Pages\UserVerifications::class, 'getHeaderWidgets');
+        $method->setAccessible(true);
+        $widgets = $method->invoke($component->instance());
+
+        $this->assertContains(\App\Filament\Admin\Widgets\VeteranVerificationsTable::class, $widgets);
+        $this->assertContains(\App\Filament\Admin\Widgets\FirstResponderVerificationsTable::class, $widgets);
     }
 }
