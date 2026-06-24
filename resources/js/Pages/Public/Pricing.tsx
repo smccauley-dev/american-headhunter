@@ -82,7 +82,10 @@ function formatPrice(plan: Plan, cycle: Cycle): { amount: string; suffix: string
     if (plan.is_default_free && (!cents || cents === 0)) return { amount: 'Free', suffix: '' }
     if (cents === null || cents === 0)                   return { amount: 'Contact', suffix: '' }
     const dollars = cents / 100
-    const amount = `$${dollars.toLocaleString(undefined, { maximumFractionDigits: dollars % 1 === 0 ? 0 : 2 })}`
+    // Whole-dollar prices stay clean ($100); any cents show two digits ($99.90,
+    // not $99.9) so the card matches the signup page's currency formatting.
+    const fractionDigits = cents % 100 === 0 ? 0 : 2
+    const amount = `$${dollars.toLocaleString(undefined, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })}`
     return { amount, suffix: cycle === 'annual' ? '/yr' : '/mo' }
 }
 
