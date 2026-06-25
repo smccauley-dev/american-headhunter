@@ -27,7 +27,7 @@ class PropertyController extends Controller
         // Empty-string filters (cleared UI inputs) are treated as absent.
         $request->merge(array_map(
             fn ($v) => $v === '' ? null : $v,
-            $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price'])
+            $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price', 'min_acres', 'max_acres', 'min_hunters', 'max_hunters'])
         ));
 
         $request->validate([
@@ -36,12 +36,16 @@ class PropertyController extends Controller
             'listing_type' => ['nullable', 'in:annual_lease,seasonal_lease,day_hunt,auction'],
             'min_price'    => ['nullable', 'numeric', 'min:0'],
             'max_price'    => ['nullable', 'numeric', 'min:0'],
+            'min_acres'    => ['nullable', 'numeric', 'min:0'],
+            'max_acres'    => ['nullable', 'numeric', 'min:0'],
+            'min_hunters'  => ['nullable', 'integer', 'min:0'],
+            'max_hunters'  => ['nullable', 'integer', 'min:0'],
             'species'      => ['nullable', 'array'],
             'species.*'    => ['string', 'max:40'],
             'page'         => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $filters = $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price']);
+        $filters = $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price', 'min_acres', 'max_acres', 'min_hunters', 'max_hunters']);
 
         if ($request->has('species')) {
             $filters['species'] = (array) $request->input('species');
@@ -109,10 +113,14 @@ class PropertyController extends Controller
             'filter_state_enabled'   => $bool('filter_state_enabled'),
             'filter_type_enabled'    => $bool('filter_type_enabled'),
             'filter_price_enabled'   => $bool('filter_price_enabled'),
+            'filter_acres_enabled'   => $bool('filter_acres_enabled'),
+            'filter_hunters_enabled' => $bool('filter_hunters_enabled'),
             'filter_species_enabled' => $bool('filter_species_enabled'),
             'filter_state_label'     => $p('filter_state_label',   'State'),
             'filter_type_label'      => $p('filter_type_label',    'Lease Type'),
             'filter_price_label'     => $p('filter_price_label',   'Price Range'),
+            'filter_acres_label'     => $p('filter_acres_label',   'Acres'),
+            'filter_hunters_label'   => $p('filter_hunters_label', 'Party Size'),
             'filter_species_label'   => $p('filter_species_label', 'Game Species'),
 
             'card_columns'          => (int) $p('card_columns', '2'),

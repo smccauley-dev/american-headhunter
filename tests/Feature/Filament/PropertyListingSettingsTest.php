@@ -27,6 +27,7 @@ class PropertyListingSettingsTest extends TestCase
     private const TOUCHED_KEYS = [
         'properties.cta_guest_url',
         'properties.filter_species_enabled',
+        'properties.filter_acres_enabled',
         'properties.card_columns',
     ];
 
@@ -83,6 +84,7 @@ class PropertyListingSettingsTest extends TestCase
         Livewire::test(PropertyListingSettings::class)
             ->set('data.cta_guest_url', '/pricing')
             ->set('data.filter_species_enabled', false)
+            ->set('data.filter_acres_enabled', false)
             ->set('data.card_columns', '3')
             ->call('save')
             ->assertHasNoFormErrors();
@@ -90,6 +92,7 @@ class PropertyListingSettingsTest extends TestCase
         $t = app(TenantService::class);
         $this->assertSame('/pricing', $t->getSetting('properties.cta_guest_url'));
         $this->assertSame('0', $t->getSetting('properties.filter_species_enabled'));
+        $this->assertSame('0', $t->getSetting('properties.filter_acres_enabled'));
         $this->assertSame('3', $t->getSetting('properties.card_columns'));
     }
 
@@ -110,6 +113,10 @@ class PropertyListingSettingsTest extends TestCase
                 ->where('config.cta_guest_url', '/get-started')
                 ->where('config.hero_eyebrow', 'Find Land')
                 ->where('config.card_columns', 2)
-                ->where('config.filter_species_enabled', true));
+                ->where('config.filter_species_enabled', true)
+                ->where('config.filter_acres_enabled', true)
+                ->where('config.filter_acres_label', 'Acres')
+                ->where('config.filter_hunters_enabled', true)
+                ->where('config.filter_hunters_label', 'Party Size'));
     }
 }

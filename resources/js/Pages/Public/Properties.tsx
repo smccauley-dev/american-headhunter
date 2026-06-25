@@ -42,6 +42,10 @@ interface Filters {
     species?: string[]
     min_price?: string
     max_price?: string
+    min_acres?: string
+    max_acres?: string
+    min_hunters?: string
+    max_hunters?: string
 }
 
 interface PageConfig {
@@ -55,10 +59,14 @@ interface PageConfig {
     filter_state_enabled: boolean
     filter_type_enabled: boolean
     filter_price_enabled: boolean
+    filter_acres_enabled: boolean
+    filter_hunters_enabled: boolean
     filter_species_enabled: boolean
     filter_state_label: string
     filter_type_label: string
     filter_price_label: string
+    filter_acres_label: string
+    filter_hunters_label: string
     filter_species_label: string
     card_columns: number
     card_show_acres: boolean
@@ -129,6 +137,10 @@ export default function Properties({ listings, filters, config }: Props) {
     const [species,     setSpecies]     = useState<string[]>(filters.species ?? [])
     const [minPrice,    setMinPrice]    = useState(filters.min_price ?? '')
     const [maxPrice,    setMaxPrice]    = useState(filters.max_price ?? '')
+    const [minAcres,    setMinAcres]    = useState(filters.min_acres ?? '')
+    const [maxAcres,    setMaxAcres]    = useState(filters.max_acres ?? '')
+    const [minHunters,  setMinHunters]  = useState(filters.min_hunters ?? '')
+    const [maxHunters,  setMaxHunters]  = useState(filters.max_hunters ?? '')
 
     function buildParams(overrides: Record<string, unknown> = {}) {
         const params: Record<string, unknown> = {}
@@ -137,6 +149,10 @@ export default function Properties({ listings, filters, config }: Props) {
         if (species.length > 0)    params.species       = species
         if (minPrice)              params.min_price     = minPrice
         if (maxPrice)              params.max_price     = maxPrice
+        if (minAcres)              params.min_acres     = minAcres
+        if (maxAcres)              params.max_acres     = maxAcres
+        if (minHunters)            params.min_hunters   = minHunters
+        if (maxHunters)            params.max_hunters   = maxHunters
         return { ...params, ...overrides }
     }
 
@@ -159,7 +175,7 @@ export default function Properties({ listings, filters, config }: Props) {
         router.get('/properties', { ...buildParams(), page } as Record<string, string>)
     }
 
-    const hasFilters = !!(state || listingType || species.length || minPrice || maxPrice)
+    const hasFilters = !!(state || listingType || species.length || minPrice || maxPrice || minAcres || maxAcres || minHunters || maxHunters)
 
     return (
         <>
@@ -198,6 +214,7 @@ export default function Properties({ listings, filters, config }: Props) {
                                 <button
                                     onClick={() => {
                                         setState(''); setListingType(''); setSpecies([]); setMinPrice(''); setMaxPrice('')
+                                        setMinAcres(''); setMaxAcres(''); setMinHunters(''); setMaxHunters('')
                                         router.get('/properties')
                                     }}
                                     style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--blaze)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
@@ -265,6 +282,58 @@ export default function Properties({ listings, filters, config }: Props) {
                             </FilterBlock>
                         )}
 
+                        {/* Acres */}
+                        {config.filter_acres_enabled && (
+                            <FilterBlock label={config.filter_acres_label}>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <input
+                                        type="number"
+                                        placeholder="Min ac"
+                                        value={minAcres}
+                                        onChange={e => setMinAcres(e.target.value)}
+                                        onBlur={() => applyFilters()}
+                                        onKeyDown={e => e.key === 'Enter' && applyFilters()}
+                                        style={{ ...inputStyle, flex: 1 }}
+                                    />
+                                    <input
+                                        type="number"
+                                        placeholder="Max ac"
+                                        value={maxAcres}
+                                        onChange={e => setMaxAcres(e.target.value)}
+                                        onBlur={() => applyFilters()}
+                                        onKeyDown={e => e.key === 'Enter' && applyFilters()}
+                                        style={{ ...inputStyle, flex: 1 }}
+                                    />
+                                </div>
+                            </FilterBlock>
+                        )}
+
+                        {/* Party size (max hunters) */}
+                        {config.filter_hunters_enabled && (
+                            <FilterBlock label={config.filter_hunters_label}>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <input
+                                        type="number"
+                                        placeholder="Min"
+                                        value={minHunters}
+                                        onChange={e => setMinHunters(e.target.value)}
+                                        onBlur={() => applyFilters()}
+                                        onKeyDown={e => e.key === 'Enter' && applyFilters()}
+                                        style={{ ...inputStyle, flex: 1 }}
+                                    />
+                                    <input
+                                        type="number"
+                                        placeholder="Max"
+                                        value={maxHunters}
+                                        onChange={e => setMaxHunters(e.target.value)}
+                                        onBlur={() => applyFilters()}
+                                        onKeyDown={e => e.key === 'Enter' && applyFilters()}
+                                        style={{ ...inputStyle, flex: 1 }}
+                                    />
+                                </div>
+                            </FilterBlock>
+                        )}
+
                         {/* Species */}
                         {config.filter_species_enabled && (
                             <FilterBlock label={config.filter_species_label}>
@@ -303,7 +372,7 @@ export default function Properties({ listings, filters, config }: Props) {
                                     No listings match your current filters.
                                 </p>
                                 <button
-                                    onClick={() => { setState(''); setListingType(''); setSpecies([]); setMinPrice(''); setMaxPrice(''); router.get('/properties') }}
+                                    onClick={() => { setState(''); setListingType(''); setSpecies([]); setMinPrice(''); setMaxPrice(''); setMinAcres(''); setMaxAcres(''); setMinHunters(''); setMaxHunters(''); router.get('/properties') }}
                                     style={{ fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--blaze)', background: 'none', border: '1px solid var(--blaze)', padding: '10px 20px', cursor: 'pointer' }}
                                 >
                                     Clear Filters

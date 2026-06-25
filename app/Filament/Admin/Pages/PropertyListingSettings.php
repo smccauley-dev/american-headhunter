@@ -51,7 +51,8 @@ class PropertyListingSettings extends Page implements HasForms
 
     /** Toggle keys stored as '1'/'0' strings. */
     private const BOOL_KEYS = [
-        'filter_state_enabled', 'filter_type_enabled', 'filter_price_enabled', 'filter_species_enabled',
+        'filter_state_enabled', 'filter_type_enabled', 'filter_price_enabled',
+        'filter_acres_enabled', 'filter_hunters_enabled', 'filter_species_enabled',
         'card_show_acres', 'card_show_species', 'card_show_price', 'card_show_max_hunters',
     ];
 
@@ -74,10 +75,14 @@ class PropertyListingSettings extends Page implements HasForms
             'filter_state_enabled'   => (bool) (int) $p('filter_state_enabled',   '1'),
             'filter_type_enabled'    => (bool) (int) $p('filter_type_enabled',    '1'),
             'filter_price_enabled'   => (bool) (int) $p('filter_price_enabled',   '1'),
+            'filter_acres_enabled'   => (bool) (int) $p('filter_acres_enabled',   '1'),
+            'filter_hunters_enabled' => (bool) (int) $p('filter_hunters_enabled', '1'),
             'filter_species_enabled' => (bool) (int) $p('filter_species_enabled', '1'),
             'filter_state_label'     => $p('filter_state_label',   'State'),
             'filter_type_label'      => $p('filter_type_label',    'Lease Type'),
             'filter_price_label'     => $p('filter_price_label',   'Price Range'),
+            'filter_acres_label'     => $p('filter_acres_label',   'Acres'),
+            'filter_hunters_label'   => $p('filter_hunters_label', 'Party Size'),
             'filter_species_label'   => $p('filter_species_label', 'Game Species'),
             // Cards
             'card_columns'           => $p('card_columns', '2'),
@@ -146,6 +151,10 @@ class PropertyListingSettings extends Page implements HasForms
                         TextInput::make('filter_type_label')->label('Lease Type label')->maxLength(40),
                         Toggle::make('filter_price_enabled')->label('Show Price Range filter'),
                         TextInput::make('filter_price_label')->label('Price Range label')->maxLength(40),
+                        Toggle::make('filter_acres_enabled')->label('Show Acres filter'),
+                        TextInput::make('filter_acres_label')->label('Acres label')->maxLength(40),
+                        Toggle::make('filter_hunters_enabled')->label('Show Party Size filter'),
+                        TextInput::make('filter_hunters_label')->label('Party Size label')->maxLength(40),
                         Toggle::make('filter_species_enabled')->label('Show Game Species filter'),
                         TextInput::make('filter_species_label')->label('Game Species label')->maxLength(40),
                     ]),
