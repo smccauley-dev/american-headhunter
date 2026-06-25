@@ -1116,6 +1116,13 @@ class AdminPanelProvider extends PanelProvider
         .fi-tabs-item-label {
             color: inherit !important;
         }
+        /* Placeholder copy for not-yet-built dashboard tabs */
+        .fi-tabs-placeholder {
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
+            font-size: 12px !important;
+            letter-spacing: 0.04em !important;
+            color: rgba(10, 21, 18, 0.55) !important;
+        }
 
         /* ── Relation manager — allow shadow to overflow ─────────────── */
         .fi-resource-relation-manager {

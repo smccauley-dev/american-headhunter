@@ -70,14 +70,24 @@ class DashboardAnalyticsTest extends TestCase
 
     public function test_dashboard_mounts_with_analytics_widgets_for_a_billing_admin(): void
     {
-        $widgets = Livewire::test(Dashboard::class)->assertOk()
-            ->instance()->getWidgets();
+        $component = Livewire::test(Dashboard::class)->assertOk();
 
-        // The analytics widgets are registered, and a super_admin (billing access)
-        // sees the revenue widget.
+        // Default tab is analytics; its widgets are registered and a super_admin
+        // (billing access) sees the revenue widget.
+        $this->assertSame('analytics', $component->get('activeTab'));
+        $widgets = $component->instance()->getWidgets();
         $this->assertContains(PlatformOverviewStats::class, $widgets);
         $this->assertContains(RevenueStats::class, $widgets);
         $this->assertTrue(RevenueStats::canView());
+    }
+
+    public function test_switching_to_a_placeholder_tab_shows_no_widgets(): void
+    {
+        Livewire::test(Dashboard::class)
+            ->set('activeTab', 'test1')
+            ->assertOk()
+            ->assertSee('Test Tab 1')
+            ->tap(fn ($c) => $this->assertSame([], $c->instance()->getWidgets()));
     }
 
     public function test_overview_stats_widget_reads_db8_counts(): void

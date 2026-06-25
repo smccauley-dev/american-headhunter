@@ -13,24 +13,50 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Dashboard as BaseDashboard;
 
 /**
- * Admin home — platform analytics rendered as Filament widgets (stat cards + pie
- * charts). Every figure is pre-computed in DB 8 and read via AnalyticsService, so
- * the page never fans out across the transactional databases at request time.
+ * Admin home — a tabbed dashboard. The first tab renders the platform analytics
+ * widgets (stat cards + pie charts, all pre-computed in DB 8 and read via
+ * AnalyticsService). The remaining tabs are placeholders we'll build out.
  *
- * Counts/acres come from platform_snapshots (ah_readonly); the revenue widget
- * reads revenue_snapshots through the restricted analytics_admin (ah_system)
- * connection and is hidden from admins without billing access (RevenueStats::canView).
+ * The tab bar uses the standard `.fi-tabs` chrome (see AdminPanelProvider CSS),
+ * driven by the `$activeTab` Livewire property; getWidgets() returns the widget
+ * set for the active tab. Revenue stays gated to billing admins (RevenueStats::canView).
  */
 class Dashboard extends BaseDashboard
 {
-    public function getWidgets(): array
+    /** Active tab key. Tabs are declared in tabs(). */
+    public ?string $activeTab = 'analytics';
+
+    public function getView(): string
+    {
+        return 'filament.admin.pages.dashboard';
+    }
+
+    /**
+     * Tab definitions: key => label. Add a case to getWidgets() (or render
+     * placeholder content in the view) when filling one out.
+     *
+     * @return array<string, string>
+     */
+    public function tabs(): array
     {
         return [
-            PlatformOverviewStats::class,
-            UsersByTypeChart::class,
-            LeasesByStatusChart::class,
-            RevenueStats::class,
+            'analytics' => 'Platform Analytics',
+            'test1'     => 'Test Tab 1',
+            'test2'     => 'Test Tab 2',
         ];
+    }
+
+    public function getWidgets(): array
+    {
+        return match ($this->activeTab) {
+            'analytics' => [
+                PlatformOverviewStats::class,
+                UsersByTypeChart::class,
+                LeasesByStatusChart::class,
+                RevenueStats::class,
+            ],
+            default => [],
+        };
     }
 
     public function getColumns(): int|array
@@ -40,6 +66,10 @@ class Dashboard extends BaseDashboard
 
     public function getSubheading(): ?string
     {
+        if ($this->activeTab !== 'analytics') {
+            return null;
+        }
+
         $capturedAt = app(AnalyticsService::class)->current()?->captured_at;
 
         return $capturedAt
@@ -49,6 +79,11 @@ class Dashboard extends BaseDashboard
 
     protected function getHeaderActions(): array
     {
+        // Refresh is only meaningful on the analytics tab.
+        if ($this->activeTab !== 'analytics') {
+            return [];
+        }
+
         return [
             Action::make('refresh')
                 ->label('Refresh now')
