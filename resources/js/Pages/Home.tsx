@@ -59,9 +59,16 @@ interface HomeSettings {
     };
 }
 
+interface PublicStats {
+    total_users: number;
+    total_leases: number;
+    total_acres: number;
+}
+
 interface HomeProps {
     listings: Listing[];
     homeSettings: HomeSettings;
+    publicStats: PublicStats;
 }
 
 const SPECIES_CATALOG = [
@@ -316,7 +323,7 @@ function formatSeason(start: string | null, end: string | null): string {
     return start ? fmt(start) : fmt(end!);
 }
 
-export default function Home({ listings, homeSettings }: HomeProps) {
+export default function Home({ listings, homeSettings, publicStats }: HomeProps) {
     const [testimonialIdx, setIdx]        = useState(0);
     const [state, setState]               = useState('');
     const [species, setSpecies]           = useState('');
@@ -330,6 +337,16 @@ export default function Home({ listings, homeSettings }: HomeProps) {
         if (leaseType) params.set('listing_type',  leaseType);
         router.get('/properties?' + params.toString());
     }
+
+    const compact = (n: number) =>
+        n >= 1000 ? new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(n)
+                  : new Intl.NumberFormat('en-US').format(n);
+
+    const liveStats = [
+        { label: 'Members',       num: compact(publicStats.total_users) },
+        { label: 'Leases Signed', num: compact(publicStats.total_leases) },
+        { label: 'Acres Listed',  num: compact(publicStats.total_acres) },
+    ];
 
     const isDual    = homeSettings.hero.card_count >= 2;
     const featured  = listings[0] ?? null;
@@ -580,6 +597,18 @@ export default function Home({ listings, homeSettings }: HomeProps) {
             </section>}
 
             {/* ── STATS ───────────────────────────────────────────────────── */}
+            {/* Live, report-DB-backed social proof (counts only — never revenue). */}
+            <div className="stats-chapter live-stats-chapter">
+                <div className="stats-grid">
+                    {liveStats.map((stat, i) => (
+                        <div key={i} className="stat">
+                            <div className="stat-num">{stat.num}</div>
+                            <div className="stat-label">{stat.label}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
             {homeSettings.sections.stats && <div className="stats-chapter">
                 <div className="stats-grid">
                     {homeSettings.stats.map((stat, i) => (

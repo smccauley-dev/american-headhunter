@@ -72,6 +72,9 @@ GRANT CONNECT ON DATABASE ah_communications TO ah_runtime;
 CREATE DATABASE ah_analytics OWNER ah_etl;
 GRANT CONNECT ON DATABASE ah_analytics TO ah_readonly;
 GRANT CONNECT ON DATABASE ah_analytics TO ah_etl;
+-- ah_system reads the restricted revenue_snapshots table (the admin dashboard
+-- Revenue tab). Per-table SELECT grants are issued by the analytics migration.
+GRANT CONNECT ON DATABASE ah_analytics TO ah_system;
 
 -- ─── DB 9 — Audit & Compliance (append-only) ────────────────────────────────
 

@@ -279,6 +279,28 @@ To override a button in a specific resource only, add an inline CSS block via
 
 ---
 
+## Dashboard Widgets
+
+The admin Dashboard (`App\Filament\Admin\Pages\Dashboard`) is a widget grid, not a
+record page. Widgets live in `App\Filament\Admin\Widgets` and render inside the
+standard Field-Record section chrome (parchment card + inset dashed border).
+
+- **`StatsOverviewWidget`** (stat cards): use the **`HasContainedStatsSection`**
+  trait (`App\Filament\Admin\Concerns`). Filament pins the stats section to
+  `->contained(false)`, which strips the section's inner padding and makes the
+  cards bleed to the dashed edge with a mis-inset heading. The trait overrides
+  `getSectionContentComponent()` to restore the standard contained padding.
+- **Stat count fills the grid:** `getColumns()` resolves to 3 columns unless the
+  stat count `% 3 === 1`. Give a section a count that fills its rows (e.g. 3 or 6)
+  so there's no ragged trailing empty cell.
+- **`ChartWidget`** (pie/doughnut/bar): extend `Filament\Widgets\ChartWidget` and
+  implement `getType()` — already renders in a contained section, no trait needed.
+- Use the brand palette from `docs/design_system.md` for chart colours.
+- Run `filament:clear-cached-components && filament:cache-components` after adding
+  a new widget so it registers.
+
+---
+
 ## Expanding to New Page Types
 
 When a new page type is needed (e.g. a custom Dashboard, a Settings page):

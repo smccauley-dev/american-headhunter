@@ -2,6 +2,7 @@
 
 use App\Jobs\Billing\ReconcileStripeInvoices;
 use App\Jobs\Documents\CleanupUnattachedDocuments;
+use App\Jobs\Etl\SyncPlatformSnapshot;
 use App\Jobs\ExpireListingsJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -29,3 +30,8 @@ Schedule::command('lease:prune-deleted-documents')->dailyAt('02:00');
 // Reconcile the Stripe invoice projection (Phase 5.7) — backstop for any missed
 // webhook. Runs at 04:00 daily, after the other maintenance jobs.
 Schedule::job(new ReconcileStripeInvoices)->dailyAt('04:00');
+
+// Recompute the platform analytics rollups (DB 8) that feed the admin dashboard
+// and public homepage stats. Hourly; the dashboard "Refresh now" button runs the
+// same job on demand.
+Schedule::job(new SyncPlatformSnapshot)->hourly();

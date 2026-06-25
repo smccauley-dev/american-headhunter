@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\Analytics\AnalyticsService;
 use App\Services\Platform\TenantService;
 use App\Services\Property\PropertyService;
 use Illuminate\Support\Facades\Log;
@@ -12,6 +13,7 @@ class HomeController extends Controller
     public function __construct(
         private readonly PropertyService $propertyService,
         private readonly TenantService $tenantService,
+        private readonly AnalyticsService $analyticsService,
     ) {}
 
     public function __invoke(): Response
@@ -36,11 +38,21 @@ class HomeController extends Controller
 
         $home = fn(string $k, mixed $d) => $t->getSetting("home.{$k}", $d);
 
+        // Live, public-safe platform counters from the DB 8 rollup (counts/acres
+        // only — never revenue). Falls back to zeros before the first ETL run.
+        try {
+            $publicStats = $this->analyticsService->publicStats();
+        } catch (\Throwable $e) {
+            Log::error('HomeController: failed to load public stats', ['error' => $e->getMessage()]);
+            $publicStats = ['total_users' => 0, 'total_leases' => 0, 'total_acres' => 0];
+        }
+
         // Nav / top-bar / logo are now provided site-wide via the `nav` Inertia
         // shared prop (HandleInertiaRequests), so they are no longer assembled here.
 
         return inertia('Home', [
             'listings'     => $listings,
+            'publicStats'  => $publicStats,
             'homeSettings' => [
                 'hero' => [
                     'card_count'  => $cardCount,

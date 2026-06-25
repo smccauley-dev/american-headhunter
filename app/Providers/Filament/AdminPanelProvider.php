@@ -26,7 +26,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
+use App\Filament\Admin\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -1087,8 +1087,13 @@ class AdminPanelProvider extends PanelProvider
             gap: 0 !important;
             box-shadow: none !important;
             overflow: visible !important;
+            justify-content: flex-start !important;
+            margin-inline: 0 !important;
         }
         .fi-tabs-item {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 0.4rem !important;
             background-color: transparent !important;
             border-radius: 0 !important;
             color: rgba(10, 21, 18, 0.45) !important;
@@ -1115,6 +1120,38 @@ class AdminPanelProvider extends PanelProvider
         }
         .fi-tabs-item-label {
             color: inherit !important;
+        }
+        /* Leading heroicon on each tab — sized to the 10px mono label */
+        .fi-tabs-item svg {
+            width: 0.95rem !important;
+            height: 0.95rem !important;
+            flex-shrink: 0 !important;
+        }
+        /* Placeholder copy for not-yet-built dashboard tabs */
+        .fi-tabs-placeholder {
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
+            font-size: 12px !important;
+            letter-spacing: 0.04em !important;
+            color: rgba(10, 21, 18, 0.55) !important;
+        }
+
+        /* ── Dashboard action toolbar (header-only section) ───────────────
+           No body sits below the header, so drop the header's bottom divider
+           line that normally separates header from content. */
+        .ah-analytics-toolbar > .fi-section-header {
+            background-image: none !important;
+        }
+
+        /* ── Page heading with a leading heroicon (e.g. Dashboard) ──────── */
+        .fi-heading-with-icon {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 0.625rem !important;
+        }
+        .fi-heading-with-icon svg {
+            width: 1.6rem !important;
+            height: 1.6rem !important;
+            flex-shrink: 0 !important;
         }
 
         /* ── Relation manager — allow shadow to overflow ─────────────── */

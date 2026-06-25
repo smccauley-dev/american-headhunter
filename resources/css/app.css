@@ -251,7 +251,7 @@ html {
 /* HOW IT WORKS */
 .how-chapter { background: var(--parchment); position: relative; }
 .how-grid { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); position: relative; }
-.how-grid::after { content: ''; position: absolute; top: 80px; left: 0; right: 0; height: 1px; background: var(--parch-deep); z-index: 0; }
+.how-grid::after { content: ''; position: absolute; top: 60px; left: 0; right: 0; height: 1px; background: var(--parch-deep); z-index: 0; }
 .how-step { padding: 0 32px; position: relative; z-index: 1; }
 .how-step + .how-step { border-left: 1px solid var(--parch-deep); }
 .how-marker { width: 48px; height: 48px; background: var(--parchment); border: 1.5px solid var(--ink); display: flex; align-items: center; justify-content: center; margin-bottom: 24px; font-family: var(--display); font-size: 20px; font-weight: 600; color: var(--ink); }
