@@ -44,6 +44,7 @@ html {
   font-family: var(--body);
   background: var(--parchment);
   color: var(--ink);
+  min-height: 100vh;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   font-size: 17px;
