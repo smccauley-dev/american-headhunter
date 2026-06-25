@@ -21,11 +21,18 @@ class PlatformOverviewStats extends StatsOverviewWidget
     {
         $c = app(AnalyticsService::class)->dashboardCounts();
 
+        // Six stats so the cards fill a clean 3x2 grid (no ragged trailing cell),
+        // lining up edge-to-edge with the 3-across Revenue block below.
         return [
             Stat::make('Total users', number_format($c['total_users']))
-                ->description(number_format($c['active_users']) . ' active in last 30 days')
+                ->description('Across all account types')
                 ->descriptionIcon('heroicon-m-users')
                 ->color('primary'),
+
+            Stat::make('Active users', number_format($c['active_users']))
+                ->description('Signed in within 30 days')
+                ->descriptionIcon('heroicon-m-bolt')
+                ->color('success'),
 
             Stat::make('New users (30d)', number_format($c['new_users_30d']))
                 ->description('Joined in the last 30 days')
@@ -45,7 +52,7 @@ class PlatformOverviewStats extends StatsOverviewWidget
             Stat::make('Total acres', number_format($c['total_acres']))
                 ->description(number_format($c['huntable_acres']) . ' huntable')
                 ->descriptionIcon('heroicon-m-globe-americas')
-                ->color('success'),
+                ->color('warning'),
         ];
     }
 }
