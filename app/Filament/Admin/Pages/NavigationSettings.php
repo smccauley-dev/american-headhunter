@@ -18,7 +18,6 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
 
 class NavigationSettings extends Page implements HasForms
 {
@@ -85,11 +84,28 @@ class NavigationSettings extends Page implements HasForms
                             ->icon('heroicon-o-plus')
                             ->color('gray')
                             ->action(function (): void {
-                                $this->data['nav_links'][(string) Str::uuid()] = [
-                                    'label'   => '',
-                                    'href'    => '',
-                                    'enabled' => true,
-                                ];
+                                // Add through the Repeater itself so the new key gets a child
+                                // schema registered (rawState + fill) — writing straight into
+                                // $this->data leaves getChildSchema($key) null and crashes the
+                                // item-label render. Mirrors Repeater::getAddAction().
+                                /** @var Repeater $repeater */
+                                $repeater = $this->form->getComponent(
+                                    fn ($component): bool => $component instanceof Repeater
+                                        && $component->getName() === 'nav_links',
+                                );
+
+                                $items   = $repeater->getRawState();
+                                $newUuid = $repeater->generateUuid();
+
+                                if ($newUuid) {
+                                    $items[$newUuid] = [];
+                                } else {
+                                    $items[] = [];
+                                }
+
+                                $repeater->rawState($items);
+                                $repeater->getChildSchema($newUuid ?? array_key_last($items))->fill();
+                                $repeater->collapsed(false, shouldMakeComponentCollapsible: false);
                             }),
                     ])
                     ->schema([
