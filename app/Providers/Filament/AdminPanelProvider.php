@@ -1091,6 +1091,9 @@ class AdminPanelProvider extends PanelProvider
             margin-inline: 0 !important;
         }
         .fi-tabs-item {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 0.4rem !important;
             background-color: transparent !important;
             border-radius: 0 !important;
             color: rgba(10, 21, 18, 0.45) !important;
@@ -1117,6 +1120,12 @@ class AdminPanelProvider extends PanelProvider
         }
         .fi-tabs-item-label {
             color: inherit !important;
+        }
+        /* Leading heroicon on each tab — sized to the 10px mono label */
+        .fi-tabs-item svg {
+            width: 0.95rem !important;
+            height: 0.95rem !important;
+            flex-shrink: 0 !important;
         }
         /* Placeholder copy for not-yet-built dashboard tabs */
         .fi-tabs-placeholder {

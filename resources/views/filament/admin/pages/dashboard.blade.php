@@ -2,6 +2,7 @@
     {{-- Standard underline tab bar (.fi-tabs chrome — see AdminPanelProvider CSS),
          driven by the $activeTab Livewire property. --}}
     <nav class="fi-tabs" role="tablist">
+        @php($tabIcons = $this->tabIcons())
         @foreach ($this->tabs() as $key => $label)
             <button
                 type="button"
@@ -10,6 +11,9 @@
                 wire:loading.attr="disabled"
                 @class(['fi-tabs-item', 'fi-active' => $activeTab === $key])
             >
+                @if ($icon = ($tabIcons[$key] ?? null))
+                    {!! \Filament\Support\generate_icon_html($icon)?->toHtml() !!}
+                @endif
                 <span class="fi-tabs-item-label">{{ $label }}</span>
             </button>
         @endforeach

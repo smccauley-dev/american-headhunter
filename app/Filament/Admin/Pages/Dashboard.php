@@ -58,6 +58,20 @@ class Dashboard extends BaseDashboard
         ];
     }
 
+    /**
+     * Heroicon for each tab, keyed to match tabs(). Rendered before the label.
+     *
+     * @return array<string, string>
+     */
+    public function tabIcons(): array
+    {
+        return [
+            'analytics' => 'heroicon-o-chart-pie',
+            'test1'     => 'heroicon-o-beaker',
+            'test2'     => 'heroicon-o-beaker',
+        ];
+    }
+
     public function getWidgets(): array
     {
         return match ($this->activeTab) {
