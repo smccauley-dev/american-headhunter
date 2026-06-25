@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Public;
 use App\Http\Controllers\Controller;
 use App\Models\Identity\User;
 use App\Services\Platform\EntitlementService;
+use App\Services\Platform\TenantService;
 use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\Request;
@@ -15,6 +16,7 @@ class PropertyController extends Controller
     public function __construct(
         private readonly PropertyService    $propertyService,
         private readonly EntitlementService $entitlementService,
+        private readonly TenantService      $tenantService,
     ) {}
 
     public function index(Request $request): Response
@@ -25,7 +27,7 @@ class PropertyController extends Controller
         // Empty-string filters (cleared UI inputs) are treated as absent.
         $request->merge(array_map(
             fn ($v) => $v === '' ? null : $v,
-            $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price'])
+            $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price', 'min_acres', 'max_acres', 'min_hunters', 'max_hunters'])
         ));
 
         $request->validate([
@@ -34,12 +36,16 @@ class PropertyController extends Controller
             'listing_type' => ['nullable', 'in:annual_lease,seasonal_lease,day_hunt,auction'],
             'min_price'    => ['nullable', 'numeric', 'min:0'],
             'max_price'    => ['nullable', 'numeric', 'min:0'],
+            'min_acres'    => ['nullable', 'numeric', 'min:0'],
+            'max_acres'    => ['nullable', 'numeric', 'min:0'],
+            'min_hunters'  => ['nullable', 'integer', 'min:0'],
+            'max_hunters'  => ['nullable', 'integer', 'min:0'],
             'species'      => ['nullable', 'array'],
             'species.*'    => ['string', 'max:40'],
             'page'         => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $filters = $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price']);
+        $filters = $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price', 'min_acres', 'max_acres', 'min_hunters', 'max_hunters']);
 
         if ($request->has('species')) {
             $filters['species'] = (array) $request->input('species');
@@ -79,7 +85,50 @@ class PropertyController extends Controller
         return inertia('Public/Properties', [
             'listings' => $listings,
             'filters'  => $filters,
+            'config'   => $this->pageConfig(),
         ]);
+    }
+
+    /**
+     * Admin-editable presentation settings for the listings page (hero copy,
+     * filter visibility/labels, card layout, CTA buttons). Stored as
+     * `properties.*` in DB 12 tenant_settings via PropertyListingSettings; every
+     * default mirrors the page's original hardcoded values.
+     */
+    private function pageConfig(): array
+    {
+        $p = fn (string $k, string $d) => $this->tenantService->getSetting("properties.{$k}", $d);
+        $bool = fn (string $k) => (bool) (int) $this->tenantService->getSetting("properties.{$k}", '1');
+
+        return [
+            'hero_eyebrow'        => $p('hero_eyebrow',        'Find Land'),
+            'hero_headline'       => $p('hero_headline',       'Hunting Land for Lease'),
+            'hero_subhead_suffix' => $p('hero_subhead_suffix', 'across the United States'),
+
+            'cta_guest_label'   => $p('cta_guest_label',   'Join Now'),
+            'cta_guest_url'     => $p('cta_guest_url',     '/get-started'),
+            'cta_apply_label'   => $p('cta_apply_label',   'Apply'),
+            'cta_details_label' => $p('cta_details_label', 'Details'),
+
+            'filter_state_enabled'   => $bool('filter_state_enabled'),
+            'filter_type_enabled'    => $bool('filter_type_enabled'),
+            'filter_price_enabled'   => $bool('filter_price_enabled'),
+            'filter_acres_enabled'   => $bool('filter_acres_enabled'),
+            'filter_hunters_enabled' => $bool('filter_hunters_enabled'),
+            'filter_species_enabled' => $bool('filter_species_enabled'),
+            'filter_state_label'     => $p('filter_state_label',   'State'),
+            'filter_type_label'      => $p('filter_type_label',    'Lease Type'),
+            'filter_price_label'     => $p('filter_price_label',   'Price Range'),
+            'filter_acres_label'     => $p('filter_acres_label',   'Acres'),
+            'filter_hunters_label'   => $p('filter_hunters_label', 'Party Size'),
+            'filter_species_label'   => $p('filter_species_label', 'Game Species'),
+
+            'card_columns'          => (int) $p('card_columns', '2'),
+            'card_show_acres'       => $bool('card_show_acres'),
+            'card_show_species'     => $bool('card_show_species'),
+            'card_show_price'       => $bool('card_show_price'),
+            'card_show_max_hunters' => $bool('card_show_max_hunters'),
+        ];
     }
 
     /**

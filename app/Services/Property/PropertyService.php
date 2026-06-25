@@ -646,6 +646,14 @@ class PropertyService extends BaseService
             $query->where('properties.total_acres', '<=', $filters['max_acres']);
         }
 
+        if (! empty($filters['min_hunters'])) {
+            $query->where('property_listings.max_hunters', '>=', $filters['min_hunters']);
+        }
+
+        if (! empty($filters['max_hunters'])) {
+            $query->where('property_listings.max_hunters', '<=', $filters['max_hunters']);
+        }
+
         if (! empty($filters['min_price'])) {
             $query->where(function ($q) use ($filters) {
                 $q->where('property_listings.price_per_hunter', '>=', $filters['min_price'])
