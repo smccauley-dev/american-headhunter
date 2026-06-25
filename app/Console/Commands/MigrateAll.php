@@ -33,6 +33,13 @@ class MigrateAll extends Command
         'research',       // DB 14 — ETL only, always last
     ];
 
+    // DB 8's app-facing connection (`analytics`) is ah_readonly (SELECT only).
+    // Migrate it as its owner (`analytics_etl` = ah_etl) so the migrator can
+    // create tables and the `migrations` repository table.
+    private const MIGRATOR_CONNECTION = [
+        'analytics' => 'analytics_etl',
+    ];
+
     public function handle(): int
     {
         if (! $this->option('force') && app()->isProduction()) {
@@ -82,7 +89,7 @@ class MigrateAll extends Command
         }
 
         $args = [
-            '--database' => $connection,
+            '--database' => self::MIGRATOR_CONNECTION[$connection] ?? $connection,
             '--path'     => "database/migrations/{$connection}",
             '--force'    => true,
         ];

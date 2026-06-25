@@ -175,6 +175,23 @@ return [
             'sslmode'     => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // Restricted read path for the sensitive revenue_snapshots table. Uses
+        // ah_system (the trusted admin/queue role) because ah_readonly has no
+        // SELECT grant on revenue_snapshots. Only the admin dashboard Revenue tab
+        // reads through this connection.
+        'analytics_admin' => [
+            'driver'      => 'pgsql',
+            'host'        => env('DB_ANALYTICS_HOST', 'postgres'),
+            'port'        => env('DB_ANALYTICS_PORT', '5432'),
+            'database'    => env('DB_ANALYTICS_DATABASE', 'ah_analytics'),
+            'username'    => env('DB_SYSTEM_USERNAME', 'ah_system'),
+            'password'    => env('DB_SYSTEM_PASSWORD', ''),
+            'charset'     => 'utf8',
+            'prefix'      => '',
+            'search_path' => 'public',
+            'sslmode'     => env('DB_SSLMODE', 'prefer'),
+        ],
+
         // ── DB 9: Audit & Compliance (append-only) ───────────────────────────
         'audit' => [
             'driver'      => 'pgsql',

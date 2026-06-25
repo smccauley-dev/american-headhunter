@@ -20,6 +20,14 @@ class MigrateSingle extends Command
         'documents', 'platform', 'geospatial', 'research',
     ];
 
+    // Some DBs read through a non-owner connection (ah_readonly) but must be
+    // MIGRATED as their owner. DB 8's app-facing key is `analytics` (ah_readonly,
+    // SELECT only); its owner is `analytics_etl` (ah_etl), so the migrator — which
+    // also writes the `migrations` repository table — has to run there.
+    private const MIGRATOR_CONNECTION = [
+        'analytics' => 'analytics_etl',
+    ];
+
     public function handle(): int
     {
         $connection = $this->argument('database');
@@ -43,7 +51,7 @@ class MigrateSingle extends Command
         }
 
         $args = [
-            '--database' => $connection,
+            '--database' => self::MIGRATOR_CONNECTION[$connection] ?? $connection,
             '--path'     => "database/migrations/{$connection}",
             '--force'    => true,
         ];
