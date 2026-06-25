@@ -1087,6 +1087,8 @@ class AdminPanelProvider extends PanelProvider
             gap: 0 !important;
             box-shadow: none !important;
             overflow: visible !important;
+            justify-content: flex-start !important;
+            margin-inline: 0 !important;
         }
         .fi-tabs-item {
             background-color: transparent !important;
