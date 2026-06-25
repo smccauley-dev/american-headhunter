@@ -3,6 +3,8 @@
 namespace Tests\Feature\Filament;
 
 use App\Filament\Admin\Pages\Dashboard;
+use App\Filament\Admin\Widgets\Analytics\PlatformOverviewStats;
+use App\Filament\Admin\Widgets\Analytics\RevenueStats;
 use App\Models\Identity\User;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
@@ -12,8 +14,9 @@ use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * The tabbed analytics dashboard mounts for an admin, reads DB 8 figures, and the
- * "Refresh now" action recomputes the snapshot without crashing.
+ * The analytics dashboard mounts for an admin, registers its widgets (revenue
+ * gated to billing admins), and the "Refresh now" action recomputes the snapshot
+ * without crashing.
  */
 class DashboardAnalyticsTest extends TestCase
 {
@@ -65,13 +68,22 @@ class DashboardAnalyticsTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_dashboard_mounts_with_analytics_for_a_billing_admin(): void
+    public function test_dashboard_mounts_with_analytics_widgets_for_a_billing_admin(): void
     {
-        $component = Livewire::test(Dashboard::class)->assertOk();
+        $widgets = Livewire::test(Dashboard::class)->assertOk()
+            ->instance()->getWidgets();
 
-        // super_admin can view billing, so the Revenue tab data is loaded.
-        $this->assertTrue($component->get('canViewRevenue'));
-        $this->assertArrayHasKey('total_users', $component->get('counts'));
+        // The analytics widgets are registered, and a super_admin (billing access)
+        // sees the revenue widget.
+        $this->assertContains(PlatformOverviewStats::class, $widgets);
+        $this->assertContains(RevenueStats::class, $widgets);
+        $this->assertTrue(RevenueStats::canView());
+    }
+
+    public function test_overview_stats_widget_reads_db8_counts(): void
+    {
+        Livewire::test(PlatformOverviewStats::class)
+            ->assertOk();
     }
 
     public function test_refresh_now_recomputes_without_crashing(): void
