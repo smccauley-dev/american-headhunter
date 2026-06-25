@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Services\Platform\TenantService;
 use App\Services\Property\PropertyService;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Response;
 
 class HomeController extends Controller
@@ -37,42 +36,12 @@ class HomeController extends Controller
 
         $home = fn(string $k, mixed $d) => $t->getSetting("home.{$k}", $d);
 
-        $logoPath = $t->getSetting('site.logo_path', null);
-        $logoUrl  = ($logoPath && str_starts_with($logoPath, 'site/'))
-            ? Storage::disk('public')->url($logoPath)
-            : null;
-
-        $defaultNavLinks = [
-            ['label' => 'Find Land',    'href' => '/properties',            'enabled' => true],
-            ['label' => 'Auctions',     'href' => '/auctions',               'enabled' => true],
-            ['label' => 'Outfitters',   'href' => '/outfitters',             'enabled' => true],
-            ['label' => 'Pricing',      'href' => '/pricing',                'enabled' => true],
-            ['label' => 'How It Works', 'href' => '/how-it-works',           'enabled' => true],
-        ];
-
-        $navLinks = $t->getSetting('nav.links', $defaultNavLinks) ?? $defaultNavLinks;
+        // Nav / top-bar / logo are now provided site-wide via the `nav` Inertia
+        // shared prop (HandleInertiaRequests), so they are no longer assembled here.
 
         return inertia('Home', [
             'listings'     => $listings,
             'homeSettings' => [
-                'site' => [
-                    'logo_url' => $logoUrl,
-                ],
-                'topbar' => [
-                    'tagline' => $t->getSetting('topbar.tagline', 'Hunting Lease Marketplace'),
-                    'phone'   => $t->getSetting('topbar.phone',   '(800) 555-0124'),
-                    'link1'   => $t->getSetting('topbar.link1',   'Hunters'),
-                    'link2'   => $t->getSetting('topbar.link2',   'Landowners'),
-                    'link3'   => $t->getSetting('topbar.link3',   'Clubs'),
-                    'link4'   => $t->getSetting('topbar.link4',   'Outfitters'),
-                ],
-                'nav' => [
-                    'links'        => array_values(array_filter((array) $navLinks, fn($l) => $l['enabled'] ?? true)),
-                    'cta_label'    => $t->getSetting('nav.cta_label',    'List Your Land →'),
-                    'cta_href'     => $t->getSetting('nav.cta_href',     '/get-started?type=landowner'),
-                    'signin_label' => $t->getSetting('nav.signin_label', 'Sign In'),
-                    'signin_href'  => $t->getSetting('nav.signin_href',  '/login'),
-                ],
                 'hero' => [
                     'card_count'  => $cardCount,
                     'eyebrow'     => $home('hero_eyebrow',    'The Premier Hunting Lease Marketplace'),
