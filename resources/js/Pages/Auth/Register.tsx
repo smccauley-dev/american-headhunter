@@ -31,8 +31,25 @@ interface RegisterProps {
     signupPromo?: SignupPromo | null;
     signupPlan?: SignupPlan | null;
     signupInterval?: 'monthly' | 'annual';
+    // Preselects the veteran / first-responder step when a pricing callout link
+    // carried a ?service= flag through get-started.
+    signupService?: 'veteran' | 'first_responder' | null;
+    serviceMethods?: { veteran: string; first_responder: string };
     errors?: Record<string, string>;
 }
+
+type ServiceStatus = '' | 'veteran' | 'first_responder';
+
+const SERVICE_LABELS: Record<Exclude<ServiceStatus, ''>, string> = {
+    veteran:         'Veteran',
+    first_responder: 'First Responder',
+};
+
+// What proof each path accepts, shown under the upload control.
+const SERVICE_PROOF_HINT: Record<Exclude<ServiceStatus, ''>, string> = {
+    veteran:         'DD-214, military ID, or VA card (PDF, JPG, or PNG).',
+    first_responder: 'Department ID, badge, or certification (PDF, JPG, or PNG).',
+};
 
 function dollars(cents: number): string {
     return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: cents % 100 === 0 ? 0 : 2 });
@@ -48,7 +65,7 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function Register() {
-    const { accountType, legalUrls, signupPromo, signupPlan, signupInterval = 'monthly', errors = {} } = usePage<RegisterProps>().props;
+    const { accountType, legalUrls, signupPromo, signupPlan, signupInterval = 'monthly', signupService, serviceMethods, errors = {} } = usePage<RegisterProps>().props;
 
     const paid       = signupPlan?.is_paid ?? false;
     const hasMonthly = (signupPlan?.monthly_price_cents ?? 0) > 0;
@@ -70,8 +87,20 @@ export default function Register() {
         // Billing cycle for a paid plan — defaults to the cycle picked on the
         // pricing page, falling back to whichever the plan actually offers.
         interval:          (signupInterval === 'annual' && hasAnnual) ? 'annual' : (hasMonthly ? 'monthly' : 'annual'),
+        // Optional service-status step (empty = skipped). A File here makes the
+        // POST multipart so the proof reaches the server. Preselected when a
+        // pricing callout deep-linked a veteran / first-responder flag.
+        service_status:    (signupService ?? '') as ServiceStatus,
+        service_proof:     null as File | null,
     });
     const [processing, setProcessing] = useState(false);
+    // When a pricing callout deep-linked a service flag, lock the step to that
+    // choice and hide the other options — the "Skip this" link unlocks the full
+    // toggle for anyone who clicked the wrong button or doesn't qualify.
+    const [serviceLocked, setServiceLocked] = useState<boolean>(!!signupService);
+    // The locked-in service type (set only while a callout deep-link holds), so
+    // the step's title, copy and proof control can all be keyed off it.
+    const lockedService = serviceLocked && form.service_status !== '' ? form.service_status : null;
 
     function set<K extends keyof typeof form>(field: K, value: (typeof form)[K]) {
         setForm(f => ({ ...f, [field]: value }));
@@ -316,6 +345,117 @@ export default function Register() {
                     error={errors.password_confirmation}
                     required
                 />
+
+                {/* Optional service-status step — shown only when a Veteran / First
+                    Responder pricing callout deep-linked here (signupService set).
+                    Everyone else self-declares later from their profile, so the
+                    step stays out of the default signup. Declaring a status and
+                    attaching proof opens a verification the team reviews; the
+                    benefit unlocks on approval. */}
+                {signupService && (
+                <div style={{ marginBottom: 24, padding: 16, background: '#f4ecdc', border: '1px solid #a89874' }}>
+                    {lockedService ? (
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', margin: '0 0 6px' }}>
+                            <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#4a5440', margin: 0 }}>
+                                {SERVICE_LABELS[lockedService]} Verification <span style={{ color: '#8a7a5a' }}>· Optional</span>
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setServiceLocked(false);
+                                    set('service_status', '');
+                                    set('service_proof', null);
+                                }}
+                                style={{
+                                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                                    fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14,
+                                    color: '#8a5a2a', textDecoration: 'underline',
+                                }}
+                            >
+                                Not a {SERVICE_LABELS[lockedService].toLowerCase()}? Skip this
+                            </button>
+                        </div>
+                    ) : (
+                        <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#4a5440', margin: '0 0 6px' }}>
+                            Veteran or First Responder? <span style={{ color: '#8a7a5a' }}>· Optional</span>
+                        </p>
+                    )}
+
+                    <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14, color: '#4a5440', margin: '0 0 12px', lineHeight: 1.45 }}>
+                        {lockedService
+                            ? `Verify your ${SERVICE_LABELS[lockedService].toLowerCase()} status to unlock your member benefit. You can skip this and add it later from your profile.`
+                            : 'Verify your service to unlock your member benefit. You can skip this and add it later from your profile.'}
+                    </p>
+
+                    {! lockedService && (
+                        <div style={{ display: 'inline-flex', flexWrap: 'wrap', border: '1px solid #a89874' }}>
+                            {([['', 'No, skip'], ['veteran', 'Veteran'], ['first_responder', 'First Responder']] as const).map(([value, label]) => {
+                                const active = form.service_status === value;
+                                return (
+                                    <button
+                                        key={value || 'none'}
+                                        type="button"
+                                        onClick={() => {
+                                            set('service_status', value);
+                                            if (value === '') set('service_proof', null);
+                                        }}
+                                        style={{
+                                            padding: '7px 14px', border: 'none', cursor: 'pointer',
+                                            borderRight: value === 'first_responder' ? 'none' : '1px solid #a89874',
+                                            background: active ? '#0a1512' : 'transparent',
+                                            color: active ? '#e8dcc4' : '#4a5440',
+                                            fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                                            letterSpacing: '0.1em', textTransform: 'uppercase',
+                                        }}
+                                    >
+                                        {label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {form.service_status !== '' && serviceMethods?.[form.service_status] === 'id_me' ? (
+                        <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14, color: '#4a5440', margin: '14px 0 0', lineHeight: 1.45 }}>
+                            We verify {SERVICE_LABELS[form.service_status].toLowerCase()} status through ID.me — you'll be prompted to verify after signing in.
+                        </p>
+                    ) : form.service_status !== '' ? (
+                        <div style={{ marginTop: 14 }}>
+                            <label
+                                htmlFor="service_proof"
+                                style={{
+                                    display: 'inline-block', padding: '9px 16px', cursor: 'pointer',
+                                    background: '#0a1512', color: '#e8dcc4',
+                                    fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                                    letterSpacing: '0.12em', textTransform: 'uppercase',
+                                }}
+                            >
+                                {form.service_proof ? 'Change file' : 'Upload proof'}
+                            </label>
+                            <input
+                                id="service_proof"
+                                type="file"
+                                accept="application/pdf,image/jpeg,image/png"
+                                onChange={e => set('service_proof', e.target.files?.[0] ?? null)}
+                                style={{ display: 'none' }}
+                            />
+                            {form.service_proof && (
+                                <span style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 14, color: '#0a1512', marginLeft: 12 }}>
+                                    {form.service_proof.name}
+                                </span>
+                            )}
+                            <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: '0.08em', color: '#6b7856', textTransform: 'uppercase', margin: '8px 0 0' }}>
+                                {SERVICE_PROOF_HINT[form.service_status]}
+                            </p>
+                            {errors.service_proof && (
+                                <p style={{ marginTop: 4, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.1em', color: '#c84c21' }}>
+                                    {errors.service_proof}
+                                </p>
+                            )}
+                        </div>
+                    ) : null}
+                </div>
+                )}
 
                 {/* Consent checkboxes */}
                 <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>

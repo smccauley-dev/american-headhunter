@@ -13,6 +13,7 @@ class PlatformSeeder extends Seeder
             \Database\Seeders\Platform\PromotionalPeriodSeeder::class,
             \Database\Seeders\Platform\HomepageSettingsSeeder::class,
             \Database\Seeders\Platform\NavSettingsSeeder::class,
+            \Database\Seeders\Platform\VerificationSettingsSeeder::class,
         ]);
     }
 }

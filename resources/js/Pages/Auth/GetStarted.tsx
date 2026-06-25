@@ -12,6 +12,7 @@ interface SelectedPlan {
 interface GetStartedProps {
     plan?: SelectedPlan | null;
     interval?: 'monthly' | 'annual';
+    service?: 'veteran' | 'first_responder' | null;
 }
 
 const ACCOUNT_TYPES = [
@@ -24,17 +25,19 @@ const ACCOUNT_TYPES = [
 ] as const;
 
 export default function GetStarted() {
-    const { plan, interval = 'monthly' } = usePage<GetStartedProps>().props;
+    const { plan, interval = 'monthly', service } = usePage<GetStartedProps>().props;
     const [selected, setSelected] = useState<string>(plan?.account_type ?? 'hunter');
 
     function handleContinue() {
         // Carry the chosen plan only while the selected role still matches it —
         // switching roles away from the plan drops it. Interval rides along so the
         // register step (and Stripe) bill the cycle picked on the pricing page.
+        // A veteran / first-responder flag carries through to preselect that step.
         const carryPlan = plan && plan.account_type === selected;
         router.get('/register', {
             type: selected,
             ...(carryPlan ? { plan: plan.plan_key, interval } : {}),
+            ...(service ? { service } : {}),
         });
     }
 
