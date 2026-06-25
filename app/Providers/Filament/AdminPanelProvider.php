@@ -1126,6 +1126,28 @@ class AdminPanelProvider extends PanelProvider
             color: rgba(10, 21, 18, 0.55) !important;
         }
 
+        /* ── Dashboard action toolbar (status left, buttons right) ────── */
+        .ah-toolbar {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 1rem !important;
+            flex-wrap: wrap !important;
+        }
+        .ah-toolbar-status {
+            font-family: 'JetBrains Mono', Menlo, monospace !important;
+            font-size: 11px !important;
+            letter-spacing: 0.08em !important;
+            text-transform: uppercase !important;
+            color: rgba(10, 21, 18, 0.55) !important;
+        }
+        .ah-toolbar-actions {
+            display: flex !important;
+            align-items: center !important;
+            gap: 0.5rem !important;
+            margin-inline-start: auto !important;
+        }
+
         /* ── Relation manager — allow shadow to overflow ─────────────── */
         .fi-resource-relation-manager {
             overflow: visible !important;

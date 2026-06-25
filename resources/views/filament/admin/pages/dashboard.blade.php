@@ -15,6 +15,18 @@
         @endforeach
     </nav>
 
+    {{-- Analytics toolbar: status text on the left, actions on the right. Sits
+         below the tab bar so it can grow to hold buttons like Export Data. --}}
+    @if ($activeTab === 'analytics')
+        <div class="ah-toolbar">
+            <span class="ah-toolbar-status">{{ $this->capturedAtLabel() }}</span>
+
+            <div class="ah-toolbar-actions">
+                {{ $this->refreshAction }}
+            </div>
+        </div>
+    @endif
+
     @php($widgets = $this->getVisibleWidgets())
 
     @if (filled($widgets))

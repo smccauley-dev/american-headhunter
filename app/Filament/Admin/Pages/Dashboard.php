@@ -64,41 +64,35 @@ class Dashboard extends BaseDashboard
         return 2;
     }
 
-    public function getSubheading(): ?string
+    /** Status line for the analytics toolbar (e.g. "Updated 1 minute ago"). */
+    public function capturedAtLabel(): ?string
     {
-        if ($this->activeTab !== 'analytics') {
-            return null;
-        }
-
         $capturedAt = app(AnalyticsService::class)->current()?->captured_at;
 
         return $capturedAt
-            ? 'Platform analytics · updated ' . $capturedAt->diffForHumans()
-            : 'No analytics yet — use “Refresh now” to compute the first snapshot.';
+            ? 'Updated ' . $capturedAt->diffForHumans()
+            : 'No snapshot yet — refresh to compute the first one';
     }
 
-    protected function getHeaderActions(): array
+    /**
+     * Recompute the analytics snapshot. Rendered in the analytics toolbar (not
+     * the page header) so it can sit alongside future actions like Export Data.
+     */
+    public function refreshAction(): Action
     {
-        // Refresh is only meaningful on the analytics tab.
-        if ($this->activeTab !== 'analytics') {
-            return [];
-        }
+        return Action::make('refresh')
+            ->label('Refresh now')
+            ->icon('heroicon-o-arrow-path')
+            ->color('gray')
+            ->action(function () {
+                // Same job the hourly scheduler runs; synchronous so the widgets
+                // re-read fresh figures on the Livewire re-render.
+                (new SyncPlatformSnapshot)->handle();
 
-        return [
-            Action::make('refresh')
-                ->label('Refresh now')
-                ->icon('heroicon-o-arrow-path')
-                ->color('gray')
-                ->action(function () {
-                    // Same job the hourly scheduler runs; synchronous so the
-                    // widgets re-read fresh figures on the Livewire re-render.
-                    (new SyncPlatformSnapshot)->handle();
-
-                    Notification::make()
-                        ->title('Analytics refreshed')
-                        ->success()
-                        ->send();
-                }),
-        ];
+                Notification::make()
+                    ->title('Analytics refreshed')
+                    ->success()
+                    ->send();
+            });
     }
 }
