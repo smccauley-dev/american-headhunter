@@ -255,6 +255,30 @@ class PlanServiceTest extends TestCase
             $mine['features'],
             'features are shaped to {label, description}',
         );
+        $this->assertNull($mine['plan'], 'an unlinked callout carries no plan price');
+    }
+
+    public function test_public_callouts_surfaces_linked_plan_live_price(): void
+    {
+        $callout = \App\Models\Platform\PricingCallout::on('platform')->create([
+            'account_type' => 'hunter',
+            'eyebrow'      => 'Linked plan',
+            'body'         => 'Surfaces the plan price.',
+            'plan_id'      => $this->planId,
+            'is_published' => true,
+            'sort_order'   => 1,
+        ]);
+        $this->calloutIds[] = $callout->id;
+
+        $this->service()->flushPricingCache();
+        $callouts = $this->service()->publicCallouts();
+
+        $mine = collect($callouts['hunter'] ?? [])->firstWhere('id', $callout->id);
+
+        $this->assertNotNull($mine, 'a published callout appears under its tab');
+        $this->assertNotNull($mine['plan'], 'a linked callout carries its plan price');
+        $this->assertSame(1500, $mine['plan']['monthly_price_cents'], 'live monthly price (staged row fallback)');
+        $this->assertSame(15000, $mine['plan']['annual_price_cents'], 'live annual price (staged row fallback)');
     }
 
     public function test_public_callouts_excludes_unpublished_callout(): void

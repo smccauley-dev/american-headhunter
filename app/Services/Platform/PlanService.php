@@ -75,7 +75,23 @@ class PlanService extends BaseService
             ->orderBy('sort_order')
             ->get();
 
+        // Optional display-only plan links: surface each linked plan's live price
+        // (current published version, falling back to the staged row) on its
+        // banner. Skips soft-deleted plans — the FK's ON DELETE only fires on a
+        // hard delete, so guard deleted_at here.
+        $planIds = $callouts->pluck('plan_id')->filter()->unique();
+        $plans = $planIds->isEmpty()
+            ? collect()
+            : MembershipPlan::on('platform')
+                ->whereIn('id', $planIds)
+                ->whereNull('deleted_at')
+                ->with('currentVersion')
+                ->get()
+                ->keyBy('id');
+
         foreach ($callouts as $callout) {
+            $plan = $callout->plan_id ? $plans->get($callout->plan_id) : null;
+
             $groups[$callout->account_type][] = [
                 'id'           => $callout->id,
                 'eyebrow'      => $callout->eyebrow,
@@ -92,6 +108,11 @@ class PlanService extends BaseService
                     static fn ($b): bool => ! empty($b['label']) && ! empty($b['url']),
                 ))),
                 'accent_color' => $callout->accent_color,
+                'plan'         => $plan ? [
+                    'monthly_price_cents' => $plan->currentVersion->monthly_price_cents ?? $plan->monthly_price_cents,
+                    'annual_price_cents'  => $plan->currentVersion->annual_price_cents ?? $plan->annual_price_cents,
+                    'is_default_free'     => (bool) $plan->is_default_free,
+                ] : null,
             ];
         }
 

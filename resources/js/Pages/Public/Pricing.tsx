@@ -38,6 +38,12 @@ interface CalloutButton {
     url: string
 }
 
+interface CalloutPlan {
+    monthly_price_cents: number | null
+    annual_price_cents: number | null
+    is_default_free: boolean
+}
+
 interface Callout {
     id: string
     eyebrow: string | null
@@ -45,6 +51,8 @@ interface Callout {
     features: Perk[]
     buttons: CalloutButton[]
     accent_color: string | null
+    // Optional linked plan — present only to display its live price.
+    plan: CalloutPlan | null
 }
 
 interface Props {
@@ -87,6 +95,17 @@ function formatPrice(plan: Plan, cycle: Cycle): { amount: string; suffix: string
     const fractionDigits = cents % 100 === 0 ? 0 : 2
     const amount = `$${dollars.toLocaleString(undefined, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })}`
     return { amount, suffix: cycle === 'annual' ? '/yr' : '/mo' }
+}
+
+// The live price of a callout's linked plan, formatted like the plan cards and
+// honoring the monthly/annual toggle. Null when there's no displayable price.
+function calloutPrice(plan: CalloutPlan, cycle: Cycle): string | null {
+    const cents = cycle === 'annual' ? plan.annual_price_cents : plan.monthly_price_cents
+    if (plan.is_default_free && (!cents || cents === 0)) return 'Free'
+    if (cents === null || cents === 0) return null
+    const dollars = cents / 100
+    const fractionDigits = cents % 100 === 0 ? 0 : 2
+    return `$${dollars.toLocaleString(undefined, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })}${cycle === 'annual' ? '/yr' : '/mo'}`
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -256,11 +275,12 @@ export default function Pricing({ groups, callouts, current_account_type, curren
                         <div key={callout.id} style={{
                             marginTop: 40, padding: '28px 32px',
                             background: 'var(--ink, #0a1512)', color: '#f4ecdc',
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            gap: 24, flexWrap: 'wrap',
+                            display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+                            gap: 40, flexWrap: 'wrap',
                             borderLeft: `4px solid ${callout.accent_color || 'var(--blaze)'}`,
                         }}>
-                            <div>
+                            {/* Left column — copy, price, and CTAs */}
+                            <div style={{ flex: '1 1 340px', maxWidth: 560 }}>
                                 {callout.eyebrow && (
                                     <p style={{
                                         fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
@@ -270,41 +290,56 @@ export default function Pricing({ groups, callouts, current_account_type, curren
                                         {callout.eyebrow}
                                     </p>
                                 )}
-                                <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 18, margin: 0, lineHeight: 1.45, maxWidth: 560 }}>
+                                <p style={{ fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 18, margin: 0, lineHeight: 1.45 }}>
                                     {callout.body}
                                 </p>
-                                {callout.features.length > 0 && (
-                                    <ul style={{ listStyle: 'none', padding: 0, margin: '16px 0 0', display: 'grid', gap: 6, maxWidth: 560 }}>
-                                        {callout.features.map((f, i) => (
-                                            <li key={i} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 15 }}>
-                                                <span style={{ color: callout.accent_color || 'var(--blaze)', flexShrink: 0 }}>✓</span>
-                                                <span>
-                                                    {f.label}
-                                                    {f.description && <span style={{ opacity: 0.7 }}> — {f.description}</span>}
-                                                </span>
-                                            </li>
+                                {callout.plan && calloutPrice(callout.plan, cycle) && (
+                                    <p style={{
+                                        fontFamily: "'JetBrains Mono', monospace", fontSize: 24,
+                                        fontWeight: 600, color: callout.accent_color || 'var(--blaze)',
+                                        margin: '14px 0 0',
+                                    }}>
+                                        {calloutPrice(callout.plan, cycle)}
+                                    </p>
+                                )}
+                                {callout.buttons.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 20 }}>
+                                        {callout.buttons.map((button, i) => (
+                                            <a
+                                                key={i}
+                                                href={button.url}
+                                                style={{
+                                                    padding: '13px 26px',
+                                                    background: callout.accent_color || 'var(--blaze)',
+                                                    color: '#fff', textDecoration: 'none',
+                                                    fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+                                                    fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase',
+                                                }}
+                                            >
+                                                {button.label} →
+                                            </a>
                                         ))}
-                                    </ul>
+                                    </div>
                                 )}
                             </div>
-                            {callout.buttons.length > 0 && (
-                                <div style={{ flexShrink: 0, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                                    {callout.buttons.map((button, i) => (
-                                        <a
-                                            key={i}
-                                            href={button.url}
-                                            style={{
-                                                padding: '13px 26px',
-                                                background: callout.accent_color || 'var(--blaze)',
-                                                color: '#fff', textDecoration: 'none',
-                                                fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
-                                                fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase',
-                                            }}
-                                        >
-                                            {button.label} →
-                                        </a>
+                            {/* Right column — feature bullets fill the space beside the copy */}
+                            {callout.features.length > 0 && (
+                                <ul style={{
+                                    flex: '1 1 320px', listStyle: 'none', padding: 0, margin: 0,
+                                    display: 'grid', gridAutoFlow: 'column',
+                                    gridTemplateRows: 'repeat(5, auto)', gap: '8px 36px',
+                                    justifyContent: 'start',
+                                }}>
+                                    {callout.features.map((f, i) => (
+                                        <li key={i} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontFamily: "'Crimson Pro', Georgia, serif", fontSize: 15 }}>
+                                            <span style={{ color: callout.accent_color || 'var(--blaze)', flexShrink: 0 }}>✓</span>
+                                            <span>
+                                                {f.label}
+                                                {f.description && <span style={{ opacity: 0.7 }}> — {f.description}</span>}
+                                            </span>
+                                        </li>
                                     ))}
-                                </div>
+                                </ul>
                             )}
                         </div>
                     ))}
