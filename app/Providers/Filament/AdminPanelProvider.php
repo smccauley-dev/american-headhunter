@@ -1133,6 +1133,18 @@ class AdminPanelProvider extends PanelProvider
             background-image: none !important;
         }
 
+        /* ── Page heading with a leading heroicon (e.g. Dashboard) ──────── */
+        .fi-heading-with-icon {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 0.625rem !important;
+        }
+        .fi-heading-with-icon svg {
+            width: 1.6rem !important;
+            height: 1.6rem !important;
+            flex-shrink: 0 !important;
+        }
+
         /* ── Relation manager — allow shadow to overflow ─────────────── */
         .fi-resource-relation-manager {
             overflow: visible !important;

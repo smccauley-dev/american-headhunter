@@ -11,6 +11,8 @@ use App\Services\Analytics\AnalyticsService;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Pages\Dashboard as BaseDashboard;
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\HtmlString;
 
 /**
  * Admin home — a tabbed dashboard. The first tab renders the platform analytics
@@ -29,6 +31,16 @@ class Dashboard extends BaseDashboard
     public function getView(): string
     {
         return 'filament.admin.pages.dashboard';
+    }
+
+    /** Page title with the dashboard icon (matches the sidebar nav glyph). */
+    public function getHeading(): string|Htmlable
+    {
+        $icon = \Filament\Support\generate_icon_html('heroicon-o-home')?->toHtml() ?? '';
+
+        return new HtmlString(
+            '<span class="fi-heading-with-icon">' . $icon . '<span>Dashboard</span></span>'
+        );
     }
 
     /**
