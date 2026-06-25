@@ -83,6 +83,8 @@ class Dashboard extends BaseDashboard
         return Action::make('refresh')
             ->label('Refresh now')
             ->icon('heroicon-o-arrow-path')
+            ->button()
+            ->size(\Filament\Support\Enums\Size::Small)
             ->color('gray')
             ->action(function () {
                 // Same job the hourly scheduler runs; synchronous so the widgets

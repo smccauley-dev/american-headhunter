@@ -15,16 +15,19 @@
         @endforeach
     </nav>
 
-    {{-- Analytics toolbar: status text on the left, actions on the right. Sits
-         below the tab bar so it can grow to hold buttons like Export Data. --}}
+    {{-- Action toolbar — a header-only section (standard Field-Record chrome,
+         same pattern as the Audit Log section): heading + status on the left,
+         action buttons on the right. The afterHeader slot holds the buttons; the
+         empty body means Filament renders no content area. Grows to take more
+         buttons like Export Data. --}}
     @if ($activeTab === 'analytics')
-        <div class="ah-toolbar">
-            <span class="ah-toolbar-status">{{ $this->capturedAtLabel() }}</span>
-
-            <div class="ah-toolbar-actions">
+        <x-filament::section class="ah-analytics-toolbar">
+            <x-slot name="heading">Platform Analytics</x-slot>
+            <x-slot name="description">Platform health across users, properties, leases and revenue. {{ $this->capturedAtLabel() }}</x-slot>
+            <x-slot name="afterHeader">
                 {{ $this->refreshAction }}
-            </div>
-        </div>
+            </x-slot>
+        </x-filament::section>
     @endif
 
     @php($widgets = $this->getVisibleWidgets())
