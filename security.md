@@ -1005,6 +1005,28 @@ Webhook handlers log the subscription/account id as a correlation key when an ev
 
 ---
 
+## SEC-054 — Env Templates Default to `APP_DEBUG=true` / `APP_ENV=local` (Debug-Page Information Disclosure)
+
+| Field | Detail |
+|---|---|
+| **Severity** | Low (latent — Medium if it ever reaches production) |
+| **Status** | OPEN — mitigated by warnings; enforce at prod-deploy time |
+| **Found** | 2026-06-25 |
+| **File** | `.env.example`, `docs/laravel/env.example` |
+
+**Description:**
+With `APP_DEBUG=true`, Laravel renders the full Ignition error page on any unhandled exception — including a `405` on a wrong-method request (e.g. a browser GET to the POST-only `/api/webhooks/stripe`). That page discloses the stack trace, file paths, executed SQL, framework/PHP versions (`Laravel 13.11.2`, `PHP 8.4.21` — useful for CVE fingerprinting), and the request headers (session cookie, XSRF token). This compounds **SEC-044**: an error during an encrypted-field decrypt could surface the query bindings (plaintext value + symmetric key) on the page itself.
+
+**Impact (why Low now):** No production deployment exists yet (only the dev `docker-compose.yml`; `APP_ENV=local`), so nothing is currently exposed. `config/app.php` also fails closed — `env('APP_DEBUG', false)` / `env('APP_ENV', 'production')` default safe when the var is unset. The risk is a **footgun**: both env templates ship `APP_ENV=local` + `APP_DEBUG=true`, so a production `.env` bootstrapped from them inherits the debug page unless the operator remembers to flip both.
+
+**Root cause:** The committed `.env.example` had no production warning; the values double as a ready-to-run local config.
+
+**Mitigation applied (2026-06-25):** Added explicit "PRODUCTION: set `APP_ENV=production` and `APP_DEBUG=false`" warnings to both `.env.example` and `docs/laravel/env.example`, spelling out exactly what the debug page leaks.
+
+**Remaining / verification:** When the production compose + CI/CD is actually built (the deployment docs describe files that don't yet exist), it **must** set `APP_ENV=production` and `APP_DEBUG=false` (sourced from Key Vault / pipeline secrets, never from the example). Verify post-deploy: a `405`/`500` on the public host returns the bare Laravel error page with no stack trace, SQL, or headers. Ties into the SEC-044 "disable query logging in production" item.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -1020,6 +1042,7 @@ Webhook handlers log the subscription/account id as a correlation key when an ev
 | SEC-051 | Stripe subscription/account IDs in webhook diagnostic logs (deviates from "no Stripe IDs in logs" rule) | Low | **FIXED (2026-06-21)** — CLAUDE.md documents a correlation-ID carve-out (never payment-method/charge/PAN data); IDs kept | — |
 | SEC-052 | Promo per-user-limit TOCTOU between checkout validation and webhook redemption (global cap safe) | Low | **FIXED (2026-06-21)** — `recordRedemption` re-checks per-user + global caps under a `lockForUpdate` row lock; regression test green | — |
 | SEC-053 | First-listing auto-apply once-per-user check not atomic → possible duplicate claim (no extra benefit) | Low | **FIXED (2026-06-21)** — partial unique index on `(user, period)` for trigger claims + decrement-on-violation; regression tests green | — |
+| SEC-054 | Env templates default to `APP_DEBUG=true`/`APP_ENV=local` → full debug error page (stack trace, SQL, versions, headers) if used for prod | Low | **OPEN** — warnings added to both env examples (2026-06-25); enforce `APP_DEBUG=false`/`APP_ENV=production` when prod deploy is built | Pre-launch hardening |
 
 ---
 
