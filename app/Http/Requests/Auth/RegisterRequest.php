@@ -35,6 +35,11 @@ class RegisterRequest extends FormRequest
             'plan'         => ['nullable', 'string', 'max:80'],
             // Billing cycle for a paid plan chosen at signup; defaults to monthly.
             'interval'     => ['nullable', 'in:monthly,annual'],
+            // Optional, skippable service-status step. If the applicant declares
+            // veteran / first responder and attaches proof, register() opens a
+            // pending verification — never blocks signup if absent or invalid.
+            'service_status' => ['nullable', 'in:veteran,first_responder'],
+            'service_proof'  => ['nullable', 'file', 'mimetypes:application/pdf,image/jpeg,image/png', 'max:10240'],
         ];
     }
 

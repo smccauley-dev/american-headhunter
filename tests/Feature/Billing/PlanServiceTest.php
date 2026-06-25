@@ -27,6 +27,9 @@ class PlanServiceTest extends TestCase
     /** @var string[] subscription ids created in billing during a test */
     private array $subscriptionIds = [];
 
+    /** @var string[] pricing_callout ids created in platform during a test */
+    private array $calloutIds = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -66,6 +69,9 @@ class PlanServiceTest extends TestCase
         }
 
         $platform = DB::connection('platform');
+        if ($this->calloutIds !== []) {
+            $platform->table('pricing_callouts')->whereIn('id', $this->calloutIds)->delete();
+        }
         $platform->table('plan_versions')->where('plan_id', $this->planId)->delete();
         $platform->table('feature_entitlements')->where('plan_id', $this->planId)->delete();
         $platform->table('membership_plans')->where('id', $this->planId)->delete();
@@ -206,6 +212,90 @@ class PlanServiceTest extends TestCase
             MembershipPlan::on('platform')->find($this->planId),
             'the plan is left intact',
         );
+    }
+
+    public function test_public_callouts_lists_published_callout_grouped_by_tab_with_features(): void
+    {
+        $callout = \App\Models\Platform\PricingCallout::on('platform')->create([
+            'account_type' => 'hunter',
+            'eyebrow'      => 'Veteran or First Responder?',
+            'body'         => 'Verify your status — your Hunter membership is free, for life.',
+            'features'     => [
+                ['label' => 'Free for life', 'description' => 'No renewal'],
+                ['label' => 'Priority verification', 'description' => null],
+            ],
+            'buttons'      => [
+                ['label' => 'Verify as Veteran',         'url' => '/get-started?type=hunter&service=veteran'],
+                ['label' => 'Verify as First Responder', 'url' => '/get-started?type=hunter&service=first_responder'],
+            ],
+            'is_published' => true,
+            'sort_order'   => 5,
+        ]);
+        $this->calloutIds[] = $callout->id;
+
+        $this->service()->flushPricingCache();
+        $callouts = $this->service()->publicCallouts();
+
+        $mine = collect($callouts['hunter'] ?? [])->firstWhere('id', $callout->id);
+
+        $this->assertNotNull($mine, 'a published callout appears under its tab');
+        $this->assertSame(
+            [
+                ['label' => 'Verify as Veteran',         'url' => '/get-started?type=hunter&service=veteran'],
+                ['label' => 'Verify as First Responder', 'url' => '/get-started?type=hunter&service=first_responder'],
+            ],
+            $mine['buttons'],
+            'buttons are shaped to {label, url}',
+        );
+        $this->assertSame(
+            [
+                ['label' => 'Free for life', 'description' => 'No renewal'],
+                ['label' => 'Priority verification', 'description' => null],
+            ],
+            $mine['features'],
+            'features are shaped to {label, description}',
+        );
+        $this->assertNull($mine['plan'], 'an unlinked callout carries no plan price');
+    }
+
+    public function test_public_callouts_surfaces_linked_plan_live_price(): void
+    {
+        $callout = \App\Models\Platform\PricingCallout::on('platform')->create([
+            'account_type' => 'hunter',
+            'eyebrow'      => 'Linked plan',
+            'body'         => 'Surfaces the plan price.',
+            'plan_id'      => $this->planId,
+            'is_published' => true,
+            'sort_order'   => 1,
+        ]);
+        $this->calloutIds[] = $callout->id;
+
+        $this->service()->flushPricingCache();
+        $callouts = $this->service()->publicCallouts();
+
+        $mine = collect($callouts['hunter'] ?? [])->firstWhere('id', $callout->id);
+
+        $this->assertNotNull($mine, 'a published callout appears under its tab');
+        $this->assertNotNull($mine['plan'], 'a linked callout carries its plan price');
+        $this->assertSame(1500, $mine['plan']['monthly_price_cents'], 'live monthly price (staged row fallback)');
+        $this->assertSame(15000, $mine['plan']['annual_price_cents'], 'live annual price (staged row fallback)');
+    }
+
+    public function test_public_callouts_excludes_unpublished_callout(): void
+    {
+        $callout = \App\Models\Platform\PricingCallout::on('platform')->create([
+            'account_type' => 'hunter',
+            'eyebrow'      => 'Draft callout',
+            'body'         => 'Not live yet.',
+            'is_published' => false,
+        ]);
+        $this->calloutIds[] = $callout->id;
+
+        $this->service()->flushPricingCache();
+        $callouts = $this->service()->publicCallouts();
+
+        $mine = collect($callouts['hunter'] ?? [])->firstWhere('id', $callout->id);
+        $this->assertNull($mine, 'an unpublished callout is not on the pricing page');
     }
 
     public function test_pricing_index_route_is_publicly_accessible(): void

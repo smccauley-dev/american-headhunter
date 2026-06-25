@@ -8,6 +8,7 @@ use App\Models\Platform\FeatureEntitlement;
 use App\Models\Platform\MembershipPlan;
 use App\Models\Platform\PlanPromoCode;
 use App\Models\Platform\PlanVersion;
+use App\Models\Platform\PricingCallout;
 use App\Models\Platform\PromotionalPeriod;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
@@ -25,6 +26,7 @@ use Illuminate\Support\Collection;
 class PlanService extends BaseService
 {
     private const PRICING_CACHE_KEY = 'public_pricing';
+    private const CALLOUTS_CACHE_KEY = 'public_callouts';
 
     public function __construct(
         private readonly EntitlementService $entitlements,
@@ -45,7 +47,76 @@ class PlanService extends BaseService
 
     public function flushPricingCache(): void
     {
-        $this->invalidate(self::PRICING_CACHE_KEY);
+        $this->invalidate(self::PRICING_CACHE_KEY, self::CALLOUTS_CACHE_KEY);
+    }
+
+    /**
+     * Published pricing callouts (horizontal banners) grouped by account type, so
+     * the pricing page can render them beneath the cards on the matching tab.
+     * Cached 15 min in Valkey Cluster 2 — invalidate via flushPricingCache().
+     *
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function publicCallouts(): array
+    {
+        return $this->cache(self::CALLOUTS_CACHE_KEY, fn () => $this->buildPublicCallouts(), ttlMinutes: 15);
+    }
+
+    /**
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function buildPublicCallouts(): array
+    {
+        $groups = [];
+
+        $callouts = PricingCallout::on('platform')
+            ->where('is_published', true)
+            ->orderBy('account_type')
+            ->orderBy('sort_order')
+            ->get();
+
+        // Optional display-only plan links: surface each linked plan's live price
+        // (current published version, falling back to the staged row) on its
+        // banner. Skips soft-deleted plans — the FK's ON DELETE only fires on a
+        // hard delete, so guard deleted_at here.
+        $planIds = $callouts->pluck('plan_id')->filter()->unique();
+        $plans = $planIds->isEmpty()
+            ? collect()
+            : MembershipPlan::on('platform')
+                ->whereIn('id', $planIds)
+                ->whereNull('deleted_at')
+                ->with('currentVersion')
+                ->get()
+                ->keyBy('id');
+
+        foreach ($callouts as $callout) {
+            $plan = $callout->plan_id ? $plans->get($callout->plan_id) : null;
+
+            $groups[$callout->account_type][] = [
+                'id'           => $callout->id,
+                'eyebrow'      => $callout->eyebrow,
+                'body'         => $callout->body,
+                'features'     => array_values(array_map(static fn ($f): array => [
+                    'label'       => $f['label'] ?? '',
+                    'description' => $f['description'] ?? null,
+                ], $callout->features ?? [])),
+                'buttons'      => array_values(array_map(static fn ($b): array => [
+                    'label' => $b['label'] ?? '',
+                    'url'   => $b['url'] ?? '',
+                ], array_filter(
+                    $callout->buttons ?? [],
+                    static fn ($b): bool => ! empty($b['label']) && ! empty($b['url']),
+                ))),
+                'accent_color' => $callout->accent_color,
+                'plan'         => $plan ? [
+                    'monthly_price_cents' => $plan->currentVersion->monthly_price_cents ?? $plan->monthly_price_cents,
+                    'annual_price_cents'  => $plan->currentVersion->annual_price_cents ?? $plan->annual_price_cents,
+                    'is_default_free'     => (bool) $plan->is_default_free,
+                ] : null,
+            ];
+        }
+
+        return $groups;
     }
 
     /**
