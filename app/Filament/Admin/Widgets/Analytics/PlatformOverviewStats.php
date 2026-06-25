@@ -2,6 +2,7 @@
 
 namespace App\Filament\Admin\Widgets\Analytics;
 
+use App\Filament\Admin\Concerns\HasContainedStatsSection;
 use App\Services\Analytics\AnalyticsService;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
@@ -13,6 +14,8 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
  */
 class PlatformOverviewStats extends StatsOverviewWidget
 {
+    use HasContainedStatsSection;
+
     protected int|string|array $columnSpan = 'full';
 
     protected ?string $heading = 'Platform overview';

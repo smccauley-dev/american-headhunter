@@ -2,6 +2,7 @@
 
 namespace App\Filament\Admin\Widgets\Analytics;
 
+use App\Filament\Admin\Concerns\HasContainedStatsSection;
 use App\Services\Analytics\AnalyticsService;
 use App\Support\AdminAuth;
 use Filament\Widgets\StatsOverviewWidget;
@@ -17,6 +18,8 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
  */
 class RevenueStats extends StatsOverviewWidget
 {
+    use HasContainedStatsSection;
+
     protected int|string|array $columnSpan = 'full';
 
     protected ?string $heading = 'Revenue';
