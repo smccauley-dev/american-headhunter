@@ -44,9 +44,33 @@ interface Filters {
     max_price?: string
 }
 
+interface PageConfig {
+    hero_eyebrow: string
+    hero_headline: string
+    hero_subhead_suffix: string
+    cta_guest_label: string
+    cta_guest_url: string
+    cta_apply_label: string
+    cta_details_label: string
+    filter_state_enabled: boolean
+    filter_type_enabled: boolean
+    filter_price_enabled: boolean
+    filter_species_enabled: boolean
+    filter_state_label: string
+    filter_type_label: string
+    filter_price_label: string
+    filter_species_label: string
+    card_columns: number
+    card_show_acres: boolean
+    card_show_species: boolean
+    card_show_price: boolean
+    card_show_max_hunters: boolean
+}
+
 interface Props {
     listings: Paginator
     filters: Filters
+    config: PageConfig
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -97,7 +121,7 @@ function formatAcres(listing: Listing): string {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function Properties({ listings, filters }: Props) {
+export default function Properties({ listings, filters, config }: Props) {
     const { auth } = usePage<{ auth?: { authenticated: boolean } }>().props
 
     const [state,       setState]       = useState(filters.state_code   ?? '')
@@ -150,12 +174,12 @@ export default function Properties({ listings, filters }: Props) {
                     <div className="reg-mark reg-tl" />
                     <div className="reg-mark reg-tr" />
                     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px' }}>
-                        <div className="section-num" style={{ marginBottom: 16 }}>Find Land</div>
+                        <div className="section-num" style={{ marginBottom: 16 }}>{config.hero_eyebrow}</div>
                         <h1 style={{ fontFamily: 'var(--display)', fontSize: 52, fontWeight: 400, color: 'var(--bone)', margin: '0 0 12px', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-                            Hunting Land for Lease
+                            {config.hero_headline}
                         </h1>
                         <p style={{ fontFamily: 'var(--body)', fontSize: 18, color: 'var(--parch-deep)', margin: 0 }}>
-                            {listings.total.toLocaleString()} {listings.total === 1 ? 'listing' : 'listings'} across the United States
+                            {listings.total.toLocaleString()} {listings.total === 1 ? 'listing' : 'listings'} {config.hero_subhead_suffix}
                         </p>
                     </div>
                 </div>
@@ -184,71 +208,79 @@ export default function Properties({ listings, filters }: Props) {
                         </div>
 
                         {/* State */}
-                        <FilterBlock label="State">
-                            <select
-                                value={state}
-                                onChange={e => { setState(e.target.value); applyFilters({ state_code: e.target.value || undefined }) }}
-                                style={selectStyle}
-                            >
-                                <option value="">All States</option>
-                                {US_STATES.map(([code, name]) => (
-                                    <option key={code} value={code}>{name}</option>
-                                ))}
-                            </select>
-                        </FilterBlock>
+                        {config.filter_state_enabled && (
+                            <FilterBlock label={config.filter_state_label}>
+                                <select
+                                    value={state}
+                                    onChange={e => { setState(e.target.value); applyFilters({ state_code: e.target.value || undefined }) }}
+                                    style={selectStyle}
+                                >
+                                    <option value="">All States</option>
+                                    {US_STATES.map(([code, name]) => (
+                                        <option key={code} value={code}>{name}</option>
+                                    ))}
+                                </select>
+                            </FilterBlock>
+                        )}
 
                         {/* Listing type */}
-                        <FilterBlock label="Lease Type">
-                            <select
-                                value={listingType}
-                                onChange={e => { setListingType(e.target.value); applyFilters({ listing_type: e.target.value || undefined }) }}
-                                style={selectStyle}
-                            >
-                                <option value="">All Types</option>
-                                <option value="annual_lease">Annual Lease</option>
-                                <option value="seasonal_lease">Seasonal Lease</option>
-                                <option value="day_hunt">Day Hunt</option>
-                            </select>
-                        </FilterBlock>
+                        {config.filter_type_enabled && (
+                            <FilterBlock label={config.filter_type_label}>
+                                <select
+                                    value={listingType}
+                                    onChange={e => { setListingType(e.target.value); applyFilters({ listing_type: e.target.value || undefined }) }}
+                                    style={selectStyle}
+                                >
+                                    <option value="">All Types</option>
+                                    <option value="annual_lease">Annual Lease</option>
+                                    <option value="seasonal_lease">Seasonal Lease</option>
+                                    <option value="day_hunt">Day Hunt</option>
+                                </select>
+                            </FilterBlock>
+                        )}
 
                         {/* Price range */}
-                        <FilterBlock label="Price Range">
-                            <div style={{ display: 'flex', gap: 8 }}>
-                                <input
-                                    type="number"
-                                    placeholder="Min $"
-                                    value={minPrice}
-                                    onChange={e => setMinPrice(e.target.value)}
-                                    onBlur={() => applyFilters()}
-                                    onKeyDown={e => e.key === 'Enter' && applyFilters()}
-                                    style={{ ...inputStyle, flex: 1 }}
-                                />
-                                <input
-                                    type="number"
-                                    placeholder="Max $"
-                                    value={maxPrice}
-                                    onChange={e => setMaxPrice(e.target.value)}
-                                    onBlur={() => applyFilters()}
-                                    onKeyDown={e => e.key === 'Enter' && applyFilters()}
-                                    style={{ ...inputStyle, flex: 1 }}
-                                />
-                            </div>
-                        </FilterBlock>
+                        {config.filter_price_enabled && (
+                            <FilterBlock label={config.filter_price_label}>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <input
+                                        type="number"
+                                        placeholder="Min $"
+                                        value={minPrice}
+                                        onChange={e => setMinPrice(e.target.value)}
+                                        onBlur={() => applyFilters()}
+                                        onKeyDown={e => e.key === 'Enter' && applyFilters()}
+                                        style={{ ...inputStyle, flex: 1 }}
+                                    />
+                                    <input
+                                        type="number"
+                                        placeholder="Max $"
+                                        value={maxPrice}
+                                        onChange={e => setMaxPrice(e.target.value)}
+                                        onBlur={() => applyFilters()}
+                                        onKeyDown={e => e.key === 'Enter' && applyFilters()}
+                                        style={{ ...inputStyle, flex: 1 }}
+                                    />
+                                </div>
+                            </FilterBlock>
+                        )}
 
                         {/* Species */}
-                        <FilterBlock label="Game Species">
-                            {SPECIES_OPTIONS.map(s => (
-                                <label key={s.code} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', cursor: 'pointer' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={species.includes(s.code)}
-                                        onChange={() => toggleSpecies(s.code)}
-                                        style={{ accentColor: 'var(--blaze)', width: 14, height: 14 }}
-                                    />
-                                    <span style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--ink)' }}>{s.label}</span>
-                                </label>
-                            ))}
-                        </FilterBlock>
+                        {config.filter_species_enabled && (
+                            <FilterBlock label={config.filter_species_label}>
+                                {SPECIES_OPTIONS.map(s => (
+                                    <label key={s.code} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={species.includes(s.code)}
+                                            onChange={() => toggleSpecies(s.code)}
+                                            style={{ accentColor: 'var(--blaze)', width: 14, height: 14 }}
+                                        />
+                                        <span style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--ink)' }}>{s.label}</span>
+                                    </label>
+                                ))}
+                            </FilterBlock>
+                        )}
                     </div>
 
                     {/* ── LISTINGS GRID ───────────────────────────────────── */}
@@ -280,9 +312,9 @@ export default function Properties({ listings, filters }: Props) {
                         )}
 
                         {/* Cards */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${config.card_columns}, 1fr)`, gap: 20 }}>
                             {listings.data.map(listing => (
-                                <ListingCard key={listing.id} listing={listing} authenticated={auth?.authenticated ?? false} />
+                                <ListingCard key={listing.id} listing={listing} authenticated={auth?.authenticated ?? false} config={config} />
                             ))}
                         </div>
 
@@ -334,7 +366,7 @@ const TYPE_BADGE_COLOR: Record<string, string> = {
     auction:        'var(--brass)',
 }
 
-function ListingCard({ listing, authenticated }: { listing: Listing; authenticated: boolean }) {
+function ListingCard({ listing, authenticated, config }: { listing: Listing; authenticated: boolean; config: PageConfig }) {
     const acres = listing.property.huntable_acres ?? listing.property.total_acres
 
     return (
@@ -352,9 +384,11 @@ function ListingCard({ listing, authenticated }: { listing: Listing; authenticat
                     }}>
                         {TYPE_LABELS[listing.listing_type] ?? listing.listing_type}
                     </span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--parch-deep)', letterSpacing: '.06em' }}>
-                        {acres.toLocaleString()} ac
-                    </span>
+                    {config.card_show_acres && (
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--parch-deep)', letterSpacing: '.06em' }}>
+                            {acres.toLocaleString()} ac
+                        </span>
+                    )}
                 </div>
                 <div style={{ fontFamily: 'var(--display)', fontSize: 17, fontWeight: 500, color: 'var(--bone)', lineHeight: 1.2, marginBottom: 4 }}>
                     {listing.property.title}
@@ -368,7 +402,7 @@ function ListingCard({ listing, authenticated }: { listing: Listing; authenticat
             <div style={{ padding: '14px 18px', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
                 {/* Species tags */}
-                {listing.property.species.length > 0 && (
+                {config.card_show_species && listing.property.species.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {listing.property.species.slice(0, 4).map(code => (
                             <span key={code} style={{
@@ -391,10 +425,12 @@ function ListingCard({ listing, authenticated }: { listing: Listing; authenticat
                 {/* Price + CTA */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 12, borderTop: '1px solid var(--parch-dim)' }}>
                     <div>
-                        <div style={{ fontFamily: 'var(--display)', fontSize: 20, fontWeight: 600, color: 'var(--ink)', lineHeight: 1 }}>
-                            {formatPrice(listing)}
-                        </div>
-                        {listing.max_hunters && listing.max_hunters > 1 && (
+                        {config.card_show_price && (
+                            <div style={{ fontFamily: 'var(--display)', fontSize: 20, fontWeight: 600, color: 'var(--ink)', lineHeight: 1 }}>
+                                {formatPrice(listing)}
+                            </div>
+                        )}
+                        {config.card_show_max_hunters && listing.max_hunters && listing.max_hunters > 1 && (
                             <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--parch-deep)', marginTop: 3, letterSpacing: '.08em' }}>
                                 up to {listing.max_hunters} hunters
                             </div>
@@ -407,13 +443,13 @@ function ListingCard({ listing, authenticated }: { listing: Listing; authenticat
                                     href={`/properties/${listing.property.slug}`}
                                     style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink)', textDecoration: 'none', padding: '8px 12px', border: '1px solid var(--parch-dim)' }}
                                 >
-                                    Details
+                                    {config.cta_details_label}
                                 </Link>
                                 <Link
                                     href={`/apply/${listing.id}`}
                                     style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--ink)' }}
                                 >
-                                    Apply →
+                                    {config.cta_apply_label} →
                                 </Link>
                             </>
                         ) : (
@@ -425,14 +461,14 @@ function ListingCard({ listing, authenticated }: { listing: Listing; authenticat
                                         href={`/properties/${listing.property.slug}`}
                                         style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink)', textDecoration: 'none', padding: '8px 12px', border: '1px solid var(--parch-dim)' }}
                                     >
-                                        Details
+                                        {config.cta_details_label}
                                     </Link>
                                 )}
                                 <Link
-                                    href="/get-started"
+                                    href={config.cta_guest_url}
                                     style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--blaze)' }}
                                 >
-                                    Join Now →
+                                    {config.cta_guest_label} →
                                 </Link>
                             </>
                         )}
