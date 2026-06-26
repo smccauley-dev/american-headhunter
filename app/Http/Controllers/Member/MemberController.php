@@ -228,7 +228,7 @@ class MemberController extends Controller
      * Only the lessee pays. Redirects to Stripe; the held row is authored by the
      * webhook on payment success.
      */
-    public function payDeposit(string $lease, SecurityDepositService $depositService): \Symfony\Component\HttpFoundation\Response
+    public function payDeposit(Request $request, string $lease, SecurityDepositService $depositService): \Symfony\Component\HttpFoundation\Response
     {
         $userId = session('auth.user_id');
 
@@ -245,6 +245,16 @@ class MemberController extends Controller
             return back()->withErrors(['deposit' => 'No security deposit is due for this lease.']);
         }
 
+        // When the lessee pays from the signing step, send them back there once the
+        // deposit is held rather than to the lease page (return=sign). Default stays
+        // the lease page for the standalone "pay deposit" action.
+        $returnToSign = $request->input('return') === 'sign';
+        $cancelUrl = $returnToSign
+            ? route('member.leases.sign', $lease) . '?deposit=cancel'
+            : route('member.leases.show', $lease) . '?deposit=cancel';
+        $successUrl = route('member.leases.deposit.return', $lease) . '?session_id={CHECKOUT_SESSION_ID}'
+            . ($returnToSign ? '&return=sign' : '');
+
         $payer   = User::findOrFail($userId);
         $session = $depositService->createCheckoutSession(
             $leaseRecord,
@@ -253,8 +263,8 @@ class MemberController extends Controller
             // session immediately — the page then renders "Held" on first load
             // without waiting on the webhook. Stripe substitutes the real id for
             // {CHECKOUT_SESSION_ID}; leave the braces literal (do not url-encode).
-            route('member.leases.deposit.return', $lease) . '?session_id={CHECKOUT_SESSION_ID}',
-            route('member.leases.show', $lease) . '?deposit=cancel',
+            $successUrl,
+            $cancelUrl,
         );
 
         return Inertia::location($session->url);
@@ -285,6 +295,11 @@ class MemberController extends Controller
                     $depositService->recordHeldFromCheckout($session);
                 }
             });
+        }
+
+        if ($request->query('return') === 'sign') {
+            return redirect()->route('member.leases.sign', $lease)
+                ->with('success', 'Deposit received. You can now sign your lease.');
         }
 
         return redirect()->route('member.leases.show', ['lease' => $lease, 'deposit' => 'paid']);

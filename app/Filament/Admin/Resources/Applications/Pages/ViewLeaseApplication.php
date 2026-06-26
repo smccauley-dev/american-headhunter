@@ -13,6 +13,7 @@ use App\Models\Lease\LeaseApplicationHunter;
 use App\Models\Lease\LeaseApplicationMessage;
 use App\Models\Lease\LeaseApplicationReviewHistory;
 use App\Models\Property\PropertyListing;
+use App\Services\Billing\SecurityDepositService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\ApplicationService;
 use App\Services\Lease\EsignatureService;
@@ -769,10 +770,21 @@ class ViewLeaseApplication extends ViewRecord
 
         $esigRequest = app(EsignatureService::class)->getRequestForLease($lease->id);
 
+        // Deposit status (pay-then-sign): the hunter's signature is gated on a held
+        // deposit, so surface it alongside the signers. null = no deposit configured.
+        $depositService = app(SecurityDepositService::class);
+        $dueCents = rescue(fn () => $depositService->amountDueCents($lease), 0) ?: 0;
+        $existing = rescue(fn () => $depositService->forLease($lease->id), null);
+        $deposit  = ($dueCents > 0 || $existing) ? [
+            'status' => $existing?->status,
+            'amount' => number_format(($existing ? (int) $existing->amount_cents : $dueCents) / 100, 2),
+        ] : null;
+
         return new HtmlString(view('filament.admin.applications.signing-status', [
             'lease'      => $lease,
             'signers'    => $esigRequest?->signers()->orderBy('order_num')->get(),
             'signingUrl' => route('member.leases.sign', $lease->id),
+            'deposit'    => $deposit,
         ])->render());
     }
 

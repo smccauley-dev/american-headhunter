@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
 use App\Models\Lease\Lease;
+use App\Services\Billing\SecurityDepositService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\RedirectResponse;
@@ -13,7 +14,7 @@ use Inertia\Response;
 
 class LeaseSignController extends Controller
 {
-    public function show(string $lease, EsignatureService $esigService, PropertyService $propertyService): Response|RedirectResponse
+    public function show(string $lease, EsignatureService $esigService, PropertyService $propertyService, SecurityDepositService $depositService): Response|RedirectResponse
     {
         $userId = session('auth.user_id');
 
@@ -51,10 +52,11 @@ class LeaseSignController extends Controller
             'request_id'     => $esigRequest->id,
             'signers'        => $signerList,
             'already_signed' => $signer->status === 'signed',
+            'deposit'        => $this->buildDepositProps($leaseRecord, $depositService),
         ]);
     }
 
-    public function sign(Request $request, string $lease, EsignatureService $esigService): \Illuminate\Http\RedirectResponse
+    public function sign(Request $request, string $lease, EsignatureService $esigService, SecurityDepositService $depositService): \Illuminate\Http\RedirectResponse
     {
         $userId = session('auth.user_id');
 
@@ -64,6 +66,16 @@ class LeaseSignController extends Controller
             ->firstOrFail();
 
         abort_unless($leaseRecord->status === 'pending_signatures', 410);
+
+        // Pay-then-sign gate: the lessee's signature is the one that activates the
+        // lease, so a refundable deposit (when the listing requires one) must be held
+        // before they can sign. This is the real enforcement — the UI mirror is
+        // advisory. Only the lessee reaches this controller (lessee-scoped query),
+        // so the landowner's counter-signature is never gated on a deposit.
+        if (! $this->depositSatisfied($leaseRecord, $depositService)) {
+            return redirect()->route('member.leases.sign', $lease)
+                ->with('error', 'Please pay your refundable security deposit before signing.');
+        }
 
         $request->validate([
             'request_id' => ['required', 'string'],
@@ -107,6 +119,47 @@ class LeaseSignController extends Controller
     public function downloadEsignDocument(string $lease, string $document, EsignatureService $esigService): \Symfony\Component\HttpFoundation\StreamedResponse
     {
         return $esigService->downloadEsignatureDocument($lease, $document, session('auth.user_id'));
+    }
+
+    /**
+     * Whether the lessee may sign: true when no deposit is due for the lease, or
+     * when one is due and already held. Read-only — derives the amount from the
+     * listing and checks for a held row.
+     */
+    private function depositSatisfied(Lease $leaseRecord, SecurityDepositService $depositService): bool
+    {
+        if (rescue(fn () => $depositService->amountDueCents($leaseRecord), 0) <= 0) {
+            return true;
+        }
+
+        $existing = rescue(fn () => $depositService->forLease($leaseRecord->id), null);
+
+        return $existing !== null && $existing->status === 'held';
+    }
+
+    /**
+     * Deposit props for the signing page, or null when no deposit is due. `held`
+     * drives whether the signature form is unlocked; `pay_url` starts Checkout and
+     * returns the lessee to this same signing step (return=sign).
+     *
+     * @return array{amount: string, held: bool, pay_url: string}|null
+     */
+    private function buildDepositProps(Lease $leaseRecord, SecurityDepositService $depositService): ?array
+    {
+        $amountDueCents = rescue(fn () => $depositService->amountDueCents($leaseRecord), 0) ?: 0;
+        $existing       = rescue(fn () => $depositService->forLease($leaseRecord->id), null);
+
+        if ($amountDueCents <= 0 && ! $existing) {
+            return null;
+        }
+
+        $displayCents = $existing ? (int) $existing->amount_cents : $amountDueCents;
+
+        return [
+            'amount'  => number_format($displayCents / 100, 2),
+            'held'    => $existing !== null && $existing->status === 'held',
+            'pay_url' => route('member.leases.deposit', $leaseRecord->id),
+        ];
     }
 
     private function buildLeaseProps(Lease $leaseRecord, PropertyService $propertyService): array

@@ -1,11 +1,17 @@
 import React, { useState } from 'react'
-import { Head, useForm, usePage } from '@inertiajs/react'
+import { Head, router, useForm, usePage } from '@inertiajs/react'
 
 interface Signer {
   name: string
   role: string
   status: string
   signed_at: string | null
+}
+
+interface Deposit {
+  amount: string
+  held: boolean
+  pay_url: string
 }
 
 interface LeaseProps {
@@ -27,10 +33,11 @@ interface Props {
   request_id?: string
   signers: Signer[]
   already_signed: boolean
+  deposit: Deposit | null
 }
 
-export default function Sign({ lease, request_id, signers, already_signed }: Props) {
-  const { props } = usePage<{ flash?: { success?: string; info?: string } }>()
+export default function Sign({ lease, request_id, signers, already_signed, deposit }: Props) {
+  const { props } = usePage<{ flash?: { success?: string; info?: string; error?: string } }>()
   const flash = props.flash ?? {}
 
   const { data, setData, post, processing, errors } = useForm({
@@ -39,7 +46,17 @@ export default function Sign({ lease, request_id, signers, already_signed }: Pro
     agreed: false as boolean,
   })
 
+  const [payingDeposit, setPayingDeposit] = useState(false)
+
   const allSigned = signers.every((s) => s.status === 'signed')
+  // Pay-then-sign: a due-but-unheld deposit locks the signature form.
+  const depositPending = !!deposit && !deposit.held
+
+  function payDeposit() {
+    if (!deposit) return
+    setPayingDeposit(true)
+    router.post(deposit.pay_url, { return: 'sign' }, { onFinish: () => setPayingDeposit(false) })
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -75,6 +92,11 @@ export default function Sign({ lease, request_id, signers, already_signed }: Pro
           {flash.info && (
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '12px 16px', marginBottom: '20px', color: '#1d4ed8', fontSize: '14px' }}>
               {flash.info}
+            </div>
+          )}
+          {flash.error && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', padding: '12px 16px', marginBottom: '20px', color: '#b91c1c', fontSize: '14px' }}>
+              {flash.error}
             </div>
           )}
 
@@ -135,6 +157,53 @@ export default function Sign({ lease, request_id, signers, already_signed }: Pro
             })}
           </div>
 
+          {/* Security deposit — pay-then-sign gate */}
+          {deposit && !already_signed && (
+            depositPending ? (
+              <div style={{ background: '#fff', border: '1px solid #d97706', borderRadius: '4px', marginBottom: '20px', overflow: 'hidden' }}>
+                <div style={{ background: '#fffbeb', padding: '14px 20px', borderBottom: '1px solid #fde68a' }}>
+                  <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.12em', textTransform: 'uppercase', color: '#b45309', marginBottom: '4px' }}>Step 1 — Security Deposit</div>
+                  <div style={{ fontSize: '15px', fontWeight: '700', color: '#0A1512' }}>
+                    Pay your refundable deposit to unlock signing
+                  </div>
+                </div>
+                <div style={{ padding: '18px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '14px' }}>
+                    <span style={{ fontSize: '13px', color: '#666' }}>Refundable security deposit</span>
+                    <span style={{ fontSize: '20px', fontWeight: '700', color: '#0A1512' }}>${deposit.amount}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={payDeposit}
+                    disabled={payingDeposit}
+                    style={{
+                      width: '100%',
+                      padding: '14px',
+                      background: payingDeposit ? '#d1d5db' : '#C84C21',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '15px',
+                      fontWeight: '700',
+                      letterSpacing: '.04em',
+                      cursor: payingDeposit ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {payingDeposit ? 'Redirecting…' : `Pay $${deposit.amount} Deposit`}
+                  </button>
+                  <p style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '12px', lineHeight: '1.6' }}>
+                    Held securely and refundable at the end of your lease. You'll return here to sign once it's received.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '12px 16px', marginBottom: '20px', color: '#15803d', fontSize: '13px', fontWeight: '600' }}>
+                <span style={{ fontSize: '15px' }}>✓</span>
+                <span>Security deposit of ${deposit.amount} held — you're clear to sign.</span>
+              </div>
+            )
+          )}
+
           {/* Already signed state */}
           {already_signed && (
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '20px', textAlign: 'center', color: '#15803d' }}>
@@ -147,8 +216,8 @@ export default function Sign({ lease, request_id, signers, already_signed }: Pro
             </div>
           )}
 
-          {/* Signature form — only shown when not yet signed */}
-          {!already_signed && (
+          {/* Signature form — only shown when not yet signed and the deposit is held */}
+          {!already_signed && !depositPending && (
             <form onSubmit={handleSubmit}>
               <div style={{ background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', padding: '20px', marginBottom: '16px' }}>
                 <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#888', marginBottom: '16px' }}>

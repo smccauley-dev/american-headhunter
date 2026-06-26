@@ -1,4 +1,4 @@
-{{-- Lease summary card + signer status rows: $lease, $signers (collection|null), $signingUrl --}}
+{{-- Lease summary card + signer status rows: $lease, $signers (collection|null), $signingUrl, $deposit (array|null) --}}
 @php
     $statusColor = match ($lease->status) {
         'active'             => '#15803d',
@@ -36,6 +36,25 @@
             <div style="font-size:13px;font-weight:600;color:#1a1a1a">${{ number_format((float) $lease->total_price, 2) }}</div>
         </div>
     </div>
+    @if (!empty($deposit))
+        @php
+            [$depLabel, $depClr, $depBg] = match ($deposit['status']) {
+                'held'               => ['Held', '#15803d', '#f0fdf4'],
+                'released'           => ['Released', '#555', '#f5f5f5'],
+                'partially_released' => ['Partially Released', '#b05a00', '#fff7ed'],
+                'forfeited'          => ['Forfeited', '#b91c1c', '#fef2f2'],
+                default              => ['Not Paid', '#b05a00', '#fff7ed'],
+            };
+        @endphp
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:{{ $depBg }};border:1px solid #e5e0d8;border-radius:4px;margin-bottom:16px">
+            <div style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#888">Security Deposit</div>
+            <span style="display:inline-block;background:#fff;color:{{ $depClr }};font-family:monospace;font-size:10px;font-weight:700;padding:3px 10px;border-radius:2px;text-transform:uppercase;letter-spacing:.08em;border:1px solid {{ $depClr }}55">{{ $depLabel }}</span>
+            <span style="font-size:13px;font-weight:600;color:#1a1a1a">${{ $deposit['amount'] }}</span>
+            @if ($deposit['status'] === null)
+                <span style="font-size:11px;color:#888">due before the hunter can sign</span>
+            @endif
+        </div>
+    @endif
     <div style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#888;margin-bottom:8px">Signature Status</div>
     @if ($signers === null || $signers->isEmpty())
         <p style="color:#888;font-style:italic;font-size:13px">No signing request found.</p>
