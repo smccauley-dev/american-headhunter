@@ -96,14 +96,13 @@ class SecurityDepositResource extends Resource
                     ->formatStateUsing(fn (string $state): string => self::statusLabel($state)),
                 TextColumn::make('lease_id')
                     ->label('Lease')
-                    ->fontFamily('mono')
-                    ->limit(8)
-                    ->placeholder('—'),
+                    ->state(fn (SecurityDeposit $record): ?string => $record->leaseLabel())
+                    ->placeholder('—')
+                    ->wrap(),
                 TextColumn::make('payer_user_id')
                     ->label('Lessee')
-                    ->fontFamily('mono')
-                    ->limit(8)
-                    ->placeholder('—'),
+                    ->state(fn (SecurityDeposit $record): ?string => $record->getPayer()?->getFilamentName())
+                    ->placeholder('Unknown user'),
                 TextColumn::make('amount_cents')
                     ->label('Amount')
                     ->money('USD', divideBy: 100)
@@ -147,9 +146,30 @@ class SecurityDepositResource extends Resource
             Section::make('Parties & References')
                 ->columns(3)
                 ->schema([
-                    TextEntry::make('payer_user_id')->label('Lessee (DB 1)')->fontFamily('mono')->placeholder('—')->copyable(),
-                    TextEntry::make('payee_user_id')->label('Landowner (DB 1)')->fontFamily('mono')->placeholder('—')->copyable(),
-                    TextEntry::make('lease_id')->label('Lease (DB 3)')->fontFamily('mono')->placeholder('—')->copyable(),
+                    // Cross-DB UUIDs resolved to names via the service layer (admin runs
+                    // under ah_system). The raw id stays available as muted helper text
+                    // and as the copied value for support lookups.
+                    TextEntry::make('payer_user_id')
+                        ->label('Lessee')
+                        ->state(fn (SecurityDeposit $record): ?string => $record->getPayer()?->getFilamentName())
+                        ->placeholder('Unknown user')
+                        ->helperText(fn (SecurityDeposit $record): ?string => $record->payer_user_id)
+                        ->copyable()
+                        ->copyableState(fn (SecurityDeposit $record): ?string => $record->payer_user_id),
+                    TextEntry::make('payee_user_id')
+                        ->label('Landowner')
+                        ->state(fn (SecurityDeposit $record): ?string => $record->getPayee()?->getFilamentName())
+                        ->placeholder('Unknown user')
+                        ->helperText(fn (SecurityDeposit $record): ?string => $record->payee_user_id)
+                        ->copyable()
+                        ->copyableState(fn (SecurityDeposit $record): ?string => $record->payee_user_id),
+                    TextEntry::make('lease_id')
+                        ->label('Lease')
+                        ->state(fn (SecurityDeposit $record): ?string => $record->leaseLabel())
+                        ->placeholder('—')
+                        ->helperText(fn (SecurityDeposit $record): ?string => $record->lease_id)
+                        ->copyable()
+                        ->copyableState(fn (SecurityDeposit $record): ?string => $record->lease_id),
                 ]),
 
             Section::make('Dates')

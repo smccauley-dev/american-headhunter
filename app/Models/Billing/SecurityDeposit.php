@@ -78,4 +78,51 @@ class SecurityDeposit extends BaseModel
 
         return app(\App\Services\Lease\LeaseService::class)->find($this->lease_id);
     }
+
+    /**
+     * The lessee who funded the deposit. Cross-DB (DB 1) — resolved via the
+     * service layer, never an Eloquent relationship.
+     */
+    public function getPayer(): ?\App\Models\Identity\User
+    {
+        if (! $this->payer_user_id) {
+            return null;
+        }
+
+        return app(\App\Services\Identity\UserService::class)->findById($this->payer_user_id);
+    }
+
+    /**
+     * The landowner the deposit is held for. Cross-DB (DB 1) — resolved via the
+     * service layer, never an Eloquent relationship.
+     */
+    public function getPayee(): ?\App\Models\Identity\User
+    {
+        if (! $this->payee_user_id) {
+            return null;
+        }
+
+        return app(\App\Services\Identity\UserService::class)->findById($this->payee_user_id);
+    }
+
+    /**
+     * A human-readable label for the secured lease — "Property Title · start–end".
+     * Falls back gracefully when the cross-DB lease or property can't be resolved.
+     */
+    public function leaseLabel(): ?string
+    {
+        $lease = $this->getLease();
+
+        if (! $lease) {
+            return null;
+        }
+
+        $title = $lease->getProperty()?->title ?? 'Lease';
+        $start = $lease->start_date?->format('M j, Y');
+        $end   = $lease->end_date?->format('M j, Y');
+
+        $dates = $start && $end ? " · {$start} – {$end}" : '';
+
+        return $title.$dates;
+    }
 }
