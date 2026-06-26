@@ -6,6 +6,7 @@ use App\Models\Billing\Subscription;
 use App\Models\Identity\User;
 use App\Models\Platform\MembershipPlan;
 use App\Models\Platform\PromotionalPeriod;
+use Illuminate\Support\Facades\Log;
 use Stripe\Account;
 use Stripe\AccountLink;
 use Stripe\Charge;
@@ -609,12 +610,12 @@ class StripeService
      */
     public function createConnectAccount(User $landowner): string
     {
-        $account = Account::create([
+        $account = $this->withoutStripeNotice(fn () => Account::create([
             'type'         => 'express',
             'email'        => $landowner->email,
             'capabilities' => ['transfers' => ['requested' => true]],
             'metadata'     => ['user_id' => $landowner->id],
-        ]);
+        ]));
 
         return $account->id;
     }
@@ -627,12 +628,12 @@ class StripeService
      */
     public function createAccountLink(string $accountId, string $refreshUrl, string $returnUrl): string
     {
-        return AccountLink::create([
+        return $this->withoutStripeNotice(fn () => AccountLink::create([
             'account'     => $accountId,
             'refresh_url' => $refreshUrl,
             'return_url'  => $returnUrl,
             'type'        => 'account_onboarding',
-        ])->url;
+        ])->url);
     }
 
     /**
@@ -641,7 +642,7 @@ class StripeService
      */
     public function retrieveAccount(string $accountId): Account
     {
-        return Account::retrieve($accountId);
+        return $this->withoutStripeNotice(fn () => Account::retrieve($accountId));
     }
 
     /**
@@ -654,11 +655,40 @@ class StripeService
      */
     public function createTransfer(int $amountCents, string $destinationAccountId, array $metadata = []): Transfer
     {
-        return Transfer::create([
+        return $this->withoutStripeNotice(fn () => Transfer::create([
             'amount'      => $amountCents,
             'currency'    => 'usd',
             'destination' => $destinationAccountId,
             'metadata'    => $metadata,
-        ]);
+        ]));
+    }
+
+    /**
+     * Run a Stripe SDK call while neutralizing the informational `stripe-notice`
+     * response header. Recent Stripe API versions return that header on the v1
+     * Account endpoints (recommending Accounts v2); stripe-php emits it via
+     * trigger_error(E_USER_WARNING), which Laravel's error handler would otherwise
+     * promote to a fatal ErrorException — aborting a request whose API call
+     * actually succeeded. Genuine API failures throw Stripe\Exception\* and are
+     * unaffected by this.
+     *
+     * @template T
+     *
+     * @param  \Closure():T  $call
+     * @return T
+     */
+    private function withoutStripeNotice(\Closure $call): mixed
+    {
+        set_error_handler(static function (int $errno, string $errstr): bool {
+            Log::debug('Stripe notice suppressed', ['notice' => $errstr]);
+
+            return true; // handled — do not promote to an ErrorException
+        }, \E_USER_WARNING);
+
+        try {
+            return $call();
+        } finally {
+            restore_error_handler();
+        }
     }
 }
