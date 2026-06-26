@@ -182,6 +182,9 @@ class SecurityDepositService extends BaseService
         if ($deposit->status !== 'held') {
             throw new \RuntimeException("Security deposit {$depositId} is not held (status {$deposit->status}).");
         }
+        if ($deposit->forfeit_trust_status === 'pending') {
+            throw new \RuntimeException("Security deposit {$depositId} has a pending forfeiture claim — resolve it before releasing.");
+        }
 
         $remaining = $deposit->remainingCents();
         if ($remaining > 0 && $deposit->stripe_payment_intent_id) {
@@ -209,25 +212,33 @@ class SecurityDepositService extends BaseService
         return $deposit;
     }
 
-    /** Forfeit fault attributions and the per-fault Trust Score policy. */
-    public const FAULT_LESSEE              = 'lessee';              // hunter caused it — provisional Trust Score hit
-    public const FAULT_LANDOWNER_INITIATED = 'landowner_initiated'; // no-fault / landowner's call — no hunter penalty
+    /** Forfeit fault attributions and the per-fault settlement policy. */
+    public const FAULT_LESSEE              = 'lessee';              // hunter caused it — deferred claim, provisional Trust hit
+    public const FAULT_LANDOWNER_INITIATED = 'landowner_initiated'; // no-fault / landowner's call — settles immediately, no penalty
     public const FAULT_CONTESTED           = 'contested';           // hunter disputes — held pending an admin decision
 
+    /** Days a hunter has to contest a forfeiture-claim before it auto-finalizes as upheld. */
+    public const CONTEST_WINDOW_DAYS = 7;
+
     /**
-     * Forfeit some or all of a held deposit. Records the forfeited amount, a
-     * structured reason ($category) + free-text note, and WHO is held responsible
-     * ($fault). Returns any un-forfeited remainder to the lessee immediately and
-     * disburses the forfeited amount to the landowner via Stripe Connect
-     * (best-effort — see disburseForfeitedAmount). Admin-driven.
+     * Forfeit some or all of a held deposit. WHAT happens depends on $fault:
      *
-     * The hunter's Trust Score penalty is PROVISIONAL: a 'lessee'-fault (or
-     * 'contested') forfeiture is recorded with forfeit_trust_status = 'pending' and
-     * does NOT touch the hunter's score until an admin calls confirmForfeitFault().
-     * This protects hunters from a scam landowner forfeiting unfairly. A
-     * 'landowner_initiated' (no-fault) forfeiture carries no pending penalty.
+     *  - LESSEE / CONTESTED (a hunter-fault claim): records a CLAIM only — the
+     *    intended amount, reason ($category) + note, and any insurance — and parks
+     *    forfeit_trust_status='pending' with a contest deadline. **No money moves**
+     *    and the deposit stays 'held'. The hunter can contest (DisputeService) or,
+     *    if insured, opt out; settlement + Trust Score both defer to that terminal
+     *    outcome (confirm/waive/opt-out), or to autoFinalizePastDeadline().
      *
-     * @throws \RuntimeException         when the deposit is not held
+     *  - LANDOWNER_INITIATED (no-fault, uncontestable — e.g. an agreed cleaning
+     *    deduction): settles immediately (keep) and disburses to the landowner; no
+     *    contest window, no Trust Score penalty (forfeit_trust_status stays null).
+     *
+     * One forfeiture per deposit — guarded on forfeit_fault being unset.
+     *
+     * @param array<string,mixed> $insurance Optional: covered_party, insurer_name, policy_number, coi_document_id
+     *
+     * @throws \RuntimeException         when the deposit is not held or already has a forfeiture claim
      * @throws \InvalidArgumentException when the amount is outside the remaining balance or $fault is invalid
      */
     public function forfeit(
@@ -237,10 +248,14 @@ class SecurityDepositService extends BaseService
         ?string $actorUserId = null,
         string $fault = self::FAULT_LESSEE,
         ?string $category = null,
+        array $insurance = [],
     ): SecurityDeposit {
         $deposit = SecurityDeposit::findOrFail($depositId);
         if ($deposit->status !== 'held') {
             throw new \RuntimeException("Security deposit {$depositId} is not held (status {$deposit->status}).");
+        }
+        if ($deposit->forfeit_fault !== null) {
+            throw new \RuntimeException("Security deposit {$depositId} already has a forfeiture claim.");
         }
 
         $remaining = $deposit->remainingCents();
@@ -252,16 +267,107 @@ class SecurityDepositService extends BaseService
             throw new \InvalidArgumentException("Invalid forfeit fault: {$fault}.");
         }
 
-        $deposit->forfeited_amount_cents = (int) $deposit->forfeited_amount_cents + $amountCents;
+        $deposit->forfeited_amount_cents = $amountCents; // intended claim
         $deposit->forfeit_reason         = $reason;
         $deposit->forfeit_category       = $category;
         $deposit->forfeit_fault          = $fault;
         $deposit->forfeit_initiated_by   = $actorUserId;
-        // A hunter-fault (or contested) forfeiture parks a provisional Trust Score
-        // penalty for an admin to confirm; a no-fault one never penalizes the hunter.
-        $deposit->forfeit_trust_status = $fault === self::FAULT_LANDOWNER_INITIATED ? null : 'pending';
+        $this->applyInsurance($deposit, $insurance);
 
-        $returnCents = $remaining - $amountCents;
+        // A no-fault forfeiture is uncontestable: settle it now, no penalty.
+        if ($fault === self::FAULT_LANDOWNER_INITIATED) {
+            $payoutId = $this->settleForfeiture($deposit, 'keep');
+            $deposit->forfeit_trust_status = null;
+            $deposit->save();
+
+            $this->audit->log(
+                eventType:      'security_deposit.forfeited',
+                sourceDatabase: 'ah_billing',
+                tableName:      'security_deposits',
+                recordId:       $deposit->id,
+                userId:         $actorUserId,
+                actionSummary:  $payoutId
+                    ? 'No-fault deposit forfeiture settled and disbursed to landowner via Connect'
+                    : 'No-fault deposit forfeiture settled (landowner payout pending Connect onboarding)',
+                newValues:      [
+                    'status'                 => $deposit->status,
+                    'forfeited_amount_cents' => (int) $deposit->forfeited_amount_cents,
+                    'forfeit_fault'          => $fault,
+                    'payout_id'              => $payoutId,
+                ],
+            );
+
+            $this->invalidate("lease_detail:{$deposit->lease_id}");
+
+            return $deposit;
+        }
+
+        // A hunter-fault claim: defer money + Trust Score to the terminal outcome.
+        $deposit->forfeit_trust_status     = 'pending';
+        $deposit->forfeit_contest_deadline = now()->addDays(self::CONTEST_WINDOW_DAYS);
+        $deposit->save();
+
+        $this->audit->log(
+            eventType:      'security_deposit.forfeit_claimed',
+            sourceDatabase: 'ah_billing',
+            tableName:      'security_deposits',
+            recordId:       $deposit->id,
+            userId:         $actorUserId,
+            actionSummary:  'Security deposit forfeiture claimed — held pending contest/finalize',
+            newValues:      [
+                'status'                   => $deposit->status,
+                'forfeited_amount_cents'   => (int) $deposit->forfeited_amount_cents,
+                'forfeit_reason'           => $reason,
+                'forfeit_category'         => $category,
+                'forfeit_fault'            => $fault,
+                'forfeit_trust_status'     => 'pending',
+                'forfeit_contest_deadline' => $deposit->forfeit_contest_deadline?->toIso8601String(),
+            ],
+        );
+
+        $this->invalidate("lease_detail:{$deposit->lease_id}");
+
+        return $deposit;
+    }
+
+    /**
+     * The single place a forfeiture-claim's money moves. Mutates the deposit (the
+     * caller persists). Returns the landowner payout id on a 'keep', else null.
+     *
+     *  - keep:   disburse the claimed amount to the landowner, refund any remainder
+     *            to the hunter (status forfeited / partially_released).
+     *  - refund: the claim is void — return everything to the hunter, zero the
+     *            forfeited amount (status released).
+     */
+    private function settleForfeiture(SecurityDeposit $deposit, string $disposition): ?string
+    {
+        if (! in_array($disposition, ['keep', 'refund'], true)) {
+            throw new \InvalidArgumentException("Invalid forfeiture disposition: {$disposition}.");
+        }
+
+        // Nothing has moved yet, so the whole un-refunded balance is still captured.
+        $captured = (int) $deposit->amount_cents - (int) $deposit->refunded_amount_cents;
+
+        if ($disposition === 'refund') {
+            if ($captured > 0 && $deposit->stripe_payment_intent_id) {
+                $refund = $this->stripe->refundPaymentIntent(
+                    $deposit->stripe_payment_intent_id,
+                    $captured,
+                    'Security deposit returned — forfeiture overturned',
+                );
+                $deposit->stripe_refund_id      = $refund->id;
+                $deposit->refunded_amount_cents = (int) $deposit->refunded_amount_cents + $captured;
+            }
+            $deposit->forfeited_amount_cents = 0; // claim void
+            $deposit->released_at            = now();
+            $deposit->status                 = 'released';
+
+            return null;
+        }
+
+        // keep: refund any remainder beyond the claimed amount, disburse the rest.
+        $claimed     = (int) $deposit->forfeited_amount_cents;
+        $returnCents = $captured - $claimed;
         if ($returnCents > 0 && $deposit->stripe_payment_intent_id) {
             $refund = $this->stripe->refundPaymentIntent(
                 $deposit->stripe_payment_intent_id,
@@ -276,43 +382,39 @@ class SecurityDepositService extends BaseService
             $deposit->status = 'forfeited';
         }
 
-        $deposit->save();
+        return $this->disburseForfeitedAmount($deposit, $claimed);
+    }
 
-        // Disburse the forfeited amount to the landowner via Stripe Connect. This is
-        // best-effort: the forfeiture state is already recorded, so a Stripe failure
-        // or a landowner who hasn't onboarded a payout account must not roll it back
-        // — the captured cash simply stays on the platform until a later retry.
-        $payoutId = $this->disburseForfeitedAmount($deposit, $amountCents);
+    /** Merge provided insurance details onto the deposit; marks coverage 'claimed' when a covered party is named. */
+    private function applyInsurance(SecurityDeposit $deposit, array $insurance): void
+    {
+        if (! $insurance) {
+            return;
+        }
 
-        $this->audit->log(
-            eventType:      'security_deposit.forfeited',
-            sourceDatabase: 'ah_billing',
-            tableName:      'security_deposits',
-            recordId:       $deposit->id,
-            userId:         $actorUserId,
-            actionSummary:  $payoutId
-                ? 'Security deposit forfeited and disbursed to landowner via Connect'
-                : 'Security deposit forfeited (landowner payout pending Connect onboarding)',
-            newValues:      [
-                'status'                 => $deposit->status,
-                'forfeited_amount_cents' => (int) $deposit->forfeited_amount_cents,
-                'forfeit_reason'         => $reason,
-                'forfeit_category'       => $category,
-                'forfeit_fault'          => $fault,
-                'forfeit_trust_status'   => $deposit->forfeit_trust_status,
-                'payout_id'              => $payoutId,
-            ],
-        );
+        $coveredParty = $insurance['covered_party'] ?? null;
+        if ($coveredParty !== null) {
+            $deposit->insurance_covered_party = $coveredParty;
+            $deposit->coverage_status = $coveredParty === 'none' ? 'none' : 'claimed';
+        }
+        foreach (['insurer_name', 'policy_number', 'coi_document_id'] as $field) {
+            if (array_key_exists($field, $insurance)) {
+                $deposit->{$field} = $insurance[$field];
+            }
+        }
+    }
 
-        $this->invalidate("lease_detail:{$deposit->lease_id}");
-
-        return $deposit;
+    /** Whether either party has insurance coverage on file for this deposit. */
+    private function hasInsuranceCoverage(SecurityDeposit $deposit): bool
+    {
+        return $deposit->insurance_covered_party !== null
+            && $deposit->insurance_covered_party !== 'none';
     }
 
     /**
-     * Confirm a pending hunter-fault forfeiture and APPLY the lessee's Trust Score
-     * penalty. Only moves a deposit out of 'pending'; idempotent otherwise. The
-     * penalty is recorded against the payer (the hunter) via TrustScoreService.
+     * UPHOLD a pending forfeiture-claim: the landowner was right. Settles the money
+     * to the landowner (keep), APPLIES the hunter's −10 Trust Score penalty, and
+     * marks forfeit_trust_status='applied'. Only acts on a 'pending' claim.
      */
     public function confirmForfeitFault(string $depositId, ?string $actorUserId = null): SecurityDeposit
     {
@@ -320,6 +422,8 @@ class SecurityDepositService extends BaseService
         if ($deposit->forfeit_trust_status !== 'pending') {
             throw new \RuntimeException("Security deposit {$depositId} has no pending forfeiture decision.");
         }
+
+        $payoutId = $this->settleForfeiture($deposit, 'keep');
 
         $hunter = User::on('identity')->find($deposit->payer_user_id);
         if ($hunter) {
@@ -342,17 +446,20 @@ class SecurityDepositService extends BaseService
             tableName:      'security_deposits',
             recordId:       $deposit->id,
             userId:         $actorUserId,
-            actionSummary:  'Forfeiture fault confirmed against the hunter; Trust Score penalty applied',
-            newValues:      ['forfeit_trust_status' => 'applied'],
+            actionSummary:  'Forfeiture upheld against the hunter; money settled to landowner and Trust Score penalty applied',
+            newValues:      ['status' => $deposit->status, 'forfeit_trust_status' => 'applied', 'payout_id' => $payoutId],
         );
+
+        $this->invalidate("lease_detail:{$deposit->lease_id}");
 
         return $deposit;
     }
 
     /**
-     * Waive a pending forfeiture's Trust Score penalty — the hunter is exonerated
-     * (e.g. they contested and the admin sided with them). No score change; the
-     * forfeiture cash outcome is unaffected.
+     * OVERTURN a pending forfeiture-claim: the landowner's forfeiture was not
+     * justified. Refunds the FULL deposit to the hunter, marks the hunter's penalty
+     * 'waived' (never applied). The landowner-side Trust penalty for an unjustified
+     * forfeiture is applied by DisputeService (it owns the dispute outcome).
      */
     public function waiveForfeitFault(string $depositId, ?string $actorUserId = null, ?string $note = null): SecurityDeposit
     {
@@ -360,6 +467,8 @@ class SecurityDepositService extends BaseService
         if ($deposit->forfeit_trust_status !== 'pending') {
             throw new \RuntimeException("Security deposit {$depositId} has no pending forfeiture decision.");
         }
+
+        $this->settleForfeiture($deposit, 'refund');
 
         $deposit->forfeit_trust_status = 'waived';
         $deposit->forfeit_resolved_by  = $actorUserId;
@@ -372,11 +481,151 @@ class SecurityDepositService extends BaseService
             tableName:      'security_deposits',
             recordId:       $deposit->id,
             userId:         $actorUserId,
-            actionSummary:  'Forfeiture Trust Score penalty waived — hunter not held at fault',
-            newValues:      ['forfeit_trust_status' => 'waived', 'note' => $note],
+            actionSummary:  'Forfeiture overturned — deposit refunded to hunter, no fault penalty',
+            newValues:      ['status' => $deposit->status, 'forfeit_trust_status' => 'waived', 'note' => $note],
+        );
+
+        $this->invalidate("lease_detail:{$deposit->lease_id}");
+
+        return $deposit;
+    }
+
+    /**
+     * OPT OUT of the dispute system because a party carries insurance — the insurer
+     * handles the loss, so there's no fault penalty for either side. Settles the
+     * money per $disposition (keep|refund) and marks forfeit_trust_status='opted_out'.
+     * Requires insurance coverage on file or provided in $insurance.
+     *
+     * @param array<string,mixed> $insurance Optional coverage to record before settling
+     *
+     * @throws \RuntimeException when the claim isn't pending or no insurance is on file
+     */
+    public function optOutForfeitDecision(
+        string $depositId,
+        string $disposition,
+        ?string $actorUserId = null,
+        ?string $note = null,
+        array $insurance = [],
+    ): SecurityDeposit {
+        $deposit = SecurityDeposit::findOrFail($depositId);
+        if ($deposit->forfeit_trust_status !== 'pending') {
+            throw new \RuntimeException("Security deposit {$depositId} has no pending forfeiture decision.");
+        }
+
+        $this->applyInsurance($deposit, $insurance);
+        if (! $this->hasInsuranceCoverage($deposit)) {
+            throw new \RuntimeException("Security deposit {$depositId} cannot be opted out without insurance coverage on file.");
+        }
+
+        $payoutId = $this->settleForfeiture($deposit, $disposition);
+
+        $deposit->coverage_status      = 'covered';
+        $deposit->forfeit_trust_status = 'opted_out';
+        $deposit->forfeit_resolved_by  = $actorUserId;
+        $deposit->forfeit_resolved_at  = now();
+        $deposit->save();
+
+        $this->audit->log(
+            eventType:      'security_deposit.forfeit_opted_out',
+            sourceDatabase: 'ah_billing',
+            tableName:      'security_deposits',
+            recordId:       $deposit->id,
+            userId:         $actorUserId,
+            actionSummary:  'Forfeiture settled via insurance opt-out — no Trust Score change for either party',
+            newValues:      [
+                'status'                  => $deposit->status,
+                'forfeit_trust_status'    => 'opted_out',
+                'disposition'             => $disposition,
+                'insurance_covered_party' => $deposit->insurance_covered_party,
+                'payout_id'               => $payoutId,
+                'note'                    => $note,
+            ],
+        );
+
+        $this->invalidate("lease_detail:{$deposit->lease_id}");
+
+        return $deposit;
+    }
+
+    /**
+     * Admin override: REVERSE an already-applied hunter penalty (e.g. new evidence
+     * exonerates them after finalize). Restores the +10 the confirmation deducted
+     * via a 'deposit_forfeiture_reversed' event. Trust-only — any money already
+     * disbursed is reconciled manually (flagged in the audit note). Only acts on an
+     * 'applied' penalty.
+     */
+    public function reverseForfeitFault(string $depositId, ?string $actorUserId = null, ?string $note = null): SecurityDeposit
+    {
+        $deposit = SecurityDeposit::findOrFail($depositId);
+        if ($deposit->forfeit_trust_status !== 'applied') {
+            throw new \RuntimeException("Security deposit {$depositId} has no applied forfeiture penalty to reverse.");
+        }
+
+        $hunter = User::on('identity')->find($deposit->payer_user_id);
+        if ($hunter) {
+            $this->trustScores->record($hunter, 'deposit_forfeiture_reversed', [
+                'security_deposit_id' => $deposit->id,
+                'lease_id'            => $deposit->lease_id,
+            ]);
+        }
+
+        $deposit->forfeit_trust_status = 'reversed';
+        $deposit->forfeit_resolved_by  = $actorUserId;
+        $deposit->forfeit_resolved_at  = now();
+        $deposit->save();
+
+        $this->audit->log(
+            eventType:      'security_deposit.forfeit_fault_reversed',
+            sourceDatabase: 'ah_billing',
+            tableName:      'security_deposits',
+            recordId:       $deposit->id,
+            userId:         $actorUserId,
+            actionSummary:  'Forfeiture penalty reversed; Trust Score restored — money clawback handled manually',
+            newValues:      ['forfeit_trust_status' => 'reversed', 'note' => $note],
         );
 
         return $deposit;
+    }
+
+    /**
+     * Sweep forfeiture-claims whose contest window has lapsed with no open dispute
+     * and finalize them as upheld (the hunter never contested). Called from the
+     * daily deposit job. Returns the number finalized.
+     */
+    public function autoFinalizePastDeadline(): int
+    {
+        $due = SecurityDeposit::where('forfeit_trust_status', 'pending')
+            ->whereNotNull('forfeit_contest_deadline')
+            ->where('forfeit_contest_deadline', '<=', now())
+            ->get();
+
+        $count = 0;
+        foreach ($due as $deposit) {
+            if ($this->hasOpenForfeitureDispute($deposit->id)) {
+                continue; // a contest is in flight — wait for the admin's adjudication
+            }
+            try {
+                $this->confirmForfeitFault($deposit->id);
+                $count++;
+            } catch (\Throwable $e) {
+                // One deposit's finalize failure must not abort the sweep.
+                Log::error('autoFinalizePastDeadline: finalize failed', [
+                    'security_deposit_id' => $deposit->id,
+                    'error'               => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $count;
+    }
+
+    /** Whether an unresolved dispute is contesting this deposit's forfeiture (cross-DB read, no join). */
+    private function hasOpenForfeitureDispute(string $depositId): bool
+    {
+        return \App\Models\Incidents\LeaseDispute::where('security_deposit_id', $depositId)
+            ->whereIn('status', ['open', 'mediation', 'arbitration', 'escalated'])
+            ->whereNull('deleted_at')
+            ->exists();
     }
 
     // ── Forfeiture oversight (report) ────────────────────────────────────────────

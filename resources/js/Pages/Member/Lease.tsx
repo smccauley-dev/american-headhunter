@@ -112,6 +112,31 @@ interface Props {
     forfeited: string | null
     can_pay: boolean
     pay_url: string
+    forfeit: {
+      trust_status: string
+      fault: string | null
+      amount: string
+      reason: string | null
+      category: string | null
+      contest_deadline: string | null
+      has_insurance: boolean
+      can_contest: boolean
+      can_opt_out: boolean
+    } | null
+    dispute: { status: string; filed_at: string | null } | null
+    contest_url: string
+    opt_out_url: string
+  } | null
+  damage_claims: {
+    claims: {
+      claim_type: string
+      status: string
+      amount: string
+      approved: string | null
+      description: string
+      filed_at: string | null
+    }[]
+    file_url: string
   } | null
   booking_deposit: {
     status: string | null
@@ -401,6 +426,267 @@ function UploadDocumentForm({ uploadUrl, tags }: { uploadUrl: string; tags: Reco
         </button>
       </div>
     </form>
+  )
+}
+
+// ── Forfeiture contest + insurance opt-out (lessee) ──────────────────────────
+type DepositProp = NonNullable<Props['deposit']>
+
+function ContestForfeitureForm({ url }: { url: string }) {
+  const [open, setOpen] = useState(false)
+  const { data, setData, post, processing, errors, reset } = useForm<{ description: string; evidence: File[] }>({ description: '', evidence: [] })
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    post(url, { forceFormData: true, onSuccess: () => { reset(); setOpen(false) } })
+  }
+
+  const labelStyle: React.CSSProperties = { display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: OLIVE, marginBottom: '5px' }
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: `1px solid ${FIELD_BORDER}`, fontFamily: 'var(--body)', fontSize: '15px', background: '#fff', boxSizing: 'border-box' }
+
+  if (!open) {
+    return <button onClick={() => setOpen(true)} style={btnDark}>Contest this forfeiture</button>
+  }
+
+  return (
+    <form onSubmit={submit} style={{ background: '#fff', border: `1px solid ${FIELD_BORDER}`, padding: '18px', marginTop: '12px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '14px', fontWeight: 600 }}>
+        Contest the Forfeiture
+      </div>
+      <div style={{ marginBottom: '12px' }}>
+        <label style={labelStyle}>Why is this forfeiture incorrect? *</label>
+        <textarea value={data.description} onChange={e => setData('description', e.target.value)} rows={3} maxLength={2000} required placeholder="Explain what happened — our team will review your evidence." style={{ ...inputStyle, resize: 'vertical' }} />
+        {errors.description && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.description}</div>}
+      </div>
+      <div style={{ marginBottom: '16px' }}>
+        <label style={labelStyle}>Photo evidence (optional, up to 10)</label>
+        <FilePondUploader
+          name="evidence"
+          allowMultiple
+          maxFiles={10}
+          maxFileSize="10MB"
+          acceptedFileTypes={['image/*']}
+          labelIdle='Drag &amp; Drop photos or <span class="filepond--label-action">Browse</span>'
+          onupdatefiles={items => setData('evidence', items.map(i => i.file as File))}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button type="submit" disabled={processing} style={{ ...btnAccent, opacity: processing ? 0.7 : 1, cursor: processing ? 'not-allowed' : 'pointer' }}>
+          {processing ? 'Filing…' : 'File Contest'}
+        </button>
+        <button type="button" onClick={() => { reset(); setOpen(false) }} style={btnGhost}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+function OptOutForm({ url, hasInsurance }: { url: string; hasInsurance: boolean }) {
+  const [open, setOpen] = useState(false)
+  const { data, setData, post, processing, errors, reset } = useForm<{ disposition: string; insurer_name: string; policy_number: string }>({ disposition: 'refund', insurer_name: '', policy_number: '' })
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    post(url, { onSuccess: () => { reset(); setOpen(false) } })
+  }
+
+  const labelStyle: React.CSSProperties = { display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: OLIVE, marginBottom: '5px' }
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: `1px solid ${FIELD_BORDER}`, fontFamily: 'var(--body)', fontSize: '15px', background: '#fff', boxSizing: 'border-box' }
+
+  if (!open) {
+    return <button onClick={() => setOpen(true)} style={btnGhost}>Settle via insurance</button>
+  }
+
+  return (
+    <form onSubmit={submit} style={{ background: '#fff', border: `1px solid ${FIELD_BORDER}`, padding: '18px', marginTop: '12px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '14px', fontWeight: 600 }}>
+        Settle via Insurance — No Fault
+      </div>
+      <p style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginTop: 0, marginBottom: '14px' }}>
+        Opting out closes this without the dispute process and records no Trust Score change for either party. Choose how the held deposit is settled.
+      </p>
+      <div style={{ marginBottom: '12px' }}>
+        <label style={labelStyle}>Settlement *</label>
+        <select value={data.disposition} onChange={e => setData('disposition', e.target.value)} required style={{ ...inputStyle, cursor: 'pointer' }}>
+          <option value="refund">Refund the deposit to me</option>
+          <option value="keep">Let the forfeiture stand</option>
+        </select>
+      </div>
+      {!hasInsurance && (
+        <>
+          <div style={{ marginBottom: '12px' }}>
+            <label style={labelStyle}>Insurer name *</label>
+            <input value={data.insurer_name} onChange={e => setData('insurer_name', e.target.value)} maxLength={120} style={inputStyle} />
+            {errors.insurer_name && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.insurer_name}</div>}
+          </div>
+          <div style={{ marginBottom: '12px' }}>
+            <label style={labelStyle}>Policy number</label>
+            <input value={data.policy_number} onChange={e => setData('policy_number', e.target.value)} maxLength={80} style={inputStyle} />
+          </div>
+        </>
+      )}
+      {errors.opt_out && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginBottom: '10px' }}>{errors.opt_out}</div>}
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button type="submit" disabled={processing} style={{ ...btnAccent, opacity: processing ? 0.7 : 1, cursor: processing ? 'not-allowed' : 'pointer' }}>
+          {processing ? 'Settling…' : 'Settle via Insurance'}
+        </button>
+        <button type="button" onClick={() => { reset(); setOpen(false) }} style={btnGhost}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+function ForfeitureNotice({ deposit }: { deposit: DepositProp }) {
+  const f = deposit.forfeit
+  if (!f) return null
+
+  const STATUS_COPY: Record<string, string> = {
+    applied: 'The forfeiture was upheld and a Trust Score penalty was applied.',
+    waived: 'The forfeiture was overturned — your deposit was returned.',
+    opted_out: 'Settled via insurance — no fault was recorded.',
+    reversed: 'The forfeiture penalty was reversed and your Trust Score restored.',
+  }
+
+  return (
+    <div style={{ marginTop: '16px', borderTop: `1px solid ${DIVIDER}`, paddingTop: '16px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#9a3412', marginBottom: '6px', fontWeight: 600 }}>
+        Forfeiture Claimed — ${f.amount}
+      </div>
+      {f.reason && <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: INK, marginBottom: '6px' }}>{f.reason}</div>}
+
+      {f.trust_status === 'pending' ? (
+        <>
+          {deposit.dispute ? (
+            <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: BRASS }}>
+              Under review — you filed a contest on {deposit.dispute.filed_at}. We'll notify you of the outcome.
+            </div>
+          ) : (
+            <>
+              <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginBottom: '12px' }}>
+                The money is held and no Trust Score penalty applies yet.
+                {f.contest_deadline ? ` You have until ${f.contest_deadline} to contest.` : ''}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {f.can_contest && <ContestForfeitureForm url={deposit.contest_url} />}
+                {f.can_opt_out && <OptOutForm url={deposit.opt_out_url} hasInsurance={f.has_insurance} />}
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE }}>
+          {STATUS_COPY[f.trust_status] ?? 'Resolved.'}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Damage claims (lessor) ───────────────────────────────────────────────────
+function FileDamageClaimForm({ url }: { url: string }) {
+  const [open, setOpen] = useState(false)
+  const { data, setData, post, processing, errors, reset } = useForm<{ claim_type: string; amount: string; description: string; evidence: File[]; insurer_name: string; policy_number: string }>(
+    { claim_type: 'property_damage', amount: '', description: '', evidence: [], insurer_name: '', policy_number: '' },
+  )
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    post(url, { forceFormData: true, onSuccess: () => { reset(); setOpen(false) } })
+  }
+
+  const labelStyle: React.CSSProperties = { display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: OLIVE, marginBottom: '5px' }
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: `1px solid ${FIELD_BORDER}`, fontFamily: 'var(--body)', fontSize: '15px', background: '#fff', boxSizing: 'border-box' }
+
+  if (!open) {
+    return <button onClick={() => setOpen(true)} style={btnDark}>+ File Damage Claim</button>
+  }
+
+  return (
+    <form onSubmit={submit} style={{ background: '#fff', border: `1px solid ${FIELD_BORDER}`, padding: '18px', marginTop: '12px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '14px', fontWeight: 600 }}>
+        File a Damage Claim
+      </div>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 200px' }}>
+          <label style={labelStyle}>Type *</label>
+          <select value={data.claim_type} onChange={e => setData('claim_type', e.target.value)} required style={{ ...inputStyle, cursor: 'pointer' }}>
+            <option value="property_damage">Property damage</option>
+            <option value="equipment_damage">Equipment damage</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div style={{ flex: '1 1 140px' }}>
+          <label style={labelStyle}>Amount (USD) *</label>
+          <input type="number" step="0.01" min="0.01" value={data.amount} onChange={e => setData('amount', e.target.value)} required style={inputStyle} />
+          {errors.amount && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.amount}</div>}
+        </div>
+      </div>
+      <div style={{ marginBottom: '12px' }}>
+        <label style={labelStyle}>Description *</label>
+        <textarea value={data.description} onChange={e => setData('description', e.target.value)} rows={3} maxLength={2000} required style={{ ...inputStyle, resize: 'vertical' }} />
+        {errors.description && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.description}</div>}
+      </div>
+      <div style={{ marginBottom: '12px' }}>
+        <label style={labelStyle}>Photo evidence (optional, up to 10)</label>
+        <FilePondUploader
+          name="evidence"
+          allowMultiple
+          maxFiles={10}
+          maxFileSize="10MB"
+          acceptedFileTypes={['image/*']}
+          labelIdle='Drag &amp; Drop photos or <span class="filepond--label-action">Browse</span>'
+          onupdatefiles={items => setData('evidence', items.map(i => i.file as File))}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 200px' }}>
+          <label style={labelStyle}>Insurer name (optional)</label>
+          <input value={data.insurer_name} onChange={e => setData('insurer_name', e.target.value)} maxLength={120} style={inputStyle} />
+        </div>
+        <div style={{ flex: '1 1 140px' }}>
+          <label style={labelStyle}>Policy number</label>
+          <input value={data.policy_number} onChange={e => setData('policy_number', e.target.value)} maxLength={80} style={inputStyle} />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button type="submit" disabled={processing} style={{ ...btnAccent, opacity: processing ? 0.7 : 1, cursor: processing ? 'not-allowed' : 'pointer' }}>
+          {processing ? 'Filing…' : 'File Claim'}
+        </button>
+        <button type="button" onClick={() => { reset(); setOpen(false) }} style={btnGhost}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+const CLAIM_STATUS_LABEL: Record<string, string> = {
+  submitted: 'Submitted', under_review: 'Under review', approved: 'Approved', denied: 'Denied', paid: 'Paid', covered: 'Covered by insurance',
+}
+
+function DamageClaimsSection({ data }: { data: NonNullable<Props['damage_claims']> }) {
+  return (
+    <Section title="Damage Claims">
+      {data.claims.length > 0 ? (
+        <div style={{ marginBottom: '14px' }}>
+          {data.claims.map((c, i) => (
+            <div key={i} style={{ borderBottom: i < data.claims.length - 1 ? `1px solid ${DIVIDER}` : 'none', paddingBottom: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ fontFamily: 'var(--body)', fontSize: '16px', fontWeight: 700, color: INK }}>
+                  ${c.amount}{c.approved ? ` · $${c.approved} approved` : ''}
+                </div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.08em', textTransform: 'uppercase', color: TAN }}>
+                  {CLAIM_STATUS_LABEL[c.status] ?? c.status}{c.filed_at ? ` · ${c.filed_at}` : ''}
+                </div>
+              </div>
+              <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginTop: '4px' }}>{c.description}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: TAN, marginBottom: '14px' }}>
+          No damage claims filed for this lease.
+        </div>
+      )}
+      <FileDamageClaimForm url={data.file_url} />
+    </Section>
   )
 }
 
@@ -836,7 +1122,7 @@ function CommunicationsSection({ data, isLessor }: { data: Communications; isLes
   )
 }
 
-export default function Lease({ lease, property, access_info, deposit, booking_deposit, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications }: Props) {
+export default function Lease({ lease, property, access_info, deposit, booking_deposit, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -1024,6 +1310,7 @@ export default function Lease({ lease, property, access_info, deposit, booking_d
                   </span>
                 )}
               </div>
+              {deposit.forfeit && <ForfeitureNotice deposit={deposit} />}
             </Section>
           )}
 
@@ -1157,6 +1444,9 @@ export default function Lease({ lease, property, access_info, deposit, booking_d
               )}
             </Section>
           )}
+
+          {/* Damage Claims — lessor files itemized claims against the held deposit */}
+          {is_lessor && damage_claims && <DamageClaimsSection data={damage_claims} />}
 
           {/* Property Rules */}
           {(property?.rules?.length ?? 0) > 0 && (

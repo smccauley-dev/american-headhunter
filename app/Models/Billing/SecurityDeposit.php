@@ -35,6 +35,12 @@ class SecurityDeposit extends BaseModel
         'forfeit_trust_status',
         'forfeit_resolved_by',
         'forfeit_resolved_at',
+        'forfeit_contest_deadline',
+        'insurance_covered_party',
+        'insurer_name',
+        'policy_number',
+        'coi_document_id',
+        'coverage_status',
         'stripe_payment_intent_id',
         'stripe_refund_id',
         'held_at',
@@ -53,16 +59,24 @@ class SecurityDeposit extends BaseModel
             'amount_cents'           => 'integer',
             'refunded_amount_cents'  => 'integer',
             'forfeited_amount_cents' => 'integer',
-            'held_at'                => 'datetime',
-            'released_at'            => 'datetime',
-            'forfeit_resolved_at'    => 'datetime',
+            'held_at'                  => 'datetime',
+            'released_at'              => 'datetime',
+            'forfeit_resolved_at'      => 'datetime',
+            'forfeit_contest_deadline' => 'datetime',
         ]);
     }
 
-    /** A forfeiture attributed to the hunter whose Trust Score penalty an admin must still confirm or waive. */
+    /** A forfeiture-claim awaiting its terminal outcome (admin adjudication, opt-out, or auto-finalize). */
     public function hasPendingTrustDecision(): bool
     {
         return $this->forfeit_trust_status === 'pending';
+    }
+
+    /** Whether either party has insurance coverage on file for this deposit. */
+    public function hasInsuranceCoverage(): bool
+    {
+        return $this->insurance_covered_party !== null
+            && $this->insurance_covered_party !== 'none';
     }
 
     /** Cents still held — not yet refunded or forfeited. */

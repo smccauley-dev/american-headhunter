@@ -119,18 +119,22 @@ CREATE INDEX idx_sos_incident_records_created_at ON sos_incident_records (create
 ---
 
 ### lease_disputes
-Formal disputes between lessees and landowners. Supports mediation, arbitration, and admin escalation workflows.
+Formal disputes between lessees and landowners. The first concrete use is the **forfeiture-contest loop**: when a landowner forfeits a hunter's security deposit, that forfeiture is only a *claim* (money held, Trust Score provisional); the hunter contests it here with photo evidence and an admin adjudicates. Supports mediation, arbitration, and admin escalation workflows.
+
+**Built ahead of the rest of DB 10** (`incident_reports`, `sos_incident_records`, `content_moderation` are still deferred), so its migration defensively installs the pgcrypto/uuid extensions and the shared `trigger_set_updated_at` function. Adds two columns beyond the original spec: `security_deposit_id` (the contested forfeiture, DB 4) and `evidence_document_ids` (DB 11 photo proof) — both bare UUID refs assembled in the service layer, never SQL foreign keys.
 
 ```sql
 CREATE TABLE lease_disputes (
     id                      UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
     lease_id                UUID NOT NULL,           -- References DB 3 (Lease) leases.id
-    initiator_user_id       UUID NOT NULL,           -- References DB 1 (Identity) users.id
-    respondent_user_id      UUID NOT NULL,           -- References DB 1 (Identity) users.id
+    security_deposit_id     UUID,                    -- References DB 4 (Billing) security_deposits.id — the contested forfeiture
+    initiator_user_id       UUID NOT NULL,           -- References DB 1 (Identity) users.id (the contesting hunter)
+    respondent_user_id      UUID NOT NULL,           -- References DB 1 (Identity) users.id (the landowner)
     dispute_type            VARCHAR(20) NOT NULL,
     status                  VARCHAR(20) NOT NULL DEFAULT 'open',
     description             TEXT NOT NULL,
     amount_disputed_cents   BIGINT,                  -- NULL if not a financial dispute
+    evidence_document_ids   JSONB NOT NULL DEFAULT '[]',    -- Array of DB 11 documents.id UUIDs (photo proof)
     resolution              TEXT,
     resolved_at             TIMESTAMPTZ,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -147,6 +151,8 @@ CREATE TABLE lease_disputes (
 
 CREATE INDEX idx_lease_disputes_lease_id ON lease_disputes (lease_id)
     WHERE deleted_at IS NULL;
+CREATE INDEX idx_lease_disputes_deposit ON lease_disputes (security_deposit_id)
+    WHERE security_deposit_id IS NOT NULL AND deleted_at IS NULL;
 CREATE INDEX idx_lease_disputes_initiator ON lease_disputes (initiator_user_id)
     WHERE deleted_at IS NULL;
 CREATE INDEX idx_lease_disputes_respondent ON lease_disputes (respondent_user_id)
@@ -156,25 +162,47 @@ CREATE INDEX idx_lease_disputes_status ON lease_disputes (status)
 
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON lease_disputes
     FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+
+-- System-authored, runtime-read-only (SEC-045): RLS on, a single FOR SELECT policy
+-- (parties + staff), NO write policy → INSERT/UPDATE/DELETE default-deny under
+-- ah_runtime. Members file via the db.system route (ah_system); admin adjudicates.
+ALTER TABLE lease_disputes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY lease_disputes_parties_and_staff ON lease_disputes
+    FOR SELECT TO ah_runtime
+    USING (
+        initiator_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID
+        OR respondent_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID
+        OR current_setting('app.user_role', true) IN ('staff', 'super_admin')
+    );
 ```
 
 ---
 
 ### damage_claims
-Claims for property or equipment damage filed against a lessee. Tracks submission, review, approval, and payment.
+Claims for property or equipment damage filed by a landowner. Tracks submission, review, approval, payment, and (when applicable) insurance coverage. An approved claim can optionally be settled from the lease's held deposit, which records a forfeiture-claim that then follows the same contest/adjudication loop as `lease_disputes`.
+
+Adds `security_deposit_id` (the deposit a claim was settled from) and an **insurance block** (`insurance_covered_party`, `insurer_name`, `policy_number`, `coi_document_id`, `coverage_status`) so a covered loss can route through insurance instead of a Trust Score penalty. A `'covered'` status + `review_notes` column carry the insurance-settlement outcome.
 
 ```sql
 CREATE TABLE damage_claims (
     id                      UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
     lease_id                UUID NOT NULL,           -- References DB 3 (Lease) leases.id
-    claimant_user_id        UUID NOT NULL,           -- References DB 1 (Identity) users.id — typically the landowner
+    security_deposit_id     UUID,                    -- References DB 4 (Billing) security_deposits.id — set when settled from the deposit
+    claimant_user_id        UUID NOT NULL,           -- References DB 1 (Identity) users.id — the landowner
     claim_type              VARCHAR(30) NOT NULL,
     status                  VARCHAR(20) NOT NULL DEFAULT 'submitted',
     description             TEXT NOT NULL,
     amount_claimed_cents    BIGINT NOT NULL,
     amount_approved_cents   BIGINT,                  -- NULL until reviewed
     evidence_document_ids   JSONB NOT NULL DEFAULT '[]',    -- Array of DB 11 documents.id UUIDs
+    insurance_covered_party VARCHAR(12)  NULL CHECK (insurance_covered_party IN ('landowner','hunter','none')),
+    insurer_name            VARCHAR(120) NULL,
+    policy_number           VARCHAR(80)  NULL,
+    coi_document_id         UUID         NULL,       -- References DB 11 (Documents) documents.id (insurance_certificate)
+    coverage_status         VARCHAR(12)  NULL CHECK (coverage_status IN ('none','claimed','covered','denied')),
     reviewed_by_user_id     UUID,                    -- References DB 1 (Identity) users.id — admin reviewer
+    review_notes            TEXT,
     resolved_at             TIMESTAMPTZ,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -183,7 +211,7 @@ CREATE TABLE damage_claims (
     CONSTRAINT chk_damage_claims_type
         CHECK (claim_type IN ('property_damage', 'equipment_damage', 'other')),
     CONSTRAINT chk_damage_claims_status
-        CHECK (status IN ('submitted', 'under_review', 'approved', 'denied', 'paid')),
+        CHECK (status IN ('submitted', 'under_review', 'approved', 'denied', 'paid', 'covered')),
     CONSTRAINT chk_damage_claims_amount
         CHECK (amount_claimed_cents > 0)
 );
@@ -193,12 +221,24 @@ CREATE INDEX idx_damage_claims_lease_id ON damage_claims (lease_id)
 CREATE INDEX idx_damage_claims_claimant ON damage_claims (claimant_user_id)
     WHERE deleted_at IS NULL;
 CREATE INDEX idx_damage_claims_status ON damage_claims (status)
-    WHERE deleted_at IS NULL AND status NOT IN ('paid', 'denied');
+    WHERE deleted_at IS NULL AND status NOT IN ('paid', 'denied', 'covered');
 CREATE INDEX idx_damage_claims_reviewer ON damage_claims (reviewed_by_user_id)
     WHERE reviewed_by_user_id IS NOT NULL;
 
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON damage_claims
     FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+
+-- System-authored, runtime-read-only (SEC-045): the claimant reads their own claim,
+-- staff/super_admin read all; no write policy → ah_runtime writes default-deny.
+-- Landowners file via the db.system member route; admin reviews via Filament.
+ALTER TABLE damage_claims ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY damage_claims_claimant_and_staff ON damage_claims
+    FOR SELECT TO ah_runtime
+    USING (
+        claimant_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID
+        OR current_setting('app.user_role', true) IN ('staff', 'super_admin')
+    );
 ```
 
 ---
@@ -392,33 +432,25 @@ class ContentModeration extends \Illuminate\Database\Eloquent\Model
 
 ## Service Layer
 
-All access to this database goes through `App\Services\Incidents\IncidentService`. Cross-DB data assembly (fetching property details from DB 2, user details from DB 1) happens in the service layer — never via Eloquent relationships.
+DB 10 has **no single `IncidentService`** — that class in the original spec was illustrative. Each table is owned by a focused service, and all cross-DB assembly (lease → deposit → users → documents) happens in the service layer, never via Eloquent relationships. The two live entry points are:
 
-```php
-namespace App\Services\Incidents;
+### `App\Services\Incidents\DisputeService` — forfeiture-contest loop (`lease_disputes`)
 
-class IncidentService
-{
-    public function getIncidentDetail(string $incidentId): array
-    {
-        $incident = IncidentReport::findOrFail($incidentId);
+- `fileForfeitureContest(Lease, User $hunter, string $description, array $evidenceDocIds): LeaseDispute` — derives the respondent (landowner) and contested `security_deposit_id` from the lease, guards the deposit is a *pending* hunter-fault forfeiture-claim not already disputed, attaches the evidence photos, opens the dispute. Called by the member db.system route.
+- `resolve(string $disputeId, string $outcome, ?string $actorUserId, ?string $note, array $opts = []): LeaseDispute` — adjudicates. `outcome ∈ {uphold, overturn, opt_out}`, each finalizing the contested deposit through `SecurityDepositService` (the **only** place money + Trust Score move):
+  - **uphold** → `confirmForfeitFault` (hunter −10, money to landowner).
+  - **overturn** → `waiveForfeitFault` (refund hunter) + landowner −10 (`dispute_resolved_against_user`); optional hunter +5 (`dispute_resolved_for_user`) via `$opts['credit_initiator']`.
+  - **opt_out** → `optOutForfeitDecision($opts['disposition'])` (`keep`|`refund`, no Trust Score). Insurance-settled.
+- `openDisputeFor(depositId)` / `latestForDeposit(depositId)` — read helpers for the member portal and guards.
 
-        // Cross-DB — fetch property name from PropertyService
-        $property = app(\App\Services\Property\PropertyService::class)
-            ->getPropertySummary($incident->property_id);
+### `App\Services\Incidents\DamageClaimService` — landowner damage claims (`damage_claims`)
 
-        // Cross-DB — fetch reporter name from UserService
-        $reporter = app(\App\Services\Identity\UserService::class)
-            ->getUserSummary($incident->reporter_user_id);
+- `file(Lease, User $claimant, string $type, int $amountCents, string $description, array $evidenceDocIds, array $insurance): DamageClaim` — files a `'submitted'` claim. Called by the member db.system route (lessor only).
+- `review(string $claimId, string $decision, ?int $amountApprovedCents, ?string $actorUserId, ?string $note): DamageClaim` — `decision ∈ {approved, denied, paid, covered}`; `approved` requires an amount ≤ claimed.
+- `forfeitDepositForApproved(string $claimId, ?string $actorUserId): DamageClaim` — settles an approved claim from the lease's held deposit by recording a forfeiture-claim (fault = lessee), capped at the deposit's remaining balance; links the deposit and marks the claim paid.
+- `forLease(leaseId)` — newest-first claims for member-portal display.
 
-        return [
-            'incident'  => $incident,
-            'property'  => $property,
-            'reporter'  => $reporter,
-        ];
-    }
-}
-```
+Both services write every mutation through `AuditService` (which never throws). Writes are system-authored: the member routes run under `db.system` (ah_system, BYPASSRLS) and the Filament `LeaseDisputeResource` / `DamageClaimResource` adjudication pages run inside the admin panel (also ah_system).
 
 ---
 

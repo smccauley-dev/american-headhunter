@@ -899,8 +899,8 @@ The goal: real-time in-platform messaging via Laravel Reverb, multi-channel noti
 
 - [ ] `incident_reports` — structured incident reports (type enum, GPS, photos, witness info, timestamp_lock)
 - [ ] `sos_incident_records` — permanent SOS incident records cross-referencing DB 7 `sos_event_log`
-- [ ] `lease_disputes` — formal dispute records (category, evidence, status, outcome)
-- [ ] `damage_claims` — property damage claim records linked to leases
+- [x] `lease_disputes` — formal dispute records (category, evidence, status, outcome). *Built 2026-06-26 (forfeiture-contest loop): `security_deposit_id` + `evidence_document_ids`, SEC-045 system-authored/runtime-read-only RLS. See `DisputeService`.*
+- [x] `damage_claims` — property damage claim records linked to leases. *Built 2026-06-26: insurance columns + `evidence_document_ids`, same RLS shape. See `DamageClaimService`.*
 - [ ] `moderation_cases` — content moderation case records
 - [ ] `php artisan migrate:single incidents --fresh` — zero errors
 - [ ] Commit: "DB 10 Incidents migrations"
@@ -943,7 +943,7 @@ The goal: real-time in-platform messaging via Laravel Reverb, multi-channel noti
 - [ ] `MessageModerationResource` — review queue for flagged messages; Approve / Hide / Delete / Warn Sender / Suspend Sender actions; all actions logged to DB 9
 - [ ] `SupportTicketResource` — ticket queue with priority routing, SLA timers, staff assignment
 - [ ] `IncidentResource` — incident reports by type; status workflow; evidence panel; one-click game warden contact
-- [ ] `LeaseDisputeResource` — formal dispute workflow; evidence submission; outcome recording; Stripe refund trigger
+- [~] `LeaseDisputeResource` — formal dispute workflow; evidence submission; outcome recording; Stripe refund trigger. *Built 2026-06-26 (forfeiture-contest adjudication: uphold/overturn/covered-by-insurance → `DisputeService::resolve`); `DamageClaimResource` added alongside. Broader incident/SOS/moderation resources still pending.*
 - [ ] Commit: "Filament moderation, support, and incidents"
 
 ### 7.7 Notification Jobs
