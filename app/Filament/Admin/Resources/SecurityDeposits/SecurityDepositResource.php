@@ -81,6 +81,36 @@ class SecurityDepositResource extends Resource
         return ucwords(str_replace('_', ' ', $state));
     }
 
+    public static function faultLabel(?string $fault): ?string
+    {
+        return match ($fault) {
+            'lessee'              => 'Hunter at fault',
+            'landowner_initiated' => 'Landowner-initiated (no hunter fault)',
+            'contested'           => 'Contested',
+            default               => null,
+        };
+    }
+
+    public static function trustStatusLabel(?string $state): ?string
+    {
+        return match ($state) {
+            'pending' => 'Pending review',
+            'applied' => 'Penalty applied',
+            'waived'  => 'Waived (no penalty)',
+            default   => null,
+        };
+    }
+
+    public static function trustStatusColor(?string $state): string
+    {
+        return match ($state) {
+            'pending' => 'warning',
+            'applied' => 'danger',
+            'waived'  => 'gray',
+            default   => 'gray',
+        };
+    }
+
     /** Render a raw cross-DB UUID as small muted mono helper text under a name. */
     public static function rawIdHint(?string $id): ?HtmlString
     {
@@ -203,7 +233,34 @@ class SecurityDepositResource extends Resource
                     TextEntry::make('amount_cents')->label('Amount')->money('USD', divideBy: 100),
                     TextEntry::make('refunded_amount_cents')->label('Refunded')->money('USD', divideBy: 100),
                     TextEntry::make('forfeited_amount_cents')->label('Forfeited')->money('USD', divideBy: 100),
-                    TextEntry::make('forfeit_reason')->label('Forfeit Reason')->placeholder('—')->columnSpanFull(),
+                ]),
+
+            // Only present once a forfeiture has been recorded. The hunter's Trust
+            // Score penalty stays provisional ("Pending review") until an admin
+            // confirms or waives it via the header actions.
+            Section::make('Forfeiture')
+                ->columns(3)
+                ->visible(fn (SecurityDeposit $record): bool => $record->forfeit_fault !== null)
+                ->schema([
+                    TextEntry::make('forfeit_fault')
+                        ->label('Responsible Party')
+                        ->formatStateUsing(fn (?string $state): ?string => self::faultLabel($state))
+                        ->placeholder('—'),
+                    TextEntry::make('forfeit_category')
+                        ->label('Category')
+                        ->formatStateUsing(fn (?string $state): ?string => $state ? ucwords(str_replace('_', ' ', $state)) : null)
+                        ->placeholder('—'),
+                    TextEntry::make('forfeit_trust_status')
+                        ->label('Trust Score')
+                        ->badge()
+                        ->color(fn (?string $state): string => self::trustStatusColor($state))
+                        ->formatStateUsing(fn (?string $state): ?string => self::trustStatusLabel($state))
+                        ->placeholder('No penalty'),
+                    TextEntry::make('forfeit_reason')->label('Reason')->placeholder('—')->columnSpanFull(),
+                    TextEntry::make('forfeit_resolved_at')
+                        ->label('Fault Resolved')
+                        ->dateTime('M j, Y H:i')
+                        ->placeholder('—'),
                 ]),
 
             Section::make('Parties & References')

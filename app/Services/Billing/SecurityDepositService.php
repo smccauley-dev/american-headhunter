@@ -7,7 +7,9 @@ use App\Models\Identity\User;
 use App\Models\Lease\Lease;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
+use App\Services\Identity\TrustScoreService;
 use App\Services\Property\PropertyService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Stripe\Checkout\Session;
 
@@ -27,10 +29,11 @@ use Stripe\Checkout\Session;
 class SecurityDepositService extends BaseService
 {
     public function __construct(
-        private readonly StripeService   $stripe,
-        private readonly PropertyService $properties,
-        private readonly AuditService    $audit,
-        private readonly PayoutService   $payouts,
+        private readonly StripeService     $stripe,
+        private readonly PropertyService   $properties,
+        private readonly AuditService      $audit,
+        private readonly PayoutService     $payouts,
+        private readonly TrustScoreService $trustScores,
     ) {}
 
     // ── Read ────────────────────────────────────────────────────────────────────
@@ -206,17 +209,35 @@ class SecurityDepositService extends BaseService
         return $deposit;
     }
 
+    /** Forfeit fault attributions and the per-fault Trust Score policy. */
+    public const FAULT_LESSEE              = 'lessee';              // hunter caused it — provisional Trust Score hit
+    public const FAULT_LANDOWNER_INITIATED = 'landowner_initiated'; // no-fault / landowner's call — no hunter penalty
+    public const FAULT_CONTESTED           = 'contested';           // hunter disputes — held pending an admin decision
+
     /**
-     * Forfeit some or all of a held deposit. Records the forfeited amount + reason,
-     * returns any un-forfeited remainder to the lessee immediately, and disburses the
-     * forfeited amount to the landowner via Stripe Connect (best-effort — see
-     * disburseForfeitedAmount). Admin-driven.
+     * Forfeit some or all of a held deposit. Records the forfeited amount, a
+     * structured reason ($category) + free-text note, and WHO is held responsible
+     * ($fault). Returns any un-forfeited remainder to the lessee immediately and
+     * disburses the forfeited amount to the landowner via Stripe Connect
+     * (best-effort — see disburseForfeitedAmount). Admin-driven.
      *
-     * @throws \RuntimeException        when the deposit is not held
-     * @throws \InvalidArgumentException when the amount is outside the remaining balance
+     * The hunter's Trust Score penalty is PROVISIONAL: a 'lessee'-fault (or
+     * 'contested') forfeiture is recorded with forfeit_trust_status = 'pending' and
+     * does NOT touch the hunter's score until an admin calls confirmForfeitFault().
+     * This protects hunters from a scam landowner forfeiting unfairly. A
+     * 'landowner_initiated' (no-fault) forfeiture carries no pending penalty.
+     *
+     * @throws \RuntimeException         when the deposit is not held
+     * @throws \InvalidArgumentException when the amount is outside the remaining balance or $fault is invalid
      */
-    public function forfeit(string $depositId, int $amountCents, string $reason, ?string $actorUserId = null): SecurityDeposit
-    {
+    public function forfeit(
+        string $depositId,
+        int $amountCents,
+        string $reason,
+        ?string $actorUserId = null,
+        string $fault = self::FAULT_LESSEE,
+        ?string $category = null,
+    ): SecurityDeposit {
         $deposit = SecurityDeposit::findOrFail($depositId);
         if ($deposit->status !== 'held') {
             throw new \RuntimeException("Security deposit {$depositId} is not held (status {$deposit->status}).");
@@ -227,8 +248,18 @@ class SecurityDepositService extends BaseService
             throw new \InvalidArgumentException("Forfeit amount must be between 1 and {$remaining} cents.");
         }
 
+        if (! in_array($fault, [self::FAULT_LESSEE, self::FAULT_LANDOWNER_INITIATED, self::FAULT_CONTESTED], true)) {
+            throw new \InvalidArgumentException("Invalid forfeit fault: {$fault}.");
+        }
+
         $deposit->forfeited_amount_cents = (int) $deposit->forfeited_amount_cents + $amountCents;
         $deposit->forfeit_reason         = $reason;
+        $deposit->forfeit_category       = $category;
+        $deposit->forfeit_fault          = $fault;
+        $deposit->forfeit_initiated_by   = $actorUserId;
+        // A hunter-fault (or contested) forfeiture parks a provisional Trust Score
+        // penalty for an admin to confirm; a no-fault one never penalizes the hunter.
+        $deposit->forfeit_trust_status = $fault === self::FAULT_LANDOWNER_INITIATED ? null : 'pending';
 
         $returnCents = $remaining - $amountCents;
         if ($returnCents > 0 && $deposit->stripe_payment_intent_id) {
@@ -266,6 +297,9 @@ class SecurityDepositService extends BaseService
                 'status'                 => $deposit->status,
                 'forfeited_amount_cents' => (int) $deposit->forfeited_amount_cents,
                 'forfeit_reason'         => $reason,
+                'forfeit_category'       => $category,
+                'forfeit_fault'          => $fault,
+                'forfeit_trust_status'   => $deposit->forfeit_trust_status,
                 'payout_id'              => $payoutId,
             ],
         );
@@ -273,6 +307,165 @@ class SecurityDepositService extends BaseService
         $this->invalidate("lease_detail:{$deposit->lease_id}");
 
         return $deposit;
+    }
+
+    /**
+     * Confirm a pending hunter-fault forfeiture and APPLY the lessee's Trust Score
+     * penalty. Only moves a deposit out of 'pending'; idempotent otherwise. The
+     * penalty is recorded against the payer (the hunter) via TrustScoreService.
+     */
+    public function confirmForfeitFault(string $depositId, ?string $actorUserId = null): SecurityDeposit
+    {
+        $deposit = SecurityDeposit::findOrFail($depositId);
+        if ($deposit->forfeit_trust_status !== 'pending') {
+            throw new \RuntimeException("Security deposit {$depositId} has no pending forfeiture decision.");
+        }
+
+        $hunter = User::on('identity')->find($deposit->payer_user_id);
+        if ($hunter) {
+            $this->trustScores->record($hunter, 'deposit_forfeited_against_user', [
+                'security_deposit_id' => $deposit->id,
+                'lease_id'            => $deposit->lease_id,
+                'forfeit_category'    => $deposit->forfeit_category,
+            ]);
+        }
+
+        $deposit->forfeit_fault        = self::FAULT_LESSEE; // a confirmed fault is the hunter's, even if it was contested
+        $deposit->forfeit_trust_status = 'applied';
+        $deposit->forfeit_resolved_by  = $actorUserId;
+        $deposit->forfeit_resolved_at  = now();
+        $deposit->save();
+
+        $this->audit->log(
+            eventType:      'security_deposit.forfeit_fault_confirmed',
+            sourceDatabase: 'ah_billing',
+            tableName:      'security_deposits',
+            recordId:       $deposit->id,
+            userId:         $actorUserId,
+            actionSummary:  'Forfeiture fault confirmed against the hunter; Trust Score penalty applied',
+            newValues:      ['forfeit_trust_status' => 'applied'],
+        );
+
+        return $deposit;
+    }
+
+    /**
+     * Waive a pending forfeiture's Trust Score penalty — the hunter is exonerated
+     * (e.g. they contested and the admin sided with them). No score change; the
+     * forfeiture cash outcome is unaffected.
+     */
+    public function waiveForfeitFault(string $depositId, ?string $actorUserId = null, ?string $note = null): SecurityDeposit
+    {
+        $deposit = SecurityDeposit::findOrFail($depositId);
+        if ($deposit->forfeit_trust_status !== 'pending') {
+            throw new \RuntimeException("Security deposit {$depositId} has no pending forfeiture decision.");
+        }
+
+        $deposit->forfeit_trust_status = 'waived';
+        $deposit->forfeit_resolved_by  = $actorUserId;
+        $deposit->forfeit_resolved_at  = now();
+        $deposit->save();
+
+        $this->audit->log(
+            eventType:      'security_deposit.forfeit_fault_waived',
+            sourceDatabase: 'ah_billing',
+            tableName:      'security_deposits',
+            recordId:       $deposit->id,
+            userId:         $actorUserId,
+            actionSummary:  'Forfeiture Trust Score penalty waived — hunter not held at fault',
+            newValues:      ['forfeit_trust_status' => 'waived', 'note' => $note],
+        );
+
+        return $deposit;
+    }
+
+    // ── Forfeiture oversight (report) ────────────────────────────────────────────
+
+    /** A landowner is flagged for review at or above this forfeiture rate … */
+    public const REVIEW_FLAG_RATE = 0.40;
+    /** … but only once they have at least this many forfeitures (avoids n=1 noise). */
+    public const REVIEW_MIN_FORFEITS = 3;
+
+    /** Deposit statuses that represent a concluded outcome (the rate denominator). */
+    private const RESOLVED_STATUSES = ['partially_released', 'released', 'forfeited', 'refunded'];
+
+    /**
+     * Per-landowner forfeiture stats for the oversight report. A landowner who
+     * forfeits an abnormal share of their concluded deposits is flagged for an
+     * admin to review — frequency is the scam tell, independent of stated reason.
+     *
+     * @return array<int,array{user_id:string,name:string,resolved:int,forfeits:int,rate:float,forfeited_cents:int,flagged:bool}>
+     */
+    public function landownerForfeitureStats(): array
+    {
+        $rows = DB::connection('billing')->table('security_deposits')
+            ->selectRaw('payee_user_id')
+            ->selectRaw('COUNT(*) AS resolved')
+            ->selectRaw('COUNT(*) FILTER (WHERE forfeited_amount_cents > 0) AS forfeits')
+            ->selectRaw('COALESCE(SUM(forfeited_amount_cents), 0) AS forfeited_cents')
+            ->whereIn('status', self::RESOLVED_STATUSES)
+            ->groupBy('payee_user_id')
+            ->havingRaw('COUNT(*) FILTER (WHERE forfeited_amount_cents > 0) > 0')
+            ->get();
+
+        return $this->shapeForfeitureRows($rows, 'payee_user_id', flagRate: true);
+    }
+
+    /**
+     * Per-hunter forfeiture stats — how often a hunter has had a deposit forfeited
+     * against them, split by whether the Trust Score penalty is applied/pending/waived.
+     *
+     * @return array<int,array{user_id:string,name:string,resolved:int,forfeits:int,rate:float,forfeited_cents:int,flagged:bool}>
+     */
+    public function hunterForfeitureStats(): array
+    {
+        $rows = DB::connection('billing')->table('security_deposits')
+            ->selectRaw('payer_user_id')
+            ->selectRaw('COUNT(*) AS resolved')
+            ->selectRaw('COUNT(*) FILTER (WHERE forfeited_amount_cents > 0) AS forfeits')
+            ->selectRaw('COALESCE(SUM(forfeited_amount_cents), 0) AS forfeited_cents')
+            ->whereIn('status', self::RESOLVED_STATUSES)
+            ->groupBy('payer_user_id')
+            ->havingRaw('COUNT(*) FILTER (WHERE forfeited_amount_cents > 0) > 0')
+            ->get();
+
+        // Hunters aren't "flagged" — that signal is the landowner's; we just rank them.
+        return $this->shapeForfeitureRows($rows, 'payer_user_id', flagRate: false);
+    }
+
+    /**
+     * Resolve the grouped rows: attach the user's display name (cross-DB, batched),
+     * compute the forfeiture rate, set the review flag (landowners only), and sort
+     * flagged/most-frequent first.
+     */
+    private function shapeForfeitureRows(\Illuminate\Support\Collection $rows, string $idKey, bool $flagRate): array
+    {
+        $ids   = $rows->pluck($idKey)->filter()->all();
+        $names = User::on('identity')->whereIn('id', $ids)->get()
+            ->mapWithKeys(fn (User $u) => [$u->id => $u->getFilamentName()]);
+
+        $stats = $rows->map(function ($row) use ($idKey, $names, $flagRate): array {
+            $resolved = (int) $row->resolved;
+            $forfeits = (int) $row->forfeits;
+            $rate     = $resolved > 0 ? $forfeits / $resolved : 0.0;
+            $userId   = $row->{$idKey};
+
+            return [
+                'user_id'         => $userId,
+                'name'            => $names[$userId] ?? 'Unknown user',
+                'resolved'        => $resolved,
+                'forfeits'        => $forfeits,
+                'rate'            => $rate,
+                'forfeited_cents' => (int) $row->forfeited_cents,
+                'flagged'         => $flagRate
+                    && $forfeits >= self::REVIEW_MIN_FORFEITS
+                    && $rate >= self::REVIEW_FLAG_RATE,
+            ];
+        })->sortByDesc(fn (array $r) => [$r['flagged'] ? 1 : 0, $r['rate'], $r['forfeits']])
+          ->values()
+          ->all();
+
+        return $stats;
     }
 
     /**

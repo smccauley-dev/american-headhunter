@@ -35,24 +35,57 @@ class SecurityDepositServiceTest extends TestCase
             DB::connection('billing')->table('security_deposits')->whereIn('id', $this->depositIds)->delete();
         }
         if ($this->userIds) {
+            DB::connection('identity')->table('trust_score_events')->whereIn('user_id', $this->userIds)->delete();
             DB::connection('identity')->table('users')->whereIn('id', $this->userIds)->delete();
         }
         parent::tearDown();
     }
 
-    private function makeLandowner(): string
+    private function makeUser(string $accountType, int $trustScore = 50): string
     {
         $id = (string) Str::uuid();
         DB::connection('identity')->table('users')->insert([
             'id'            => $id,
-            'email'         => "deposit-payee-{$id}@test.invalid",
+            'email'         => "deposit-{$accountType}-{$id}@test.invalid",
             'password_hash' => 'test-hash',
             'status'        => 'active',
-            'account_type'  => 'landowner',
+            'account_type'  => $accountType,
+            'trust_score'   => $trustScore,
         ]);
         $this->userIds[] = $id;
 
         return $id;
+    }
+
+    private function makeLandowner(): string
+    {
+        return $this->makeUser('landowner');
+    }
+
+    /** A held deposit whose parties are the given users (defaults to random uuids). */
+    private function seedHeldFor(?string $payerId = null, ?string $payeeId = null, int $amountCents = 5000): SecurityDeposit
+    {
+        $deposit = $this->seedHeld($amountCents, 'pi_' . Str::random(12));
+        $deposit->payer_user_id = $payerId ?? $deposit->payer_user_id;
+        $deposit->payee_user_id = $payeeId ?? $deposit->payee_user_id;
+        $deposit->save();
+
+        return $deposit;
+    }
+
+    /** Insert a concluded deposit row directly (for report aggregation tests). */
+    private function seedResolved(string $payeeId, string $status, int $forfeitedCents): void
+    {
+        $deposit = SecurityDeposit::create([
+            'lease_id'               => (string) Str::uuid(),
+            'payer_user_id'          => (string) Str::uuid(),
+            'payee_user_id'          => $payeeId,
+            'amount_cents'           => 5000,
+            'forfeited_amount_cents' => $forfeitedCents,
+            'currency'               => 'USD',
+            'status'                 => $status,
+        ]);
+        $this->depositIds[] = $deposit->id;
     }
 
     private function service(?StripeService $stripe = null, ?PropertyService $properties = null, ?PayoutService $payouts = null): SecurityDepositService
@@ -62,6 +95,7 @@ class SecurityDepositServiceTest extends TestCase
             $properties ?? app(PropertyService::class),
             app(AuditService::class),
             $payouts ?? app(PayoutService::class),
+            app(\App\Services\Identity\TrustScoreService::class),
         );
     }
 
@@ -293,5 +327,114 @@ class SecurityDepositServiceTest extends TestCase
         // The forfeiture is still recorded — the cash just stays captured.
         $this->assertSame('forfeited', $result->status);
         $this->assertSame(5000, (int) $result->forfeited_amount_cents);
+    }
+
+    // ── forfeit attribution + provisional Trust Score ────────────────────────────
+
+    public function test_hunter_fault_forfeit_parks_a_pending_trust_decision(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_fault');
+
+        $result = $this->service()->forfeit(
+            $deposit->id, 5000, 'Cabin damage', (string) Str::uuid(),
+            SecurityDepositService::FAULT_LESSEE, 'property_damage',
+        );
+
+        $this->assertSame('lessee', $result->forfeit_fault);
+        $this->assertSame('property_damage', $result->forfeit_category);
+        $this->assertSame('pending', $result->forfeit_trust_status);
+    }
+
+    public function test_landowner_initiated_forfeit_parks_no_trust_penalty(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_noinit');
+
+        $result = $this->service()->forfeit(
+            $deposit->id, 5000, 'Owner cancelled, kept cleaning fee', (string) Str::uuid(),
+            SecurityDepositService::FAULT_LANDOWNER_INITIATED, 'cleaning',
+        );
+
+        $this->assertSame('landowner_initiated', $result->forfeit_fault);
+        $this->assertNull($result->forfeit_trust_status);
+    }
+
+    public function test_forfeit_rejects_an_invalid_fault(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_badfault');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->service()->forfeit($deposit->id, 5000, 'x', null, 'nonsense');
+    }
+
+    public function test_confirm_fault_applies_the_hunters_trust_penalty(): void
+    {
+        $hunter  = $this->makeUser('hunter', 80);
+        $deposit = $this->seedHeldFor(payerId: $hunter);
+        $admin   = (string) Str::uuid();
+
+        $service = $this->service();
+        $service->forfeit($deposit->id, 5000, 'Damage', $admin, SecurityDepositService::FAULT_LESSEE, 'property_damage');
+        $result = $service->confirmForfeitFault($deposit->id, $admin);
+
+        $this->assertSame('applied', $result->forfeit_trust_status);
+        $this->assertNotNull($result->forfeit_resolved_at);
+        // -10 delta applied to the hunter.
+        $this->assertSame(70, (int) DB::connection('identity')->table('users')->where('id', $hunter)->value('trust_score'));
+        $this->assertSame(1, DB::connection('identity')->table('trust_score_events')
+            ->where('user_id', $hunter)->where('event_type', 'deposit_forfeited_against_user')->count());
+    }
+
+    public function test_waive_fault_clears_pending_without_penalty(): void
+    {
+        $hunter  = $this->makeUser('hunter', 80);
+        $deposit = $this->seedHeldFor(payerId: $hunter);
+
+        $service = $this->service();
+        $service->forfeit($deposit->id, 5000, 'Disputed', (string) Str::uuid(), SecurityDepositService::FAULT_CONTESTED);
+        $result = $service->waiveForfeitFault($deposit->id, (string) Str::uuid(), 'Hunter exonerated');
+
+        $this->assertSame('waived', $result->forfeit_trust_status);
+        // Score untouched.
+        $this->assertSame(80, (int) DB::connection('identity')->table('users')->where('id', $hunter)->value('trust_score'));
+        $this->assertSame(0, DB::connection('identity')->table('trust_score_events')->where('user_id', $hunter)->count());
+    }
+
+    public function test_confirm_requires_a_pending_decision(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_nopending');
+
+        $this->expectException(\RuntimeException::class);
+        $this->service()->confirmForfeitFault($deposit->id);
+    }
+
+    // ── forfeiture oversight report ──────────────────────────────────────────────
+
+    public function test_landowner_stats_flag_a_high_forfeiture_rate(): void
+    {
+        $scammer = $this->makeLandowner();
+        // 4 forfeited + 1 released of 5 concluded = 80% rate, 4 forfeits → flagged.
+        for ($i = 0; $i < 4; $i++) {
+            $this->seedResolved($scammer, 'forfeited', 5000);
+        }
+        $this->seedResolved($scammer, 'released', 0);
+
+        $honest = $this->makeLandowner();
+        // 1 forfeited of 5 = 20%, below threshold → not flagged.
+        $this->seedResolved($honest, 'forfeited', 5000);
+        for ($i = 0; $i < 4; $i++) {
+            $this->seedResolved($honest, 'released', 0);
+        }
+
+        $stats   = collect(app(SecurityDepositService::class)->landownerForfeitureStats())->keyBy('user_id');
+        $flagged = $stats[$scammer];
+        $clean   = $stats[$honest];
+
+        $this->assertTrue($flagged['flagged']);
+        $this->assertSame(4, $flagged['forfeits']);
+        $this->assertSame(5, $flagged['resolved']);
+        $this->assertEqualsWithDelta(0.8, $flagged['rate'], 0.001);
+
+        $this->assertFalse($clean['flagged']);
+        $this->assertEqualsWithDelta(0.2, $clean['rate'], 0.001);
     }
 }

@@ -29,6 +29,12 @@ class SecurityDeposit extends BaseModel
         'currency',
         'status',
         'forfeit_reason',
+        'forfeit_category',
+        'forfeit_fault',
+        'forfeit_initiated_by',
+        'forfeit_trust_status',
+        'forfeit_resolved_by',
+        'forfeit_resolved_at',
         'stripe_payment_intent_id',
         'stripe_refund_id',
         'held_at',
@@ -49,7 +55,14 @@ class SecurityDeposit extends BaseModel
             'forfeited_amount_cents' => 'integer',
             'held_at'                => 'datetime',
             'released_at'            => 'datetime',
+            'forfeit_resolved_at'    => 'datetime',
         ]);
+    }
+
+    /** A forfeiture attributed to the hunter whose Trust Score penalty an admin must still confirm or waive. */
+    public function hasPendingTrustDecision(): bool
+    {
+        return $this->forfeit_trust_status === 'pending';
     }
 
     /** Cents still held — not yet refunded or forfeited. */
