@@ -244,38 +244,39 @@ class SecurityDepositServiceTest extends TestCase
         $this->service()->release($deposit->id);
     }
 
-    // ── forfeit ─────────────────────────────────────────────────────────────────
+    // ── forfeit — a CLAIM only (deferred settlement) ─────────────────────────────
 
-    public function test_full_forfeit_does_not_refund(): void
+    public function test_hunter_fault_forfeit_records_a_pending_claim_without_moving_money(): void
     {
-        $deposit = $this->seedHeld(5000, 'pi_ff');
+        $deposit = $this->seedHeld(5000, 'pi_fault');
 
         $stripe = Mockery::mock(StripeService::class);
-        $stripe->shouldNotReceive('refundPaymentIntent');
+        $stripe->shouldNotReceive('refundPaymentIntent'); // nothing moves at claim time
 
-        $result = $this->service(stripe: $stripe)->forfeit($deposit->id, 5000, 'Property damage', (string) Str::uuid());
+        $result = $this->service(stripe: $stripe)->forfeit(
+            $deposit->id, 5000, 'Cabin damage', (string) Str::uuid(),
+            SecurityDepositService::FAULT_LESSEE, 'property_damage',
+        );
 
-        $this->assertSame('forfeited', $result->status);
-        $this->assertSame(5000, (int) $result->forfeited_amount_cents);
+        // Money stays captured; the deposit is still held pending the contest window.
+        $this->assertSame('held', $result->status);
+        $this->assertSame(5000, (int) $result->forfeited_amount_cents); // intended claim
         $this->assertSame(0, (int) $result->refunded_amount_cents);
-        $this->assertSame('Property damage', $result->forfeit_reason);
+        $this->assertSame('lessee', $result->forfeit_fault);
+        $this->assertSame('property_damage', $result->forfeit_category);
+        $this->assertSame('Cabin damage', $result->forfeit_reason);
+        $this->assertSame('pending', $result->forfeit_trust_status);
+        $this->assertNotNull($result->forfeit_contest_deadline);
     }
 
-    public function test_partial_forfeit_returns_the_remainder(): void
+    public function test_forfeit_rejects_a_second_claim(): void
     {
-        $deposit = $this->seedHeld(5000, 'pi_pf');
+        $deposit = $this->seedHeld(5000, 'pi_double');
+        $service = $this->service();
+        $service->forfeit($deposit->id, 2000, 'First', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
 
-        $stripe = Mockery::mock(StripeService::class);
-        $stripe->shouldReceive('refundPaymentIntent')
-            ->once()
-            ->with('pi_pf', 3000, 'Security deposit partial return')
-            ->andReturn(Refund::constructFrom(['id' => 're_pf']));
-
-        $result = $this->service(stripe: $stripe)->forfeit($deposit->id, 2000, 'Minor repairs', (string) Str::uuid());
-
-        $this->assertSame('partially_released', $result->status);
-        $this->assertSame(2000, (int) $result->forfeited_amount_cents);
-        $this->assertSame(3000, (int) $result->refunded_amount_cents);
+        $this->expectException(\RuntimeException::class);
+        $service->forfeit($deposit->id, 1000, 'Second', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
     }
 
     public function test_forfeit_rejects_an_amount_over_the_balance(): void
@@ -286,9 +287,87 @@ class SecurityDepositServiceTest extends TestCase
         $this->service()->forfeit($deposit->id, 6000, 'Too much');
     }
 
-    // ── forfeit → Connect disbursement (slice 3) ─────────────────────────────────
+    public function test_forfeit_rejects_an_invalid_fault(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_badfault');
 
-    public function test_forfeit_disburses_to_an_onboarded_landowner(): void
+        $this->expectException(\InvalidArgumentException::class);
+        $this->service()->forfeit($deposit->id, 5000, 'x', null, 'nonsense');
+    }
+
+    public function test_landowner_initiated_forfeit_settles_immediately_without_penalty(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_noinit');
+
+        $stripe = Mockery::mock(StripeService::class);
+        $stripe->shouldNotReceive('refundPaymentIntent'); // full keep, no remainder
+
+        $result = $this->service(stripe: $stripe)->forfeit(
+            $deposit->id, 5000, 'Owner cancelled, kept cleaning fee', (string) Str::uuid(),
+            SecurityDepositService::FAULT_LANDOWNER_INITIATED, 'cleaning',
+        );
+
+        // No-fault forfeitures are uncontestable: settled at once, no Trust decision.
+        $this->assertSame('forfeited', $result->status);
+        $this->assertSame('landowner_initiated', $result->forfeit_fault);
+        $this->assertSame(5000, (int) $result->forfeited_amount_cents);
+        $this->assertNull($result->forfeit_trust_status);
+    }
+
+    public function test_a_pending_forfeiture_blocks_auto_release(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_block');
+        $service = $this->service();
+        $service->forfeit($deposit->id, 5000, 'Claimed', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
+
+        $this->expectException(\RuntimeException::class);
+        $service->release($deposit->id);
+    }
+
+    // ── uphold (confirm) — settle to landowner + apply penalty ───────────────────
+
+    public function test_uphold_settles_full_forfeit_and_applies_penalty(): void
+    {
+        $hunter  = $this->makeUser('hunter', 80);
+        $deposit = $this->seedHeldFor(payerId: $hunter);
+        $admin   = (string) Str::uuid();
+
+        $stripe = Mockery::mock(StripeService::class);
+        $stripe->shouldNotReceive('refundPaymentIntent'); // full claim, no remainder to return
+
+        $service = $this->service(stripe: $stripe);
+        $service->forfeit($deposit->id, 5000, 'Damage', $admin, SecurityDepositService::FAULT_LESSEE, 'property_damage');
+        $result = $service->confirmForfeitFault($deposit->id, $admin);
+
+        $this->assertSame('forfeited', $result->status);
+        $this->assertSame('applied', $result->forfeit_trust_status);
+        $this->assertNotNull($result->forfeit_resolved_at);
+        // -10 delta applied to the hunter, recorded once.
+        $this->assertSame(70, (int) DB::connection('identity')->table('users')->where('id', $hunter)->value('trust_score'));
+        $this->assertSame(1, DB::connection('identity')->table('trust_score_events')
+            ->where('user_id', $hunter)->where('event_type', 'deposit_forfeited_against_user')->count());
+    }
+
+    public function test_uphold_partial_forfeit_refunds_remainder_to_hunter(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_pf');
+
+        $stripe = Mockery::mock(StripeService::class);
+        $stripe->shouldReceive('refundPaymentIntent')
+            ->once()
+            ->with('pi_pf', 3000, 'Security deposit partial return')
+            ->andReturn(Refund::constructFrom(['id' => 're_pf']));
+
+        $service = $this->service(stripe: $stripe);
+        $service->forfeit($deposit->id, 2000, 'Minor repairs', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
+        $result = $service->confirmForfeitFault($deposit->id);
+
+        $this->assertSame('partially_released', $result->status);
+        $this->assertSame(2000, (int) $result->forfeited_amount_cents);
+        $this->assertSame(3000, (int) $result->refunded_amount_cents);
+    }
+
+    public function test_uphold_disburses_to_an_onboarded_landowner(): void
     {
         $deposit = $this->seedHeld(5000, 'pi_pay');
         $deposit->payee_user_id = $this->makeLandowner();
@@ -304,99 +383,12 @@ class SecurityDepositServiceTest extends TestCase
             ->with(Mockery::type(User::class), 5000, Mockery::type('array'))
             ->andReturn((new Payout())->forceFill(['id' => 'po_forfeit']));
 
-        $result = $this->service(stripe: $stripe, payouts: $payouts)
-            ->forfeit($deposit->id, 5000, 'Property damage', (string) Str::uuid());
+        $service = $this->service(stripe: $stripe, payouts: $payouts);
+        $service->forfeit($deposit->id, 5000, 'Property damage', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
+        $result = $service->confirmForfeitFault($deposit->id);
 
         $this->assertSame('forfeited', $result->status);
         $this->assertSame(5000, (int) $result->forfeited_amount_cents);
-    }
-
-    public function test_forfeit_defers_payout_when_landowner_not_onboarded(): void
-    {
-        $deposit = $this->seedHeld(5000, 'pi_defer');
-        $deposit->payee_user_id = $this->makeLandowner();
-        $deposit->save();
-
-        $payouts = Mockery::mock(PayoutService::class);
-        $payouts->shouldReceive('canReceivePayouts')->once()->andReturnFalse();
-        $payouts->shouldNotReceive('disburse');
-
-        $result = $this->service(payouts: $payouts)
-            ->forfeit($deposit->id, 5000, 'Property damage', (string) Str::uuid());
-
-        // The forfeiture is still recorded — the cash just stays captured.
-        $this->assertSame('forfeited', $result->status);
-        $this->assertSame(5000, (int) $result->forfeited_amount_cents);
-    }
-
-    // ── forfeit attribution + provisional Trust Score ────────────────────────────
-
-    public function test_hunter_fault_forfeit_parks_a_pending_trust_decision(): void
-    {
-        $deposit = $this->seedHeld(5000, 'pi_fault');
-
-        $result = $this->service()->forfeit(
-            $deposit->id, 5000, 'Cabin damage', (string) Str::uuid(),
-            SecurityDepositService::FAULT_LESSEE, 'property_damage',
-        );
-
-        $this->assertSame('lessee', $result->forfeit_fault);
-        $this->assertSame('property_damage', $result->forfeit_category);
-        $this->assertSame('pending', $result->forfeit_trust_status);
-    }
-
-    public function test_landowner_initiated_forfeit_parks_no_trust_penalty(): void
-    {
-        $deposit = $this->seedHeld(5000, 'pi_noinit');
-
-        $result = $this->service()->forfeit(
-            $deposit->id, 5000, 'Owner cancelled, kept cleaning fee', (string) Str::uuid(),
-            SecurityDepositService::FAULT_LANDOWNER_INITIATED, 'cleaning',
-        );
-
-        $this->assertSame('landowner_initiated', $result->forfeit_fault);
-        $this->assertNull($result->forfeit_trust_status);
-    }
-
-    public function test_forfeit_rejects_an_invalid_fault(): void
-    {
-        $deposit = $this->seedHeld(5000, 'pi_badfault');
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->service()->forfeit($deposit->id, 5000, 'x', null, 'nonsense');
-    }
-
-    public function test_confirm_fault_applies_the_hunters_trust_penalty(): void
-    {
-        $hunter  = $this->makeUser('hunter', 80);
-        $deposit = $this->seedHeldFor(payerId: $hunter);
-        $admin   = (string) Str::uuid();
-
-        $service = $this->service();
-        $service->forfeit($deposit->id, 5000, 'Damage', $admin, SecurityDepositService::FAULT_LESSEE, 'property_damage');
-        $result = $service->confirmForfeitFault($deposit->id, $admin);
-
-        $this->assertSame('applied', $result->forfeit_trust_status);
-        $this->assertNotNull($result->forfeit_resolved_at);
-        // -10 delta applied to the hunter.
-        $this->assertSame(70, (int) DB::connection('identity')->table('users')->where('id', $hunter)->value('trust_score'));
-        $this->assertSame(1, DB::connection('identity')->table('trust_score_events')
-            ->where('user_id', $hunter)->where('event_type', 'deposit_forfeited_against_user')->count());
-    }
-
-    public function test_waive_fault_clears_pending_without_penalty(): void
-    {
-        $hunter  = $this->makeUser('hunter', 80);
-        $deposit = $this->seedHeldFor(payerId: $hunter);
-
-        $service = $this->service();
-        $service->forfeit($deposit->id, 5000, 'Disputed', (string) Str::uuid(), SecurityDepositService::FAULT_CONTESTED);
-        $result = $service->waiveForfeitFault($deposit->id, (string) Str::uuid(), 'Hunter exonerated');
-
-        $this->assertSame('waived', $result->forfeit_trust_status);
-        // Score untouched.
-        $this->assertSame(80, (int) DB::connection('identity')->table('users')->where('id', $hunter)->value('trust_score'));
-        $this->assertSame(0, DB::connection('identity')->table('trust_score_events')->where('user_id', $hunter)->count());
     }
 
     public function test_confirm_requires_a_pending_decision(): void
@@ -405,6 +397,118 @@ class SecurityDepositServiceTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->service()->confirmForfeitFault($deposit->id);
+    }
+
+    // ── overturn (waive) — refund the hunter, no penalty ─────────────────────────
+
+    public function test_overturn_refunds_full_and_waives_penalty(): void
+    {
+        $hunter  = $this->makeUser('hunter', 80);
+        $deposit = $this->seedHeldFor(payerId: $hunter);
+
+        $stripe = Mockery::mock(StripeService::class);
+        $stripe->shouldReceive('refundPaymentIntent')
+            ->once()
+            ->with($deposit->stripe_payment_intent_id, 5000, 'Security deposit returned — forfeiture overturned')
+            ->andReturn(Refund::constructFrom(['id' => 're_ov']));
+
+        $service = $this->service(stripe: $stripe);
+        $service->forfeit($deposit->id, 5000, 'Disputed', (string) Str::uuid(), SecurityDepositService::FAULT_CONTESTED);
+        $result = $service->waiveForfeitFault($deposit->id, (string) Str::uuid(), 'Hunter exonerated');
+
+        $this->assertSame('released', $result->status);
+        $this->assertSame('waived', $result->forfeit_trust_status);
+        $this->assertSame(0, (int) $result->forfeited_amount_cents);
+        // The hunter's score is untouched by waive (no fault penalty applied here).
+        $this->assertSame(80, (int) DB::connection('identity')->table('users')->where('id', $hunter)->value('trust_score'));
+        $this->assertSame(0, DB::connection('identity')->table('trust_score_events')->where('user_id', $hunter)->count());
+    }
+
+    // ── opt out (insurance-gated) — settle without any Trust Score ───────────────
+
+    public function test_opt_out_keep_settles_without_penalty(): void
+    {
+        $hunter  = $this->makeUser('hunter', 80);
+        $deposit = $this->seedHeldFor(payerId: $hunter);
+
+        $stripe = Mockery::mock(StripeService::class);
+        $stripe->shouldNotReceive('refundPaymentIntent'); // full keep, no remainder
+
+        $service = $this->service(stripe: $stripe);
+        $service->forfeit($deposit->id, 5000, 'Damage', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
+        $result = $service->optOutForfeitDecision(
+            $deposit->id, 'keep', (string) Str::uuid(), 'Insurer is handling it',
+            ['covered_party' => 'landowner', 'insurer_name' => 'Acme Mutual'],
+        );
+
+        $this->assertSame('forfeited', $result->status);
+        $this->assertSame('opted_out', $result->forfeit_trust_status);
+        $this->assertSame('covered', $result->coverage_status);
+        // No Trust Score change for either party.
+        $this->assertSame(80, (int) DB::connection('identity')->table('users')->where('id', $hunter)->value('trust_score'));
+        $this->assertSame(0, DB::connection('identity')->table('trust_score_events')->where('user_id', $hunter)->count());
+    }
+
+    public function test_opt_out_requires_insurance(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_noins');
+        $service = $this->service();
+        $service->forfeit($deposit->id, 5000, 'Damage', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
+
+        $this->expectException(\RuntimeException::class);
+        $service->optOutForfeitDecision($deposit->id, 'keep', (string) Str::uuid());
+    }
+
+    // ── reverse — admin override on an already-applied penalty ───────────────────
+
+    public function test_reverse_restores_the_hunters_score(): void
+    {
+        $hunter  = $this->makeUser('hunter', 80);
+        $deposit = $this->seedHeldFor(payerId: $hunter);
+
+        $service = $this->service();
+        $service->forfeit($deposit->id, 5000, 'Damage', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
+        $service->confirmForfeitFault($deposit->id); // -10 → 70, applied
+        $result = $service->reverseForfeitFault($deposit->id, (string) Str::uuid(), 'New evidence');
+
+        $this->assertSame('reversed', $result->forfeit_trust_status);
+        // +10 restores the score to 80.
+        $this->assertSame(80, (int) DB::connection('identity')->table('users')->where('id', $hunter)->value('trust_score'));
+        $this->assertSame(1, DB::connection('identity')->table('trust_score_events')
+            ->where('user_id', $hunter)->where('event_type', 'deposit_forfeiture_reversed')->count());
+    }
+
+    public function test_reverse_requires_an_applied_penalty(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_norev');
+        $service = $this->service();
+        $service->forfeit($deposit->id, 5000, 'Damage', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
+
+        // Still pending, never confirmed — nothing to reverse.
+        $this->expectException(\RuntimeException::class);
+        $service->reverseForfeitFault($deposit->id);
+    }
+
+    // ── auto-finalize — uncontested claim past its deadline ──────────────────────
+
+    public function test_auto_finalize_upholds_uncontested_past_deadline(): void
+    {
+        $hunter  = $this->makeUser('hunter', 80);
+        $deposit = $this->seedHeldFor(payerId: $hunter);
+
+        $service = $this->service();
+        $service->forfeit($deposit->id, 5000, 'Damage', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
+
+        // Push the contest window into the past — the hunter never contested.
+        $deposit->forfeit_contest_deadline = now()->subDay();
+        $deposit->save();
+
+        $finalized = $service->autoFinalizePastDeadline();
+
+        $this->assertGreaterThanOrEqual(1, $finalized);
+        $fresh = SecurityDeposit::find($deposit->id);
+        $this->assertSame('applied', $fresh->forfeit_trust_status);
+        $this->assertSame(70, (int) DB::connection('identity')->table('users')->where('id', $hunter)->value('trust_score'));
     }
 
     // ── forfeiture oversight report ──────────────────────────────────────────────

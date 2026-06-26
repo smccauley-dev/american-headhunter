@@ -18,6 +18,7 @@ class TrustScoreService extends BaseService
         'dispute_resolved_for_user'        =>   5,
         'dispute_resolved_against_user'    => -10,
         'deposit_forfeited_against_user'   => -10,
+        'deposit_forfeiture_reversed'      =>  10,
         'verified_landowner'               =>  10,
         'email_verified'                   =>   5,
         'phone_verified'                   =>   5,

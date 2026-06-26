@@ -25,8 +25,10 @@ use Illuminate\Support\Facades\Log;
  *   • the deposit must still be `held` (the query filters it; release re-checks);
  *   • the lease must be `active` (ran past its end_date) or `expired`;
  *   • `terminated` / `cancelled` leases are skipped — an abnormal ending may carry
- *     a landowner claim, so those stay for an admin to release or forfeit by hand.
- * When the incidents/damage-claim domain lands, an "open claim" check belongs here.
+ *     a landowner claim, so those stay for an admin to release or forfeit by hand;
+ *   • deposits with a pending forfeiture-claim (`forfeit_trust_status = 'pending'`)
+ *     are excluded — they settle through the dispute loop, not auto-release.
+ * The run first finalizes forfeiture-claims whose contest window has lapsed.
  *
  * Runs on the standard queue, where the worker connects under the trusted
  * ah_system role, so the release writes to the system-authored security_deposits
@@ -54,11 +56,18 @@ class ReleaseEndedLeaseDeposits implements ShouldQueue
             return;
         }
 
+        // First, finalize any forfeiture-claims whose contest window lapsed with no
+        // open dispute — they uphold as the landowner claimed (the hunter never
+        // contested). This runs before the release sweep so a settled forfeiture
+        // isn't seen as a still-held deposit to auto-return.
+        $autoFinalized = $deposits->autoFinalizePastDeadline();
+
         $cutoff   = now()->subDays($this->graceDays);
         $released = 0;
         $skipped  = 0;
 
         SecurityDeposit::where('status', 'held')
+            ->whereNull('forfeit_trust_status') // a pending forfeiture-claim is not auto-releasable
             ->chunkById(200, function ($heldDeposits) use ($deposits, $cutoff, &$released, &$skipped) {
                 foreach ($heldDeposits as $deposit) {
                     // Cross-DB: the lease lives in DB 3 — a separate read, never a join.
@@ -92,9 +101,10 @@ class ReleaseEndedLeaseDeposits implements ShouldQueue
             });
 
         Log::info('ReleaseEndedLeaseDeposits: swept ended-lease deposits', [
-            'released'   => $released,
-            'skipped'    => $skipped,
-            'grace_days' => $this->graceDays,
+            'released'       => $released,
+            'skipped'        => $skipped,
+            'auto_finalized' => $autoFinalized,
+            'grace_days'     => $this->graceDays,
         ]);
     }
 }

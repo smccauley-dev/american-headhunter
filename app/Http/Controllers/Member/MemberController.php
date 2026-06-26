@@ -8,6 +8,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Identity\User;
 use App\Models\Lease\Lease;
 use App\Services\Documents\DocumentService;
+use App\Services\Incidents\DamageClaimService;
+use App\Services\Incidents\DisputeService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
@@ -43,7 +45,7 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, DisputeService $disputeService, DamageClaimService $damageClaimService): Response
     {
         $userId = session('auth.user_id');
 
@@ -178,13 +180,51 @@ class MemberController extends Controller
 
             if ($existingDeposit || $amountDueCents > 0) {
                 $displayCents = $existingDeposit ? (int) $existingDeposit->amount_cents : $amountDueCents;
+
+                // A forfeiture against the hunter is a CLAIM until adjudicated: the
+                // money is held and the Trust Score hit is provisional. While it's
+                // 'pending' the hunter can contest it (with photo evidence) or, when
+                // insurance is on file, settle it via an opt-out. Once a dispute is
+                // filed the page shows "under review"; once resolved, the outcome.
+                $forfeit = null;
+                $dispute = null;
+                if ($existingDeposit && $existingDeposit->forfeit_trust_status !== null) {
+                    $latestDispute   = rescue(fn () => $disputeService->latestForDeposit($existingDeposit->id), null);
+                    $isPending       = $existingDeposit->forfeit_trust_status === 'pending';
+                    $faultIsHunters  = in_array($existingDeposit->forfeit_fault, [SecurityDepositService::FAULT_LESSEE, SecurityDepositService::FAULT_CONTESTED], true);
+                    $hasOpenDispute  = $latestDispute && ! in_array($latestDispute->status, ['resolved'], true);
+
+                    $forfeit = [
+                        'trust_status'     => $existingDeposit->forfeit_trust_status,
+                        'fault'            => $existingDeposit->forfeit_fault,
+                        'amount'           => number_format((int) $existingDeposit->forfeited_amount_cents / 100, 2),
+                        'reason'           => $existingDeposit->forfeit_reason,
+                        'category'         => $existingDeposit->forfeit_category,
+                        'contest_deadline' => $existingDeposit->forfeit_contest_deadline?->format('F j, Y'),
+                        'has_insurance'    => $existingDeposit->hasInsuranceCoverage(),
+                        'can_contest'      => $isPending && $faultIsHunters && ! $latestDispute,
+                        'can_opt_out'      => $isPending && $faultIsHunters && ! $hasOpenDispute,
+                    ];
+
+                    if ($latestDispute) {
+                        $dispute = [
+                            'status'   => $latestDispute->status,
+                            'filed_at' => $latestDispute->created_at?->format('F j, Y'),
+                        ];
+                    }
+                }
+
                 $deposit = [
-                    'status'    => $existingDeposit?->status,
-                    'amount'    => number_format($displayCents / 100, 2),
-                    'refunded'  => $existingDeposit ? number_format((int) $existingDeposit->refunded_amount_cents / 100, 2) : null,
-                    'forfeited' => $existingDeposit ? number_format((int) $existingDeposit->forfeited_amount_cents / 100, 2) : null,
-                    'can_pay'   => ! $existingDeposit && $amountDueCents > 0,
-                    'pay_url'   => route('member.leases.deposit', $lease),
+                    'status'      => $existingDeposit?->status,
+                    'amount'      => number_format($displayCents / 100, 2),
+                    'refunded'    => $existingDeposit ? number_format((int) $existingDeposit->refunded_amount_cents / 100, 2) : null,
+                    'forfeited'   => $existingDeposit ? number_format((int) $existingDeposit->forfeited_amount_cents / 100, 2) : null,
+                    'can_pay'     => ! $existingDeposit && $amountDueCents > 0,
+                    'pay_url'     => route('member.leases.deposit', $lease),
+                    'forfeit'     => $forfeit,
+                    'dispute'     => $dispute,
+                    'contest_url' => route('member.leases.forfeiture.contest', $lease),
+                    'opt_out_url' => route('member.leases.forfeiture.opt-out', $lease),
                 ];
             }
         }
@@ -211,6 +251,26 @@ class MemberController extends Controller
             }
         }
 
+        // Damage claims (lessor-facing). A landowner files an itemized claim for
+        // property/equipment damage with photo evidence; staff review and may settle
+        // it from the held deposit. The row is system-authored — written only via the
+        // db.system file route, never on this read request.
+        $damageClaims = null;
+        if ($isLessor) {
+            $claims = rescue(fn () => $damageClaimService->forLease($lease), collect()) ?: collect();
+            $damageClaims = [
+                'claims' => $claims->map(fn ($c) => [
+                    'claim_type'  => $c->claim_type,
+                    'status'      => $c->status,
+                    'amount'      => number_format((int) $c->amount_claimed_cents / 100, 2),
+                    'approved'    => $c->amount_approved_cents !== null ? number_format((int) $c->amount_approved_cents / 100, 2) : null,
+                    'description' => $c->description,
+                    'filed_at'    => $c->created_at?->format('F j, Y'),
+                ])->values()->all(),
+                'file_url' => route('member.leases.damage-claims.store', $lease),
+            ];
+        }
+
         return Inertia::render('Member/Lease', [
             'lease' => [
                 'id'          => $leaseRecord->id,
@@ -235,6 +295,7 @@ class MemberController extends Controller
             'access_info'    => $accessInfo,
             'deposit'        => $deposit,
             'booking_deposit' => $bookingDeposit,
+            'damage_claims'  => $damageClaims,
             'contacts'       => $contacts,
             'signers'         => $signers,
             'sign_url'        => $signUrl,
@@ -423,6 +484,147 @@ class MemberController extends Controller
         ));
 
         return back()->with('success', 'Message sent.');
+    }
+
+    /**
+     * Contest a pending deposit forfeiture (lessee only). Stores the photo evidence
+     * as unattached documents, then files the dispute. Runs under db.system because
+     * lease_disputes is system-authored — ah_runtime cannot write it.
+     */
+    public function contestForfeiture(Request $request, string $lease, DisputeService $disputeService, DocumentService $documentService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessee_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $request->validate([
+            'description' => 'required|string|max:2000',
+            'evidence'    => 'nullable|array|max:10',
+            'evidence.*'  => 'file|image|max:10240',
+        ]);
+
+        $docIds = [];
+        foreach ($request->file('evidence', []) as $file) {
+            $docIds[] = $documentService->storeUploadedFile($file, $userId, 'photo', unattached: true)->id;
+        }
+
+        try {
+            $disputeService->fileForfeitureContest(
+                $leaseRecord,
+                User::findOrFail($userId),
+                $request->input('description'),
+                $docIds,
+            );
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['contest' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Your contest has been filed. Our team will review the evidence.');
+    }
+
+    /**
+     * Opt a pending forfeiture out of the dispute system because insurance covers the
+     * loss (lessee only). The settlement is binary — keep (forfeiture stands) or
+     * refund — with no Trust Score for either party. Requires insurance on file or
+     * provided here. Runs under db.system (security_deposits is system-authored).
+     */
+    public function optOutForfeiture(Request $request, string $lease, SecurityDepositService $depositService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessee_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $request->validate([
+            'disposition'   => 'required|in:keep,refund',
+            'insurer_name'  => 'nullable|string|max:120',
+            'policy_number' => 'nullable|string|max:80',
+        ]);
+
+        $deposit = $depositService->forLease($lease);
+        if (! $deposit) {
+            return back()->withErrors(['opt_out' => 'No security deposit found for this lease.']);
+        }
+
+        // When the hunter supplies their own policy, record it as the covered party;
+        // otherwise rely on insurance already on file (e.g. the landowner's).
+        $insurance = [];
+        if ($request->filled('insurer_name')) {
+            $insurance = [
+                'covered_party' => 'hunter',
+                'insurer_name'  => $request->input('insurer_name'),
+                'policy_number' => $request->input('policy_number'),
+            ];
+        }
+
+        try {
+            $depositService->optOutForfeitDecision(
+                $deposit->id,
+                $request->input('disposition'),
+                $userId,
+                'Opted out via member portal',
+                $insurance,
+            );
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['opt_out' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Settled via insurance — no fault recorded against either party.');
+    }
+
+    /**
+     * File a damage claim (lessor only) with photo evidence and optional insurance.
+     * Runs under db.system because damage_claims is system-authored.
+     */
+    public function fileDamageClaim(Request $request, string $lease, DamageClaimService $claimService, DocumentService $documentService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessor_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $request->validate([
+            'claim_type'    => 'required|in:property_damage,equipment_damage,other',
+            'amount'        => 'required|numeric|min:0.01|max:1000000',
+            'description'   => 'required|string|max:2000',
+            'evidence'      => 'nullable|array|max:10',
+            'evidence.*'    => 'file|image|max:10240',
+            'insurer_name'  => 'nullable|string|max:120',
+            'policy_number' => 'nullable|string|max:80',
+        ]);
+
+        $docIds = [];
+        foreach ($request->file('evidence', []) as $file) {
+            $docIds[] = $documentService->storeUploadedFile($file, $userId, 'photo', unattached: true)->id;
+        }
+
+        $insurance = [];
+        if ($request->filled('insurer_name')) {
+            $insurance = [
+                'covered_party' => 'landowner',
+                'insurer_name'  => $request->input('insurer_name'),
+                'policy_number' => $request->input('policy_number'),
+            ];
+        }
+
+        $claimService->file(
+            $leaseRecord,
+            User::findOrFail($userId),
+            $request->input('claim_type'),
+            (int) round((float) $request->input('amount') * 100),
+            $request->input('description'),
+            $docIds,
+            $insurance,
+        );
+
+        return back()->with('success', 'Damage claim filed. Our team will review it.');
     }
 
     /**

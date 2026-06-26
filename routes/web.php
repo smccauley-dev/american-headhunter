@@ -163,6 +163,13 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     // Stripe deposit success return — reconciles the held row as ah_system (the row
     // is system-authored; the runtime member role cannot write security_deposits).
     Route::get('/leases/{lease}/deposit/return', [MemberController::class, 'depositReturn'])->name('leases.deposit.return')->middleware('db.system');
+    // Forfeiture contest + insurance opt-out (lessee), and damage-claim intake
+    // (lessor). All author DB-10/DB-4 system records, so they run as ah_system
+    // (db.system, BYPASSRLS); evidence is uploaded multipart.
+    Route::post('/leases/{lease}/forfeiture/contest', [MemberController::class, 'contestForfeiture'])->name('leases.forfeiture.contest')->middleware(['db.system', 'throttle:10,1']);
+    Route::post('/leases/{lease}/forfeiture/opt-out', [MemberController::class, 'optOutForfeiture'])->name('leases.forfeiture.opt-out')->middleware(['db.system', 'throttle:10,1']);
+    Route::post('/leases/{lease}/damage-claims', [MemberController::class, 'fileDamageClaim'])->name('leases.damage-claims.store')->middleware(['db.system', 'throttle:10,1']);
+
     Route::post('/leases/{lease}/booking-deposit', [MemberController::class, 'payBookingDeposit'])->name('leases.booking-deposit')->middleware('throttle:10,1');
     // Stripe booking-deposit success return — reconciles the collected row as
     // ah_system (booking_deposits is system-authored; ah_runtime cannot write it).
