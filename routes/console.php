@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\Billing\ReconcileStripeInvoices;
+use App\Jobs\Billing\ReleaseEndedLeaseDeposits;
 use App\Jobs\Documents\CleanupUnattachedDocuments;
 use App\Jobs\Etl\SyncPlatformSnapshot;
 use App\Jobs\ExpireListingsJob;
@@ -30,6 +31,12 @@ Schedule::command('lease:prune-deleted-documents')->dailyAt('02:00');
 // Reconcile the Stripe invoice projection (Phase 5.7) — backstop for any missed
 // webhook. Runs at 04:00 daily, after the other maintenance jobs.
 Schedule::job(new ReconcileStripeInvoices)->dailyAt('04:00');
+
+// Auto-release security deposits whose lease ended more than the grace window ago
+// (default 14 days), honoring the "returned at lease end" promise without manual
+// admin action. Normal endings only — terminated/cancelled leases are left for an
+// admin. Runs at 05:00 daily, after the invoice reconcile.
+Schedule::job(new ReleaseEndedLeaseDeposits)->dailyAt('05:00');
 
 // Recompute the platform analytics rollups (DB 8) that feed the admin dashboard
 // and public homepage stats. Hourly; the dashboard "Refresh now" button runs the
