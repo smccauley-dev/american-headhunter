@@ -89,7 +89,7 @@ class SecurityDepositResource extends Resource
         }
 
         return new HtmlString(
-            '<span style="font-size:10px;font-family:ui-monospace,monospace;color:#9ca3af;">'.e($id).'</span>'
+            '<span style="font-size:10px;font-family:ui-monospace,monospace;color:#9ca3af;">REF UUID: '.e($id).'</span>'
         );
     }
 
