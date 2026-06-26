@@ -10,6 +10,7 @@ use App\Models\Lease\Lease;
 use App\Services\Documents\DocumentService;
 use App\Services\Incidents\DamageClaimService;
 use App\Services\Incidents\DisputeService;
+use App\Services\Incidents\IncidentService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
@@ -45,7 +46,7 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, DisputeService $disputeService, DamageClaimService $damageClaimService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, DisputeService $disputeService, DamageClaimService $damageClaimService, IncidentService $incidentService): Response
     {
         $userId = session('auth.user_id');
 
@@ -271,6 +272,24 @@ class MemberController extends Controller
             ];
         }
 
+        // Safety incidents (both parties). Either party files an incident on the
+        // lease/property with optional photo evidence; the safety team triages it.
+        // System-authored — rows are written only via the db.system report route.
+        $incidentRows = rescue(fn () => $incidentService->forLease($lease), collect()) ?: collect();
+        $incidents = [
+            'reports' => $incidentRows->map(fn ($i) => [
+                'incident_type'        => $i->incident_type,
+                'severity'             => $i->severity,
+                'status'               => $i->status,
+                'occurred_at'          => $i->occurred_at?->format('F j, Y'),
+                'location_description' => $i->location_description,
+                'description'          => $i->description,
+                'injuries_reported'    => $i->injuries_reported,
+                'reported_at'          => $i->created_at?->format('F j, Y'),
+            ])->values()->all(),
+            'report_url' => route('member.leases.incidents.store', $lease),
+        ];
+
         return Inertia::render('Member/Lease', [
             'lease' => [
                 'id'          => $leaseRecord->id,
@@ -296,6 +315,7 @@ class MemberController extends Controller
             'deposit'        => $deposit,
             'booking_deposit' => $bookingDeposit,
             'damage_claims'  => $damageClaims,
+            'incidents'      => $incidents,
             'contacts'       => $contacts,
             'signers'         => $signers,
             'sign_url'        => $signUrl,
@@ -625,6 +645,47 @@ class MemberController extends Controller
         );
 
         return back()->with('success', 'Damage claim filed. Our team will review it.');
+    }
+
+    /**
+     * File a safety incident report (either party to the lease) with optional photo
+     * evidence. Runs under db.system because incident_reports is system-authored.
+     */
+    public function reportIncident(Request $request, string $lease, IncidentService $incidentService, DocumentService $documentService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where(fn ($q) => $q->where('lessee_user_id', $userId)->orWhere('lessor_user_id', $userId))
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'incident_type'           => 'required|in:hunting_accident,trespassing,property_damage,wildlife_encounter,medical,other',
+            'severity'                => 'required|in:minor,moderate,serious,critical',
+            'occurred_at'             => 'required|date|before_or_equal:now',
+            'location_description'    => 'nullable|string|max:500',
+            'description'             => 'required|string|max:2000',
+            'injuries_reported'       => 'boolean',
+            'authorities_notified'    => 'boolean',
+            'authority_report_number' => 'nullable|string|max:100',
+            'evidence'                => 'nullable|array|max:10',
+            'evidence.*'              => 'file|image|max:10240',
+        ]);
+
+        $docIds = [];
+        foreach ($request->file('evidence', []) as $file) {
+            $docIds[] = $documentService->storeUploadedFile($file, $userId, 'photo', unattached: true)->id;
+        }
+
+        $incidentService->file(
+            $leaseRecord,
+            User::findOrFail($userId),
+            $validated,
+            $docIds,
+        );
+
+        return back()->with('success', 'Incident reported. Our safety team will review it.');
     }
 
     /**

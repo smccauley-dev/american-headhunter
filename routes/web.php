@@ -169,6 +169,7 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/leases/{lease}/forfeiture/contest', [MemberController::class, 'contestForfeiture'])->name('leases.forfeiture.contest')->middleware(['db.system', 'throttle:10,1']);
     Route::post('/leases/{lease}/forfeiture/opt-out', [MemberController::class, 'optOutForfeiture'])->name('leases.forfeiture.opt-out')->middleware(['db.system', 'throttle:10,1']);
     Route::post('/leases/{lease}/damage-claims', [MemberController::class, 'fileDamageClaim'])->name('leases.damage-claims.store')->middleware(['db.system', 'throttle:10,1']);
+    Route::post('/leases/{lease}/incidents', [MemberController::class, 'reportIncident'])->name('leases.incidents.store')->middleware(['db.system', 'throttle:10,1']);
 
     Route::post('/leases/{lease}/booking-deposit', [MemberController::class, 'payBookingDeposit'])->name('leases.booking-deposit')->middleware('throttle:10,1');
     // Stripe booking-deposit success return — reconciles the collected row as

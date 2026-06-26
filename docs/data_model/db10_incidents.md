@@ -43,6 +43,8 @@ $$ LANGUAGE plpgsql;
 ### incident_reports
 Safety incidents occurring on or related to a property. Covers hunting accidents, trespassing, property damage, wildlife encounters, and medical emergencies.
 
+**Built.** Adds one column beyond the original spec — `evidence_document_ids JSONB NOT NULL DEFAULT '[]'` (array of DB 11 `documents.id` UUIDs, photo proof; bare UUID ref assembled in the service layer, never a SQL foreign key). The table is **system-authored, runtime-read-only** (SEC-045): RLS enabled with a single `FOR SELECT TO ah_runtime` policy (`reporter_user_id = current user OR role in staff/super_admin`) and **no write policy**, so the inherited DML grant is inert for writes — only the trusted `ah_system` path (the `db.system` member route that files a report, and the Filament admin panel that triages it) may author or mutate rows. Uses soft deletes. Entry point: **`App\Services\Incidents\IncidentService`** — `file(Lease, User $reporter, array $data, array $evidenceDocIds)` (member intake; guards the reporter is a lease party, derives `property_id` from the lease) and `updateStatus($id, $status, $actorUserId, $extra)` (safety-team triage: `open → investigating → resolved → closed`, capturing authority + resolution detail). All writes audited via `AuditService`.
+
 ```sql
 CREATE TABLE incident_reports (
     id                      UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -432,7 +434,13 @@ class ContentModeration extends \Illuminate\Database\Eloquent\Model
 
 ## Service Layer
 
-DB 10 has **no single `IncidentService`** — that class in the original spec was illustrative. Each table is owned by a focused service, and all cross-DB assembly (lease → deposit → users → documents) happens in the service layer, never via Eloquent relationships. The two live entry points are:
+The original spec's single, catch-all `IncidentService` was illustrative — DB 10 is instead split so each table is owned by a focused service, and all cross-DB assembly (lease → deposit → users → documents) happens in the service layer, never via Eloquent relationships. The live entry points are:
+
+### `App\Services\Incidents\IncidentService` — safety-incident intake & triage (`incident_reports`)
+
+- `file(Lease, User $reporter, array $data, array $evidenceDocIds = []): IncidentReport` — member intake; guards the reporter is a party to the lease (lessee or lessor), derives `property_id` from the lease, attaches photo evidence, opens the report. Called by the member db.system route.
+- `updateStatus(string $incidentId, string $status, ?string $actorUserId, array $extra = []): IncidentReport` — safety-team triage through `open → investigating → resolved → closed` (transitions validated; resolving/closing stamps `resolved_at`), optionally capturing `authorities_notified` / `authority_report_number` / `resolution_notes`. Called by the Filament `IncidentReportResource` view-page actions.
+- `forLease(leaseId)` / `forProperty(propertyId)` — newest-occurrence-first reads for the member portal and admin dashboards.
 
 ### `App\Services\Incidents\DisputeService` — forfeiture-contest loop (`lease_disputes`)
 
