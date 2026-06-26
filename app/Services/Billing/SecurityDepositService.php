@@ -20,9 +20,9 @@ use Stripe\Checkout\Session;
  * one-time payment succeeds — the same shape as the subscription flow. Release
  * and forfeit are admin-driven (Filament panel runs under ah_system).
  *
- * Forfeiture records state and returns any un-forfeited remainder to the lessee
- * now; the actual disbursement of the forfeited amount to the landowner waits on
- * Stripe Connect / PayoutService (build_roadmap.md, security_deposits slice 3).
+ * Forfeiture records state, returns any un-forfeited remainder to the lessee, and
+ * disburses the forfeited amount to the landowner via Stripe Connect / PayoutService
+ * (best-effort — the cash stays captured until the landowner can receive payouts).
  */
 class SecurityDepositService extends BaseService
 {
@@ -30,6 +30,7 @@ class SecurityDepositService extends BaseService
         private readonly StripeService   $stripe,
         private readonly PropertyService $properties,
         private readonly AuditService    $audit,
+        private readonly PayoutService   $payouts,
     ) {}
 
     // ── Read ────────────────────────────────────────────────────────────────────
@@ -206,11 +207,10 @@ class SecurityDepositService extends BaseService
     }
 
     /**
-     * Forfeit some or all of a held deposit. Records the forfeited amount + reason
-     * and returns any un-forfeited remainder to the lessee immediately. The actual
-     * disbursement of the forfeited amount to the landowner is deferred to Stripe
-     * Connect / PayoutService — the cash stays captured on the platform until then.
-     * Admin-driven.
+     * Forfeit some or all of a held deposit. Records the forfeited amount + reason,
+     * returns any un-forfeited remainder to the lessee immediately, and disburses the
+     * forfeited amount to the landowner via Stripe Connect (best-effort — see
+     * disburseForfeitedAmount). Admin-driven.
      *
      * @throws \RuntimeException        when the deposit is not held
      * @throws \InvalidArgumentException when the amount is outside the remaining balance
@@ -247,22 +247,67 @@ class SecurityDepositService extends BaseService
 
         $deposit->save();
 
+        // Disburse the forfeited amount to the landowner via Stripe Connect. This is
+        // best-effort: the forfeiture state is already recorded, so a Stripe failure
+        // or a landowner who hasn't onboarded a payout account must not roll it back
+        // — the captured cash simply stays on the platform until a later retry.
+        $payoutId = $this->disburseForfeitedAmount($deposit, $amountCents);
+
         $this->audit->log(
             eventType:      'security_deposit.forfeited',
             sourceDatabase: 'ah_billing',
             tableName:      'security_deposits',
             recordId:       $deposit->id,
             userId:         $actorUserId,
-            actionSummary:  'Security deposit forfeited (landowner payout deferred to Connect)',
+            actionSummary:  $payoutId
+                ? 'Security deposit forfeited and disbursed to landowner via Connect'
+                : 'Security deposit forfeited (landowner payout pending Connect onboarding)',
             newValues:      [
                 'status'                 => $deposit->status,
                 'forfeited_amount_cents' => (int) $deposit->forfeited_amount_cents,
                 'forfeit_reason'         => $reason,
+                'payout_id'              => $payoutId,
             ],
         );
 
         $this->invalidate("lease_detail:{$deposit->lease_id}");
 
         return $deposit;
+    }
+
+    /**
+     * Transfer a forfeited deposit amount to the landowner (the deposit's payee).
+     * Returns the payout id on success, or null when the landowner has no
+     * payouts-enabled Connect account yet or the transfer fails — never throws, so
+     * the forfeiture itself is never undone. PayoutService withholds the landowner's
+     * tier platform fee like any other payout.
+     */
+    private function disburseForfeitedAmount(SecurityDeposit $deposit, int $amountCents): ?string
+    {
+        $landowner = User::on('identity')->find($deposit->payee_user_id);
+
+        if (! $landowner || ! $this->payouts->canReceivePayouts($landowner)) {
+            Log::info('Forfeited deposit payout deferred — landowner has no payouts-enabled account', [
+                'security_deposit_id' => $deposit->id,
+            ]);
+
+            return null;
+        }
+
+        try {
+            $payout = $this->payouts->disburse($landowner, $amountCents, [
+                'security_deposit_id' => $deposit->id,
+                'lease_id'            => $deposit->lease_id,
+            ]);
+
+            return $payout->id;
+        } catch (\Throwable $e) {
+            Log::error('Forfeited deposit payout failed', [
+                'security_deposit_id' => $deposit->id,
+                'error'               => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 }

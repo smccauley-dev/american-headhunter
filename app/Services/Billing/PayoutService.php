@@ -96,6 +96,61 @@ class PayoutService extends BaseService
         return $account !== null && $account->payouts_enabled;
     }
 
+    /**
+     * The landowner's onboarding status, shaped for the member UI. `onboarded` is
+     * the only flag that gates real money — it tracks the authoritative
+     * payouts_enabled the account.updated webhook syncs from Stripe.
+     *
+     * @return array{connected:bool, charges_enabled:bool, payouts_enabled:bool, details_submitted:bool, onboarded:bool}
+     */
+    public function onboardingState(User $landowner): array
+    {
+        $account = $this->connectAccount($landowner);
+
+        return [
+            'connected'         => $account !== null,
+            'charges_enabled'   => (bool) $account?->charges_enabled,
+            'payouts_enabled'   => (bool) $account?->payouts_enabled,
+            'details_submitted' => (bool) $account?->details_submitted,
+            'onboarded'         => $account !== null && $account->payouts_enabled,
+        ];
+    }
+
+    /**
+     * Start (or resume) Stripe Connect onboarding for a landowner and return the
+     * hosted onboarding URL to redirect them to. The Connect account row is created
+     * once and persisted here; the account.updated webhook later flips its flags
+     * when Stripe confirms the landowner finished. Writes stripe_accounts, so this
+     * must run under ah_system (the route is wrapped in db.system, SEC-055).
+     */
+    public function startOnboarding(User $landowner, string $returnUrl, string $refreshUrl): string
+    {
+        $account = $this->connectAccount($landowner);
+
+        if ($account === null) {
+            $stripeAccountId = $this->stripe->createConnectAccount($landowner);
+
+            $account = StripeAccount::create([
+                'user_id'           => $landowner->id,
+                'stripe_account_id' => $stripeAccountId,
+                'charges_enabled'   => false,
+                'payouts_enabled'   => false,
+                'details_submitted' => false,
+            ]);
+
+            $this->audit->log(
+                eventType:      'stripe_account.created',
+                sourceDatabase: 'ah_billing',
+                tableName:      'stripe_accounts',
+                recordId:       $account->id,
+                userId:         $landowner->id,
+                actionSummary:  'Stripe Connect account created for landowner payout onboarding',
+            );
+        }
+
+        return $this->stripe->createAccountLink($account->stripe_account_id, $refreshUrl, $returnUrl);
+    }
+
     // ── Disbursement (ah_system) ─────────────────────────────────────────────────
 
     /**

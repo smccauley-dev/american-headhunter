@@ -10,6 +10,7 @@ use App\Http\Controllers\Member\LeaseDocumentController;
 use App\Http\Controllers\Member\LeaseSignController;
 use App\Http\Controllers\Member\MemberController;
 use App\Http\Controllers\Member\MembershipController;
+use App\Http\Controllers\Member\PayoutController;
 use App\Http\Controllers\Member\ProfileController;
 use App\Http\Controllers\Member\PropertyController as MemberPropertyController;
 use App\Http\Controllers\Member\PropertyDetailController as MemberPropertyDetailController;
@@ -174,6 +175,16 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/membership/resume', [MembershipController::class, 'resume'])->name('membership.resume')->middleware('throttle:10,1');
     Route::post('/membership/change', [MembershipController::class, 'changePlan'])->name('membership.change')->middleware('throttle:10,1');
     Route::post('/membership/update-payment', [MembershipController::class, 'updatePayment'])->name('membership.update-payment')->middleware('throttle:10,1');
+
+    // Landowner Stripe Connect onboarding. connect/refresh create the Connect
+    // account row (a stripe_accounts write) so they run as ah_system (db.system,
+    // SEC-055); return only reads + redirects. The account.updated webhook syncs
+    // the authoritative payouts_enabled flag.
+    Route::middleware('db.system')->group(function () {
+        Route::post('/payouts/connect', [PayoutController::class, 'connect'])->name('payouts.connect')->middleware('throttle:10,1');
+        Route::get('/payouts/refresh',  [PayoutController::class, 'refresh'])->name('payouts.refresh');
+    });
+    Route::get('/payouts/return', [PayoutController::class, 'return'])->name('payouts.return');
     Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->name('profile.avatar.upload');
     Route::post('/profile/photos', [ProfileController::class, 'uploadPhoto'])->name('profile.photos.upload');

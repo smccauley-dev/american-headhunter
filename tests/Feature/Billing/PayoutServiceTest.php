@@ -184,4 +184,70 @@ class PayoutServiceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->service()->disburse($landowner, 100_000);
     }
+
+    // ── Connect onboarding (slice 2) ─────────────────────────────────────────────
+
+    public function test_onboarding_state_without_an_account(): void
+    {
+        $landowner = $this->makeLandowner();
+
+        $state = $this->service()->onboardingState($landowner);
+
+        $this->assertFalse($state['connected']);
+        $this->assertFalse($state['onboarded']);
+    }
+
+    public function test_onboarding_state_reflects_payouts_enabled(): void
+    {
+        $landowner = $this->makeLandowner();
+        $this->seedConnectAccount($landowner->id, payoutsEnabled: true);
+
+        $state = $this->service()->onboardingState($landowner);
+
+        $this->assertTrue($state['connected']);
+        $this->assertTrue($state['payouts_enabled']);
+        $this->assertTrue($state['onboarded']);
+    }
+
+    public function test_start_onboarding_creates_account_and_returns_link(): void
+    {
+        $landowner = $this->makeLandowner();
+
+        $this->mock(StripeService::class, function ($mock) {
+            $mock->shouldReceive('createConnectAccount')
+                ->once()
+                ->with(\Mockery::type(User::class))
+                ->andReturn('acct_new_123');
+            $mock->shouldReceive('createAccountLink')
+                ->once()
+                ->with('acct_new_123', \Mockery::type('string'), \Mockery::type('string'))
+                ->andReturn('https://connect.stripe.test/onboard');
+        });
+
+        $url = $this->service()->startOnboarding($landowner, 'https://app.test/return', 'https://app.test/refresh');
+
+        $this->assertSame('https://connect.stripe.test/onboard', $url);
+        $this->assertSame(1, DB::connection('billing')->table('stripe_accounts')
+            ->where('user_id', $landowner->id)->where('stripe_account_id', 'acct_new_123')->count());
+    }
+
+    public function test_start_onboarding_reuses_an_existing_account(): void
+    {
+        $landowner = $this->makeLandowner();
+        $this->seedConnectAccount($landowner->id, payoutsEnabled: false);
+
+        $this->mock(StripeService::class, function ($mock) {
+            $mock->shouldNotReceive('createConnectAccount');
+            $mock->shouldReceive('createAccountLink')
+                ->once()
+                ->andReturn('https://connect.stripe.test/resume');
+        });
+
+        $url = $this->service()->startOnboarding($landowner, 'https://app.test/return', 'https://app.test/refresh');
+
+        $this->assertSame('https://connect.stripe.test/resume', $url);
+        // Still exactly one account — no duplicate was minted.
+        $this->assertSame(1, DB::connection('billing')->table('stripe_accounts')
+            ->where('user_id', $landowner->id)->count());
+    }
 }
