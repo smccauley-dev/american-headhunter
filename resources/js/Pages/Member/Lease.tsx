@@ -1000,11 +1000,17 @@ export default function Lease({ lease, property, access_info, deposit, contacts,
                   </button>
                 ) : (
                   <span style={{
-                    display: 'inline-block', padding: '4px 12px',
+                    display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px',
+                    background: deposit.status === 'held' ? OLIVE : 'transparent',
                     border: `1px solid ${deposit.status === 'held' ? OLIVE : TAN}`,
                     fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em',
-                    textTransform: 'uppercase', color: deposit.status === 'held' ? OLIVE : TAN,
+                    textTransform: 'uppercase', color: deposit.status === 'held' ? '#F4ECDC' : TAN,
                   }}>
+                    {deposit.status === 'held' && (
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M13.5 4.5 6.5 11.5 3 8" stroke="#F4ECDC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
                     {deposit.status === 'held' ? 'Held' : deposit.status === 'released' ? 'Released' : deposit.status === 'partially_released' ? 'Partial' : 'Forfeited'}
                   </span>
                 )}
