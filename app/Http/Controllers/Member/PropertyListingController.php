@@ -182,6 +182,8 @@ class PropertyListingController extends Controller
             'price_total'      => $l->price_total !== null ? (float) $l->price_total : null,
             'deposit_amount'   => $l->deposit_amount !== null ? (float) $l->deposit_amount : null,
             'deposit_percent'  => $l->deposit_percent,
+            'booking_deposit_amount'  => $l->booking_deposit_amount !== null ? (float) $l->booking_deposit_amount : null,
+            'booking_deposit_percent' => $l->booking_deposit_percent,
         ];
     }
 
@@ -201,6 +203,8 @@ class PropertyListingController extends Controller
             'price_total'      => 'nullable|numeric|min:0',
             'deposit_amount'   => 'nullable|numeric|min:0',
             'deposit_percent'  => 'nullable|integer|between:0,100',
+            'booking_deposit_amount'  => 'nullable|numeric|min:0',
+            'booking_deposit_percent' => 'nullable|integer|between:0,100',
         ]);
     }
 

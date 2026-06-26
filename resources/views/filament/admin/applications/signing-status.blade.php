@@ -1,4 +1,4 @@
-{{-- Lease summary card + signer status rows: $lease, $signers (collection|null), $signingUrl, $deposit (array|null) --}}
+{{-- Lease summary card + signer status rows: $lease, $signers (collection|null), $signingUrl, $deposit (array|null), $bookingDeposit (array|null) --}}
 @php
     $statusColor = match ($lease->status) {
         'active'             => '#15803d',
@@ -52,6 +52,24 @@
             <span style="font-size:13px;font-weight:600;color:#1a1a1a">${{ $deposit['amount'] }}</span>
             @if ($deposit['status'] === null)
                 <span style="font-size:11px;color:#888">due before the hunter can sign</span>
+            @endif
+        </div>
+    @endif
+    @if (!empty($bookingDeposit))
+        @php
+            [$bdLabel, $bdClr, $bdBg] = match ($bookingDeposit['status']) {
+                'collected' => ['Collected', '#15803d', '#f0fdf4'],
+                'disbursed' => ['Disbursed', '#555', '#f5f5f5'],
+                default     => ['Not Paid', '#b05a00', '#fff7ed'],
+            };
+        @endphp
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:{{ $bdBg }};border:1px solid #e5e0d8;border-radius:4px;margin-bottom:16px">
+            <div style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#888">Booking Deposit</div>
+            <span style="display:inline-block;background:#fff;color:{{ $bdClr }};font-family:monospace;font-size:10px;font-weight:700;padding:3px 10px;border-radius:2px;text-transform:uppercase;letter-spacing:.08em;border:1px solid {{ $bdClr }}55">{{ $bdLabel }}</span>
+            <span style="font-size:13px;font-weight:600;color:#1a1a1a">${{ $bookingDeposit['amount'] }}</span>
+            <span style="font-size:11px;color:#888">non-refundable · credited toward total</span>
+            @if ($bookingDeposit['status'] === null)
+                <span style="font-size:11px;color:#888">· due before the hunter can sign</span>
             @endif
         </div>
     @endif

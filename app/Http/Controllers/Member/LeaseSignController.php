@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
 use App\Models\Lease\Lease;
+use App\Services\Billing\BookingDepositService;
 use App\Services\Billing\SecurityDepositService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Property\PropertyService;
@@ -14,7 +15,7 @@ use Inertia\Response;
 
 class LeaseSignController extends Controller
 {
-    public function show(string $lease, EsignatureService $esigService, PropertyService $propertyService, SecurityDepositService $depositService): Response|RedirectResponse
+    public function show(string $lease, EsignatureService $esigService, PropertyService $propertyService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService): Response|RedirectResponse
     {
         $userId = session('auth.user_id');
 
@@ -53,10 +54,11 @@ class LeaseSignController extends Controller
             'signers'        => $signerList,
             'already_signed' => $signer->status === 'signed',
             'deposit'        => $this->buildDepositProps($leaseRecord, $depositService),
+            'booking_deposit' => $this->buildBookingDepositProps($leaseRecord, $bookingDepositService),
         ]);
     }
 
-    public function sign(Request $request, string $lease, EsignatureService $esigService, SecurityDepositService $depositService): \Illuminate\Http\RedirectResponse
+    public function sign(Request $request, string $lease, EsignatureService $esigService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService): \Illuminate\Http\RedirectResponse
     {
         $userId = session('auth.user_id');
 
@@ -75,6 +77,11 @@ class LeaseSignController extends Controller
         if (! $this->depositSatisfied($leaseRecord, $depositService)) {
             return redirect()->route('member.leases.sign', $lease)
                 ->with('error', 'Please pay your refundable security deposit before signing.');
+        }
+
+        if (! $this->bookingDepositSatisfied($leaseRecord, $bookingDepositService)) {
+            return redirect()->route('member.leases.sign', $lease)
+                ->with('error', 'Please pay your booking deposit before signing.');
         }
 
         $request->validate([
@@ -159,6 +166,46 @@ class LeaseSignController extends Controller
             'amount'  => number_format($displayCents / 100, 2),
             'held'    => $existing !== null && $existing->status === 'held',
             'pay_url' => route('member.leases.deposit', $leaseRecord->id),
+        ];
+    }
+
+    /**
+     * Whether the lessee may sign with respect to the non-refundable booking deposit:
+     * true when none is due, or when one is due and already collected.
+     */
+    private function bookingDepositSatisfied(Lease $leaseRecord, BookingDepositService $bookingDepositService): bool
+    {
+        if (rescue(fn () => $bookingDepositService->amountDueCents($leaseRecord), 0) <= 0) {
+            return true;
+        }
+
+        $existing = rescue(fn () => $bookingDepositService->forLease($leaseRecord->id), null);
+
+        return $existing !== null && in_array($existing->status, ['collected', 'disbursed'], true);
+    }
+
+    /**
+     * Booking-deposit props for the signing page, or null when none is due. `paid`
+     * drives whether this step is cleared; `pay_url` starts Checkout and returns the
+     * lessee to this signing step (return=sign).
+     *
+     * @return array{amount: string, paid: bool, pay_url: string}|null
+     */
+    private function buildBookingDepositProps(Lease $leaseRecord, BookingDepositService $bookingDepositService): ?array
+    {
+        $amountDueCents = rescue(fn () => $bookingDepositService->amountDueCents($leaseRecord), 0) ?: 0;
+        $existing       = rescue(fn () => $bookingDepositService->forLease($leaseRecord->id), null);
+
+        if ($amountDueCents <= 0 && ! $existing) {
+            return null;
+        }
+
+        $displayCents = $existing ? (int) $existing->amount_cents : $amountDueCents;
+
+        return [
+            'amount'  => number_format($displayCents / 100, 2),
+            'paid'    => $existing !== null && in_array($existing->status, ['collected', 'disbursed'], true),
+            'pay_url' => route('member.leases.booking-deposit', $leaseRecord->id),
         ];
     }
 

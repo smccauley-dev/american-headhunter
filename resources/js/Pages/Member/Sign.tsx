@@ -14,6 +14,12 @@ interface Deposit {
   pay_url: string
 }
 
+interface BookingDeposit {
+  amount: string
+  paid: boolean
+  pay_url: string
+}
+
 interface LeaseProps {
   id: string
   status: string
@@ -34,9 +40,10 @@ interface Props {
   signers: Signer[]
   already_signed: boolean
   deposit: Deposit | null
+  booking_deposit: BookingDeposit | null
 }
 
-export default function Sign({ lease, request_id, signers, already_signed, deposit }: Props) {
+export default function Sign({ lease, request_id, signers, already_signed, deposit, booking_deposit }: Props) {
   const { props } = usePage<{ flash?: { success?: string; info?: string; error?: string } }>()
   const flash = props.flash ?? {}
 
@@ -47,15 +54,23 @@ export default function Sign({ lease, request_id, signers, already_signed, depos
   })
 
   const [payingDeposit, setPayingDeposit] = useState(false)
+  const [payingBooking, setPayingBooking] = useState(false)
 
   const allSigned = signers.every((s) => s.status === 'signed')
-  // Pay-then-sign: a due-but-unheld deposit locks the signature form.
+  // Pay-then-sign: a due-but-unpaid deposit (either kind) locks the signature form.
   const depositPending = !!deposit && !deposit.held
+  const bookingPending = !!booking_deposit && !booking_deposit.paid
 
   function payDeposit() {
     if (!deposit) return
     setPayingDeposit(true)
     router.post(deposit.pay_url, { return: 'sign' }, { onFinish: () => setPayingDeposit(false) })
+  }
+
+  function payBooking() {
+    if (!booking_deposit) return
+    setPayingBooking(true)
+    router.post(booking_deposit.pay_url, { return: 'sign' }, { onFinish: () => setPayingBooking(false) })
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -157,50 +172,39 @@ export default function Sign({ lease, request_id, signers, already_signed, depos
             })}
           </div>
 
-          {/* Security deposit — pay-then-sign gate */}
-          {deposit && !already_signed && (
-            depositPending ? (
-              <div style={{ background: '#fff', border: '1px solid #d97706', borderRadius: '4px', marginBottom: '20px', overflow: 'hidden' }}>
-                <div style={{ background: '#fffbeb', padding: '14px 20px', borderBottom: '1px solid #fde68a' }}>
-                  <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.12em', textTransform: 'uppercase', color: '#b45309', marginBottom: '4px' }}>Step 1 — Security Deposit</div>
-                  <div style={{ fontSize: '15px', fontWeight: '700', color: '#0A1512' }}>
-                    Pay your refundable deposit to unlock signing
-                  </div>
-                </div>
-                <div style={{ padding: '18px 20px' }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '14px' }}>
-                    <span style={{ fontSize: '13px', color: '#666' }}>Refundable security deposit</span>
-                    <span style={{ fontSize: '20px', fontWeight: '700', color: '#0A1512' }}>${deposit.amount}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={payDeposit}
-                    disabled={payingDeposit}
-                    style={{
-                      width: '100%',
-                      padding: '14px',
-                      background: payingDeposit ? '#d1d5db' : '#C84C21',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      fontSize: '15px',
-                      fontWeight: '700',
-                      letterSpacing: '.04em',
-                      cursor: payingDeposit ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {payingDeposit ? 'Redirecting…' : `Pay $${deposit.amount} Deposit`}
-                  </button>
-                  <p style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '12px', lineHeight: '1.6' }}>
-                    Held securely and refundable at the end of your lease. You'll return here to sign once it's received.
-                  </p>
-                </div>
-              </div>
+          {/* Deposits — pay-then-sign gate. Both the (non-refundable) booking deposit
+              and the refundable security deposit, when due, must be paid before the
+              signature form unlocks. */}
+          {!already_signed && booking_deposit && (
+            bookingPending ? (
+              <DepositStep
+                eyebrow="Booking Deposit — Non-Refundable"
+                headline="Pay your booking deposit to unlock signing"
+                lineItem="Non-refundable booking deposit"
+                amount={booking_deposit.amount}
+                payLabel={`Pay $${booking_deposit.amount} Booking Deposit`}
+                note="A non-refundable down payment, credited toward your lease total. You'll return here to sign once it's received."
+                paying={payingBooking}
+                onPay={payBooking}
+              />
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '12px 16px', marginBottom: '20px', color: '#15803d', fontSize: '13px', fontWeight: '600' }}>
-                <span style={{ fontSize: '15px' }}>✓</span>
-                <span>Security deposit of ${deposit.amount} held — you're clear to sign.</span>
-              </div>
+              <DepositCleared text={`Booking deposit of $${booking_deposit.amount} paid — credited toward your total.`} />
+            )
+          )}
+          {!already_signed && deposit && (
+            depositPending ? (
+              <DepositStep
+                eyebrow="Security Deposit — Refundable"
+                headline="Pay your refundable deposit to unlock signing"
+                lineItem="Refundable security deposit"
+                amount={deposit.amount}
+                payLabel={`Pay $${deposit.amount} Deposit`}
+                note="Held securely and refundable at the end of your lease. You'll return here to sign once it's received."
+                paying={payingDeposit}
+                onPay={payDeposit}
+              />
+            ) : (
+              <DepositCleared text={`Security deposit of $${deposit.amount} held — you're clear to sign.`} />
             )
           )}
 
@@ -216,8 +220,8 @@ export default function Sign({ lease, request_id, signers, already_signed, depos
             </div>
           )}
 
-          {/* Signature form — only shown when not yet signed and the deposit is held */}
-          {!already_signed && !depositPending && (
+          {/* Signature form — only shown when not yet signed and both deposits are paid */}
+          {!already_signed && !depositPending && !bookingPending && (
             <form onSubmit={handleSubmit}>
               <div style={{ background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', padding: '20px', marginBottom: '16px' }}>
                 <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#888', marginBottom: '16px' }}>
@@ -299,5 +303,64 @@ export default function Sign({ lease, request_id, signers, already_signed, depos
         </div>
       </div>
     </>
+  )
+}
+
+/** Amber "pay this deposit to unlock signing" card. */
+function DepositStep({ eyebrow, headline, lineItem, amount, payLabel, note, paying, onPay }: {
+  eyebrow: string
+  headline: string
+  lineItem: string
+  amount: string
+  payLabel: string
+  note: string
+  paying: boolean
+  onPay: () => void
+}) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #d97706', borderRadius: '4px', marginBottom: '20px', overflow: 'hidden' }}>
+      <div style={{ background: '#fffbeb', padding: '14px 20px', borderBottom: '1px solid #fde68a' }}>
+        <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.12em', textTransform: 'uppercase', color: '#b45309', marginBottom: '4px' }}>{eyebrow}</div>
+        <div style={{ fontSize: '15px', fontWeight: '700', color: '#0A1512' }}>{headline}</div>
+      </div>
+      <div style={{ padding: '18px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <span style={{ fontSize: '13px', color: '#666' }}>{lineItem}</span>
+          <span style={{ fontSize: '20px', fontWeight: '700', color: '#0A1512' }}>${amount}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onPay}
+          disabled={paying}
+          style={{
+            width: '100%',
+            padding: '14px',
+            background: paying ? '#d1d5db' : '#C84C21',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            fontSize: '15px',
+            fontWeight: '700',
+            letterSpacing: '.04em',
+            cursor: paying ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {paying ? 'Redirecting…' : payLabel}
+        </button>
+        <p style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '12px', lineHeight: '1.6' }}>
+          {note}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** Green "this deposit is settled" confirmation chip. */
+function DepositCleared({ text }: { text: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '12px 16px', marginBottom: '20px', color: '#15803d', fontSize: '13px', fontWeight: '600' }}>
+      <span style={{ fontSize: '15px' }}>✓</span>
+      <span>{text}</span>
+    </div>
   )
 }

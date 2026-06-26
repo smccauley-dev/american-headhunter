@@ -172,6 +172,14 @@ class PropertyInfolistV2
                                                 ->label('Deposit (%)')
                                                 ->suffix('%')
                                                 ->placeholder('—'),
+                                            TextEntry::make('booking_deposit_amount')
+                                                ->label('Booking Deposit ($)')
+                                                ->money('USD')
+                                                ->placeholder('—'),
+                                            TextEntry::make('booking_deposit_percent')
+                                                ->label('Booking Deposit (%)')
+                                                ->suffix('%')
+                                                ->placeholder('—'),
                                         ]),
                                 ]),
                         ]),

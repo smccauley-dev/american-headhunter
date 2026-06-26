@@ -13,6 +13,7 @@ use App\Models\Lease\LeaseApplicationHunter;
 use App\Models\Lease\LeaseApplicationMessage;
 use App\Models\Lease\LeaseApplicationReviewHistory;
 use App\Models\Property\PropertyListing;
+use App\Services\Billing\BookingDepositService;
 use App\Services\Billing\SecurityDepositService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\ApplicationService;
@@ -780,11 +781,21 @@ class ViewLeaseApplication extends ViewRecord
             'amount' => number_format(($existing ? (int) $existing->amount_cents : $dueCents) / 100, 2),
         ] : null;
 
+        // Non-refundable booking deposit — also gates the hunter's signature.
+        $bookingService = app(BookingDepositService::class);
+        $bookingDue     = rescue(fn () => $bookingService->amountDueCents($lease), 0) ?: 0;
+        $bookingRow     = rescue(fn () => $bookingService->forLease($lease->id), null);
+        $bookingDeposit = ($bookingDue > 0 || $bookingRow) ? [
+            'status' => $bookingRow?->status,
+            'amount' => number_format(($bookingRow ? (int) $bookingRow->amount_cents : $bookingDue) / 100, 2),
+        ] : null;
+
         return new HtmlString(view('filament.admin.applications.signing-status', [
-            'lease'      => $lease,
-            'signers'    => $esigRequest?->signers()->orderBy('order_num')->get(),
-            'signingUrl' => route('member.leases.sign', $lease->id),
-            'deposit'    => $deposit,
+            'lease'          => $lease,
+            'signers'        => $esigRequest?->signers()->orderBy('order_num')->get(),
+            'signingUrl'     => route('member.leases.sign', $lease->id),
+            'deposit'        => $deposit,
+            'bookingDeposit' => $bookingDeposit,
         ])->render());
     }
 

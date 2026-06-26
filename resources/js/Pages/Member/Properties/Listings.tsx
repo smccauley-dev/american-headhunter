@@ -17,6 +17,8 @@ interface Listing {
   price_total: number | null
   deposit_amount: number | null
   deposit_percent: number | null
+  booking_deposit_amount: number | null
+  booking_deposit_percent: number | null
 }
 
 interface Props {
@@ -104,6 +106,8 @@ function ListingForm({ property, listing, listingTypes, statuses, visibilities, 
     price_total:      listing?.price_total != null ? String(listing.price_total) : '',
     deposit_amount:   listing?.deposit_amount != null ? String(listing.deposit_amount) : '',
     deposit_percent:  listing?.deposit_percent != null ? String(listing.deposit_percent) : '',
+    booking_deposit_amount:  listing?.booking_deposit_amount != null ? String(listing.booking_deposit_amount) : '',
+    booking_deposit_percent: listing?.booking_deposit_percent != null ? String(listing.booking_deposit_percent) : '',
   })
 
   const isDayHunt = data.listing_type === 'day_hunt'
@@ -188,6 +192,12 @@ function ListingForm({ property, listing, listingTypes, statuses, visibilities, 
         </Field>
         <Field htmlFor="deposit_percent" text="Deposit (%)" error={errors.deposit_percent}>
           <input id="deposit_percent" type="number" min={0} max={100} value={data.deposit_percent} onChange={e => setData('deposit_percent', e.target.value)} style={input} />
+        </Field>
+        <Field htmlFor="booking_deposit_amount" text="Booking Deposit ($)" error={errors.booking_deposit_amount}>
+          <input id="booking_deposit_amount" type="number" min={0} step="0.01" value={data.booking_deposit_amount} onChange={e => setData('booking_deposit_amount', e.target.value)} style={input} />
+        </Field>
+        <Field htmlFor="booking_deposit_percent" text="Booking Deposit (%)" error={errors.booking_deposit_percent}>
+          <input id="booking_deposit_percent" type="number" min={0} max={100} value={data.booking_deposit_percent} onChange={e => setData('booking_deposit_percent', e.target.value)} style={input} />
         </Field>
       </div>
 

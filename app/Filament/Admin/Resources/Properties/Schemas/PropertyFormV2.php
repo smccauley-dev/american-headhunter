@@ -1065,6 +1065,19 @@ class PropertyFormV2
                                                     ->suffix('%')
                                                     ->minValue(0)
                                                     ->maxValue(100),
+                                                TextInput::make('booking_deposit_amount')
+                                                    ->label('Booking Deposit ($)')
+                                                    ->helperText('Non-refundable down payment, credited toward the total. Paid at signing.')
+                                                    ->numeric()
+                                                    ->prefix('$')
+                                                    ->minValue(0),
+                                                TextInput::make('booking_deposit_percent')
+                                                    ->label('Booking Deposit (%)')
+                                                    ->helperText('As a percent of the total. Use instead of a flat amount.')
+                                                    ->numeric()
+                                                    ->suffix('%')
+                                                    ->minValue(0)
+                                                    ->maxValue(100),
                                             ]),
                                     ]),
                             ]),

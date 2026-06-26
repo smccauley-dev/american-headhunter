@@ -28,6 +28,7 @@ class ProcessStripeWebhookTest extends TestCase
     /** @var array<int,string> */ private array $userIds = [];
     /** @var array<int,string> */ private array $invoiceIds = [];
     /** @var array<int,string> */ private array $depositPaymentIntentIds = [];
+    /** @var array<int,string> */ private array $bookingPaymentIntentIds = [];
     /** @var array<int,string> */ private array $persistedUserIds = [];
     /** @var array<int,string> */ private array $promoCodeIds = [];
     /** @var array<int,string> */ private array $promoPeriodIds = [];
@@ -54,6 +55,9 @@ class ProcessStripeWebhookTest extends TestCase
         }
         if ($this->depositPaymentIntentIds) {
             $billing->table('security_deposits')->whereIn('stripe_payment_intent_id', $this->depositPaymentIntentIds)->delete();
+        }
+        if ($this->bookingPaymentIntentIds) {
+            $billing->table('booking_deposits')->whereIn('stripe_payment_intent_id', $this->bookingPaymentIntentIds)->delete();
         }
         if ($this->claimIds)      { $billing->table('promotion_claims')->whereIn('id', $this->claimIds)->delete(); }
         if ($this->promoCodeIds)  { $billing->table('promo_codes')->whereIn('id', $this->promoCodeIds)->delete(); }
@@ -457,6 +461,36 @@ class ProcessStripeWebhookTest extends TestCase
         $this->assertSame('held', $deposit->status);
         $this->assertSame(7500, (int) $deposit->amount_cents);
         $this->assertSame($leaseId, $deposit->lease_id);
+    }
+
+    public function test_checkout_completed_payment_mode_records_collected_booking_deposit(): void
+    {
+        $payerId = $this->newUserId();
+        $payeeId = $this->newUserId();
+        $leaseId = (string) Str::uuid();
+        $pi      = 'pi_book_' . Str::random(12);
+        $this->bookingPaymentIntentIds[] = $pi;
+
+        $this->dispatch('checkout.session.completed', [
+            'mode'           => 'payment',
+            'payment_intent' => $pi,
+            'currency'       => 'usd',
+            'amount_total'   => 30000,
+            'metadata'       => [
+                'purpose'       => 'booking_deposit',
+                'lease_id'      => $leaseId,
+                'payer_user_id' => $payerId,
+                'payee_user_id' => $payeeId,
+                'amount_cents'  => '30000',
+            ],
+        ]);
+
+        $deposit = \App\Models\Billing\BookingDeposit::where('stripe_payment_intent_id', $pi)->first();
+        $this->assertNotNull($deposit, 'a collected booking deposit is authored by the webhook (ah_system)');
+        $this->assertSame('collected', $deposit->status);
+        $this->assertSame(30000, (int) $deposit->amount_cents);
+        $this->assertSame($leaseId, $deposit->lease_id);
+        $this->assertNull($deposit->payout_id, 'landowner payout is deferred — payout_id stays null');
     }
 
     public function test_checkout_completed_payment_mode_ignores_non_deposit(): void
