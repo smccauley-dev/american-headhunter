@@ -93,6 +93,56 @@ class SecurityDepositResource extends Resource
         );
     }
 
+    /**
+     * A horizontal lifecycle stepper — Created → Held → Released/Forfeited — with
+     * the deposit's current position highlighted. Rendered above the date detail.
+     */
+    public static function lifecycleFlow(SecurityDeposit $record): HtmlString
+    {
+        $status          = (string) $record->status;
+        $isForfeited     = in_array($status, ['forfeited', 'partially_released'], true);
+        $terminalReached = in_array($status, ['released', 'refunded', 'forfeited', 'partially_released'], true);
+        $heldReached     = $terminalReached || $status === 'held' || (bool) $record->held_at;
+
+        $current = $terminalReached ? 2 : ($heldReached ? 1 : 0);
+
+        $steps = [
+            ['label' => 'Created', 'reached' => true],
+            ['label' => 'Held',    'reached' => $heldReached],
+            ['label' => $isForfeited ? 'Forfeited' : 'Released', 'reached' => $terminalReached],
+        ];
+
+        $active = $isForfeited ? '#b5503a' : '#6a8d3f'; // forfeit red vs. platform green
+        $idle   = '#cbb994';                            // muted tan
+        $glow   = $isForfeited ? 'rgba(181,80,58,.25)' : 'rgba(106,141,63,.25)';
+
+        $html = '<div style="display:flex;align-items:flex-start;width:100%;max-width:520px;margin:2px 0 6px;">';
+
+        foreach ($steps as $i => $step) {
+            $isCurrent = $i === $current;
+            $reached   = $step['reached'];
+            $color     = $reached ? $active : $idle;
+
+            $dot = $isCurrent
+                ? "background:{$color};box-shadow:0 0 0 4px {$glow};"
+                : ($reached ? "background:{$color};" : "background:#f1ead9;border:2px solid {$color};");
+
+            $html .= '<div style="display:flex;flex-direction:column;align-items:center;flex:0 0 auto;width:84px;">';
+            $html .= '<div style="width:14px;height:14px;border-radius:50%;'.$dot.'"></div>';
+            $html .= '<div style="margin-top:7px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;'
+                .'color:'.($reached ? '#3f3a2e' : '#9b8e74').';font-weight:'.($isCurrent ? '700' : '500').';">'
+                .e($step['label']).'</div>';
+            $html .= '</div>';
+
+            if ($i < count($steps) - 1) {
+                $lineColor = $steps[$i + 1]['reached'] ? $active : $idle;
+                $html .= '<div style="flex:1 1 auto;height:2px;background:'.$lineColor.';margin-top:6px;"></div>';
+            }
+        }
+
+        return new HtmlString($html.'</div>');
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -185,12 +235,16 @@ class SecurityDepositResource extends Resource
                         ->copyableState(fn (SecurityDeposit $record): ?string => $record->lease_id),
                 ]),
 
-            Section::make('Dates')
+            Section::make('Lifecycle')
                 ->columns(3)
                 ->schema([
+                    TextEntry::make('lifecycle_flow')
+                        ->hiddenLabel()
+                        ->columnSpanFull()
+                        ->state(fn (SecurityDeposit $record): HtmlString => self::lifecycleFlow($record)),
+                    TextEntry::make('created_at')->label('Created')->dateTime('M j, Y H:i')->placeholder('—'),
                     TextEntry::make('held_at')->label('Held')->dateTime('M j, Y H:i')->placeholder('—'),
                     TextEntry::make('released_at')->label('Released')->dateTime('M j, Y H:i')->placeholder('—'),
-                    TextEntry::make('created_at')->label('Created')->dateTime('M j, Y H:i'),
                 ]),
         ]);
     }
