@@ -1056,11 +1056,13 @@ class PropertyFormV2
                                                     ->minValue(0),
                                                 TextInput::make('deposit_amount')
                                                     ->label('Deposit ($)')
+                                                    ->helperText('Refundable security hold, returned at lease end (less any damage claims).')
                                                     ->numeric()
                                                     ->prefix('$')
                                                     ->minValue(0),
                                                 TextInput::make('deposit_percent')
                                                     ->label('Deposit (%)')
+                                                    ->helperText('As a percent of the total. Use instead of a flat amount.')
                                                     ->numeric()
                                                     ->suffix('%')
                                                     ->minValue(0)
