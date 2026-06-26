@@ -2,7 +2,9 @@
 
 namespace App\Services\Identity;
 
+use App\Jobs\Identity\SendPasswordResetJob;
 use App\Models\Identity\EmailVerificationToken;
+use App\Models\Identity\PasswordResetToken;
 use App\Models\Identity\User;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
@@ -36,6 +38,30 @@ class VerificationService extends BaseService
         ]);
 
         return $token;
+    }
+
+    /**
+     * Issue a password-reset token and dispatch the reset email. Used by the admin
+     * "Force Password Reset" action; mirrors the public forgot-password flow
+     * (PasswordController::sendReset) so both paths share token shape + TTL.
+     */
+    public function sendPasswordResetEmail(User $user): void
+    {
+        // Invalidate any outstanding unused tokens before issuing a fresh one.
+        PasswordResetToken::where('user_id', $user->id)
+            ->whereNull('used_at')
+            ->update(['expires_at' => now()]);
+
+        $token = Str::random(64);
+
+        PasswordResetToken::create([
+            'user_id'    => $user->id,
+            'token_hash' => Hash::make($token),
+            'expires_at' => now()->addHour(),
+            'ip_address' => request()->ip(),
+        ]);
+
+        SendPasswordResetJob::dispatch($user->id, $token);
     }
 
     /**
