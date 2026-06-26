@@ -1027,6 +1027,26 @@ With `APP_DEBUG=true`, Laravel renders the full Ignition error page on any unhan
 
 ---
 
+## SEC-055 — `stripe_accounts` Shipped Without RLS — Any Authenticated User Could Read/Forge a Landowner's Connect Account & Payout Flags
+
+| Field | Detail |
+|---|---|
+| **Severity** | High (latent — no Connect onboarding path live yet) |
+| **Status** | **FIXED (2026-06-25)** — RLS enabled, system-authored + runtime-read-only; regression test green |
+| **Found** | 2026-06-25 |
+| **File** | `database/migrations/billing/2026_06_25_000001_add_rls_to_stripe_accounts.php` |
+
+**Description:**
+The `stripe_accounts` table (DB 4) — the landowner ↔ Stripe Connect account mapping that carries the `charges_enabled` / `payouts_enabled` / `details_submitted` flags gating whether a landowner can receive money — was created (`2026_06_14_000007`) **without** `ENABLE ROW LEVEL SECURITY` and with no policy. Every other money table in the billing DB (`invoices`, `payments`, `payouts`, `security_deposits`, the invoice projection) is system-authored and runtime-read-only under the SEC-045 pattern, but `stripe_accounts` was missed. Because `ah_runtime` inherits a blanket table-level DML grant via `ALTER DEFAULT PRIVILEGES`, any authenticated user's runtime connection could `SELECT` another landowner's row (leaking the `stripe_account_id`) and — worse — `INSERT`/`UPDATE` rows, e.g. forge their own `payouts_enabled = true` ahead of the `account.updated` webhook.
+
+**Impact (why latent):** No Connect onboarding flow is wired yet (Phase 5.5 in progress), so no rows exist and no runtime path touches the table in production today. The gap is a forgery primitive that would have been live the moment onboarding shipped.
+
+**Root cause:** The original migration predates the three-role RLS rollout (SEC-043) and was never retrofitted when the other billing tables were retargeted to `ah_runtime` (`2026_06_16_000002`).
+
+**Fix applied (2026-06-25):** New migration enables RLS on `stripe_accounts` with a single `FOR SELECT TO ah_runtime` policy (own `user_id` + staff/super_admin) and **no write policy** — mirroring `payouts`/`security_deposits`. The runtime path can read its own account state but can never author or mutate one; all writes (onboarding row creation + `account.updated` flag sync) run under `ah_system` (BYPASSRLS). Regression: `tests/Feature/Security/StripeAccountRlsWriteTest` (6 tests — RLS enabled, owner reads own, unrelated denied, staff reads all, runtime INSERT rejected, runtime UPDATE 0-affected).
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -1043,6 +1063,7 @@ With `APP_DEBUG=true`, Laravel renders the full Ignition error page on any unhan
 | SEC-052 | Promo per-user-limit TOCTOU between checkout validation and webhook redemption (global cap safe) | Low | **FIXED (2026-06-21)** — `recordRedemption` re-checks per-user + global caps under a `lockForUpdate` row lock; regression test green | — |
 | SEC-053 | First-listing auto-apply once-per-user check not atomic → possible duplicate claim (no extra benefit) | Low | **FIXED (2026-06-21)** — partial unique index on `(user, period)` for trigger claims + decrement-on-violation; regression tests green | — |
 | SEC-054 | Env templates default to `APP_DEBUG=true`/`APP_ENV=local` → full debug error page (stack trace, SQL, versions, headers) if used for prod | Low | **OPEN** — warnings added to both env examples (2026-06-25); enforce `APP_DEBUG=false`/`APP_ENV=production` when prod deploy is built | Pre-launch hardening |
+| SEC-055 | `stripe_accounts` shipped without RLS → any authenticated user could read/forge a landowner's Connect account + `payouts_enabled` flag | High (latent) | **FIXED (2026-06-25)** — RLS enabled, SELECT-only `TO ah_runtime` (own row + staff), no write policy (system-authored); regression test green (6 passed) | — |
 
 ---
 

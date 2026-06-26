@@ -292,6 +292,7 @@ CREATE TRIGGER trg_stripe_accounts_updated_at
 - `stripe_account_id` format: `acct_XXXX`.
 - `charges_enabled` and `payouts_enabled` are updated via Stripe `account.updated` webhook events.
 - A landowner cannot activate a property listing until `charges_enabled = true` and `payouts_enabled = true`.
+- **RLS (SEC-055, added 2026-06-25):** system-authored, runtime-read-only — `ENABLE ROW LEVEL SECURITY` + one `FOR SELECT TO ah_runtime` policy (`user_id = current user` OR staff/super_admin) and **no write policy**. The runtime path may read its own account state but never author or mutate one; all writes (onboarding row creation + the `account.updated` flag sync) run under `ah_system`. Mirrors `payouts`/`security_deposits`. Migration `2026_06_25_000001`; regression `tests/Feature/Security/StripeAccountRlsWriteTest`.
 
 ---
 
