@@ -12,6 +12,7 @@ use App\Models\Billing\StripeInvoiceProjection;
 use App\Models\Lease\CheckIn;
 use App\Models\Wildlife\HarvestLog;
 use App\Services\Documents\DocumentService;
+use App\Services\Billing\PayoutService;
 use App\Services\Lease\LeaseService;
 use App\Services\Platform\EntitlementService;
 use App\Services\Platform\ProfileTemplateService;
@@ -30,7 +31,7 @@ class ProfileController extends Controller
 {
     public function __construct(private readonly DocumentService $documents) {}
 
-    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, EntitlementService $entitlements, string $initialTab = 'about'): Response
+    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, EntitlementService $entitlements, PayoutService $payouts, string $initialTab = 'about'): Response
     {
         $userId  = session('auth.user_id');
         $user    = User::findOrFail($userId);
@@ -114,12 +115,14 @@ class ProfileController extends Controller
             'invoices'    => $this->buildInvoices($userId),
             'checkout'    => request()->query('checkout'),
             'billing'     => request()->query('billing'),
+            'payouts_status' => request()->query('payouts'),
             'initial_tab' => $initialTab,
             'template'    => $isLandowner ? null : $templates->getPublishedConfig('hunter'),
         ];
 
         if ($isLandowner) {
             $props['properties'] = $properties->getManagedPropertySummaries($userId);
+            $props['payouts']    = $payouts->onboardingState($user);
         }
 
         return Inertia::render('Member/Profile/Hunter', $props);

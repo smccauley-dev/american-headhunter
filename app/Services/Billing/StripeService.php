@@ -6,6 +6,8 @@ use App\Models\Billing\Subscription;
 use App\Models\Identity\User;
 use App\Models\Platform\MembershipPlan;
 use App\Models\Platform\PromotionalPeriod;
+use Stripe\Account;
+use Stripe\AccountLink;
 use Stripe\Charge;
 use Stripe\Checkout\Session;
 use Stripe\Coupon;
@@ -18,6 +20,7 @@ use Stripe\Refund;
 use Stripe\SetupIntent;
 use Stripe\Stripe;
 use Stripe\Subscription as StripeSubscription;
+use Stripe\Transfer;
 use Stripe\Webhook;
 
 /**
@@ -594,5 +597,68 @@ class StripeService
         if ($invoice) {
             $invoice->pay();
         }
+    }
+
+    // ── Connect — landowner payouts ──────────────────────────────────────────────
+
+    /**
+     * Create an Express connected account for a landowner so the platform can
+     * transfer their lease revenue to them. The user_id rides in metadata so the
+     * account.updated webhook can correlate the account back to a local record.
+     * Returns the Stripe account id (the caller persists it under ah_system).
+     */
+    public function createConnectAccount(User $landowner): string
+    {
+        $account = Account::create([
+            'type'         => 'express',
+            'email'        => $landowner->email,
+            'capabilities' => ['transfers' => ['requested' => true]],
+            'metadata'     => ['user_id' => $landowner->id],
+        ]);
+
+        return $account->id;
+    }
+
+    /**
+     * Create a single-use hosted onboarding link for a connected account. The
+     * landowner completes identity / bank details on Stripe; refresh_url is hit if
+     * the link expires before they finish, return_url when they come back. Returns
+     * the URL to redirect to.
+     */
+    public function createAccountLink(string $accountId, string $refreshUrl, string $returnUrl): string
+    {
+        return AccountLink::create([
+            'account'     => $accountId,
+            'refresh_url' => $refreshUrl,
+            'return_url'  => $returnUrl,
+            'type'        => 'account_onboarding',
+        ])->url;
+    }
+
+    /**
+     * Retrieve a connected account — used by the webhook to read the authoritative
+     * charges_enabled / payouts_enabled / details_submitted flags.
+     */
+    public function retrieveAccount(string $accountId): Account
+    {
+        return Account::retrieve($accountId);
+    }
+
+    /**
+     * Transfer funds from the platform balance to a landowner's connected account
+     * (the net lease revenue after the platform fee). currency is fixed to USD; the
+     * destination is the landowner's Stripe Connect account id. Returns the Transfer
+     * so the caller can record its id on the payout row.
+     *
+     * @param array<string,string> $metadata
+     */
+    public function createTransfer(int $amountCents, string $destinationAccountId, array $metadata = []): Transfer
+    {
+        return Transfer::create([
+            'amount'      => $amountCents,
+            'currency'    => 'usd',
+            'destination' => $destinationAccountId,
+            'metadata'    => $metadata,
+        ]);
     }
 }

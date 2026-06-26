@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Models\Billing\Payout;
 use App\Models\Billing\SecurityDeposit;
+use App\Models\Identity\User;
 use App\Models\Lease\Lease;
 use App\Models\Property\PropertyListing;
 use App\Services\Audit\AuditService;
+use App\Services\Billing\PayoutService;
 use App\Services\Billing\SecurityDepositService;
 use App\Services\Billing\StripeService;
 use App\Services\Property\PropertyService;
@@ -24,21 +27,41 @@ use Tests\TestCase;
 class SecurityDepositServiceTest extends TestCase
 {
     /** @var array<int,string> */ private array $depositIds = [];
+    /** @var array<int,string> */ private array $userIds = [];
 
     protected function tearDown(): void
     {
         if ($this->depositIds) {
             DB::connection('billing')->table('security_deposits')->whereIn('id', $this->depositIds)->delete();
         }
+        if ($this->userIds) {
+            DB::connection('identity')->table('users')->whereIn('id', $this->userIds)->delete();
+        }
         parent::tearDown();
     }
 
-    private function service(?StripeService $stripe = null, ?PropertyService $properties = null): SecurityDepositService
+    private function makeLandowner(): string
+    {
+        $id = (string) Str::uuid();
+        DB::connection('identity')->table('users')->insert([
+            'id'            => $id,
+            'email'         => "deposit-payee-{$id}@test.invalid",
+            'password_hash' => 'test-hash',
+            'status'        => 'active',
+            'account_type'  => 'landowner',
+        ]);
+        $this->userIds[] = $id;
+
+        return $id;
+    }
+
+    private function service(?StripeService $stripe = null, ?PropertyService $properties = null, ?PayoutService $payouts = null): SecurityDepositService
     {
         return new SecurityDepositService(
             $stripe ?? app(StripeService::class),
             $properties ?? app(PropertyService::class),
             app(AuditService::class),
+            $payouts ?? app(PayoutService::class),
         );
     }
 
@@ -227,5 +250,48 @@ class SecurityDepositServiceTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $this->service()->forfeit($deposit->id, 6000, 'Too much');
+    }
+
+    // ── forfeit → Connect disbursement (slice 3) ─────────────────────────────────
+
+    public function test_forfeit_disburses_to_an_onboarded_landowner(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_pay');
+        $deposit->payee_user_id = $this->makeLandowner();
+        $deposit->save();
+
+        $stripe = Mockery::mock(StripeService::class);
+        $stripe->shouldNotReceive('refundPaymentIntent');
+
+        $payouts = Mockery::mock(PayoutService::class);
+        $payouts->shouldReceive('canReceivePayouts')->once()->andReturnTrue();
+        $payouts->shouldReceive('disburse')
+            ->once()
+            ->with(Mockery::type(User::class), 5000, Mockery::type('array'))
+            ->andReturn((new Payout())->forceFill(['id' => 'po_forfeit']));
+
+        $result = $this->service(stripe: $stripe, payouts: $payouts)
+            ->forfeit($deposit->id, 5000, 'Property damage', (string) Str::uuid());
+
+        $this->assertSame('forfeited', $result->status);
+        $this->assertSame(5000, (int) $result->forfeited_amount_cents);
+    }
+
+    public function test_forfeit_defers_payout_when_landowner_not_onboarded(): void
+    {
+        $deposit = $this->seedHeld(5000, 'pi_defer');
+        $deposit->payee_user_id = $this->makeLandowner();
+        $deposit->save();
+
+        $payouts = Mockery::mock(PayoutService::class);
+        $payouts->shouldReceive('canReceivePayouts')->once()->andReturnFalse();
+        $payouts->shouldNotReceive('disburse');
+
+        $result = $this->service(payouts: $payouts)
+            ->forfeit($deposit->id, 5000, 'Property damage', (string) Str::uuid());
+
+        // The forfeiture is still recorded — the cash just stays captured.
+        $this->assertSame('forfeited', $result->status);
+        $this->assertSame(5000, (int) $result->forfeited_amount_cents);
     }
 }

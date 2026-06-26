@@ -485,6 +485,19 @@ interface Props {
   template: TemplateConfig | null
   // Landowner accounts only.
   properties?: PropertySummary[]
+  // Landowner Stripe Connect payout onboarding status (landowner accounts only).
+  payouts?: PayoutState
+  // Set after returning from Connect onboarding: 'complete' | 'pending' | 'error'.
+  payouts_status?: string | null
+}
+
+// Mirror of PayoutService::onboardingState — drives the My Properties payout card.
+interface PayoutState {
+  connected: boolean
+  charges_enabled: boolean
+  payouts_enabled: boolean
+  details_submitted: boolean
+  onboarded: boolean
 }
 
 // Mirror of ProfileTemplateService::DEFAULT_TEMPLATE — used when the server
@@ -740,7 +753,7 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, activity, security, leases, membership, invoices, checkout, billing, initial_tab, template, properties }: Props) {
+export default function HunterProfile({ user, profile, photos, activity, security, leases, membership, invoices, checkout, billing, initial_tab, template, properties, payouts, payouts_status }: Props) {
   // Landowner accounts reuse this profile shell but swap the hunting-specific
   // modules (gear, hunting prefs) for a "My Properties" blade.
   const isLandowner = user.account_type === 'landowner'
@@ -1130,6 +1143,52 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   >
                     + Add Property
                   </a>
+
+                  {/* ── Payouts (Stripe Connect) ──────────────────────────── */}
+                  <div style={{ marginTop: '18px' }}>
+                    <SideLabel>Payouts</SideLabel>
+                    {payouts_status === 'complete' && (
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#6b7856', marginBottom: '8px' }}>
+                        Onboarding complete — payouts are being verified.
+                      </div>
+                    )}
+                    {payouts_status === 'pending' && (
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#a8742c', marginBottom: '8px' }}>
+                        Onboarding not finished — pick up where you left off.
+                      </div>
+                    )}
+                    {payouts_status === 'error' && (
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: 'var(--ah-accent)', marginBottom: '8px' }}>
+                        Could not reach Stripe — please try again.
+                      </div>
+                    )}
+
+                    {payouts?.onboarded ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid #e5ddd0', background: '#F3EDD8', padding: '8px 9px' }}>
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '1px 6px', background: 'var(--ah-accent)', color: '#fff' }}>
+                          Active
+                        </span>
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#6b7856' }}>
+                          Lease revenue pays out to your bank.
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#a89874', lineHeight: 1.4, marginBottom: '8px' }}>
+                          {payouts?.connected
+                            ? 'Finish Stripe onboarding to start receiving lease revenue.'
+                            : 'Connect a payout account to receive lease revenue from hunters.'}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => router.post('/member/payouts/connect')}
+                          style={{ display: 'block', width: '100%', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 0', background: 'var(--ah-accent)', color: '#fff', border: 'none', cursor: 'pointer' }}
+                        >
+                          {payouts?.connected ? 'Finish payout setup' : 'Set up payouts'}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
 
