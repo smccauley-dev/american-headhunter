@@ -12,6 +12,7 @@ use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Billing\SecurityDepositService;
+use App\Services\Billing\StripeService;
 use App\Services\Lease\LeaseDocumentService;
 use App\Services\Lease\LeaseService;
 use App\Services\Property\PropertyMapService;
@@ -248,11 +249,45 @@ class MemberController extends Controller
         $session = $depositService->createCheckoutSession(
             $leaseRecord,
             $payer,
-            route('member.leases.show', $lease) . '?deposit=paid',
+            // Return through deposit/return so the held row is reconciled from the
+            // session immediately — the page then renders "Held" on first load
+            // without waiting on the webhook. Stripe substitutes the real id for
+            // {CHECKOUT_SESSION_ID}; leave the braces literal (do not url-encode).
+            route('member.leases.deposit.return', $lease) . '?session_id={CHECKOUT_SESSION_ID}',
             route('member.leases.show', $lease) . '?deposit=cancel',
         );
 
         return Inertia::location($session->url);
+    }
+
+    /**
+     * Stripe deposit-payment success return. Reconciles the held deposit row from
+     * the completed Checkout Session up front so the lessee sees "Held" without
+     * waiting on the checkout.session.completed webhook (which remains the backstop).
+     *
+     * Runs under the `db.system` role (BYPASSRLS) because security_deposits is
+     * system-authored — the runtime member role cannot write it. recordHeldFromCheckout
+     * is idempotent on the captured PaymentIntent, so racing the webhook is harmless.
+     */
+    public function depositReturn(Request $request, string $lease, SecurityDepositService $depositService, StripeService $stripe): RedirectResponse
+    {
+        $sessionId = (string) $request->query('session_id', '');
+
+        if ($sessionId !== '') {
+            // Best-effort: a Stripe hiccup must not block the member's return to
+            // their lease — the webhook still authors the row if this misses.
+            rescue(function () use ($stripe, $depositService, $sessionId, $lease) {
+                $session = $stripe->retrieveCheckoutSession($sessionId)->toArray();
+
+                // Only reconcile when the session is this lease's deposit, so a
+                // mismatched id can't author a row through the wrong lease URL.
+                if (($session['metadata']['lease_id'] ?? null) === $lease) {
+                    $depositService->recordHeldFromCheckout($session);
+                }
+            });
+        }
+
+        return redirect()->route('member.leases.show', ['lease' => $lease, 'deposit' => 'paid']);
     }
 
     public function message(Request $request, string $lease, ApplicationMessageService $messageService): RedirectResponse

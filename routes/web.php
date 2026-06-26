@@ -159,6 +159,9 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::delete('/leases/{lease}/documents/{leaseDocument}', [LeaseDocumentController::class, 'destroy'])->name('leases.documents.destroy');
     Route::post('/leases/{lease}/messages', [MemberController::class, 'message'])->name('leases.messages.store')->middleware('throttle:20,1');
     Route::post('/leases/{lease}/deposit', [MemberController::class, 'payDeposit'])->name('leases.deposit')->middleware('throttle:10,1');
+    // Stripe deposit success return — reconciles the held row as ah_system (the row
+    // is system-authored; the runtime member role cannot write security_deposits).
+    Route::get('/leases/{lease}/deposit/return', [MemberController::class, 'depositReturn'])->name('leases.deposit.return')->middleware('db.system');
 
     Route::post('/checkin',  [CheckInController::class, 'store'])->name('checkin.store')->middleware('throttle:20,1');
     Route::post('/checkout', [CheckInController::class, 'destroy'])->name('checkin.destroy')->middleware('throttle:20,1');
