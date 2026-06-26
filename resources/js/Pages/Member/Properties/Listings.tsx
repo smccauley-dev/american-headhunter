@@ -17,6 +17,8 @@ interface Listing {
   price_total: number | null
   deposit_amount: number | null
   deposit_percent: number | null
+  booking_deposit_amount: number | null
+  booking_deposit_percent: number | null
 }
 
 interface Props {
@@ -57,6 +59,13 @@ const errStyle: React.CSSProperties = {
   marginTop: '5px',
 }
 
+const hintStyle: React.CSSProperties = {
+  fontFamily: 'Crimson Pro, Georgia, serif',
+  fontSize: '13px',
+  color: '#8a7d63',
+  marginTop: '5px',
+}
+
 const STATUS_COLOR: Record<string, string> = {
   active: ACCENT,
   draft: '#6b7856',
@@ -70,11 +79,12 @@ function money(v: number | null): string {
   return '$' + v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
-function Field({ children, htmlFor, text, error }: { children: React.ReactNode; htmlFor: string; text: string; error?: string }) {
+function Field({ children, htmlFor, text, error, hint }: { children: React.ReactNode; htmlFor: string; text: string; error?: string; hint?: string }) {
   return (
     <div>
       <label htmlFor={htmlFor} style={label}>{text}</label>
       {children}
+      {hint && <div style={hintStyle}>{hint}</div>}
       {error && <div style={errStyle}>{error}</div>}
     </div>
   )
@@ -104,6 +114,8 @@ function ListingForm({ property, listing, listingTypes, statuses, visibilities, 
     price_total:      listing?.price_total != null ? String(listing.price_total) : '',
     deposit_amount:   listing?.deposit_amount != null ? String(listing.deposit_amount) : '',
     deposit_percent:  listing?.deposit_percent != null ? String(listing.deposit_percent) : '',
+    booking_deposit_amount:  listing?.booking_deposit_amount != null ? String(listing.booking_deposit_amount) : '',
+    booking_deposit_percent: listing?.booking_deposit_percent != null ? String(listing.booking_deposit_percent) : '',
   })
 
   const isDayHunt = data.listing_type === 'day_hunt'
@@ -183,11 +195,17 @@ function ListingForm({ property, listing, listingTypes, statuses, visibilities, 
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-        <Field htmlFor="deposit_amount" text="Deposit ($)" error={errors.deposit_amount}>
+        <Field htmlFor="deposit_amount" text="Deposit ($)" error={errors.deposit_amount} hint="Refundable security hold, returned at lease end (less any damage claims).">
           <input id="deposit_amount" type="number" min={0} step="0.01" value={data.deposit_amount} onChange={e => setData('deposit_amount', e.target.value)} style={input} />
         </Field>
-        <Field htmlFor="deposit_percent" text="Deposit (%)" error={errors.deposit_percent}>
+        <Field htmlFor="deposit_percent" text="Deposit (%)" error={errors.deposit_percent} hint="As a percent of the total. Use instead of a flat amount.">
           <input id="deposit_percent" type="number" min={0} max={100} value={data.deposit_percent} onChange={e => setData('deposit_percent', e.target.value)} style={input} />
+        </Field>
+        <Field htmlFor="booking_deposit_amount" text="Booking Deposit ($)" error={errors.booking_deposit_amount} hint="Non-refundable down payment, credited toward the total. Paid at signing.">
+          <input id="booking_deposit_amount" type="number" min={0} step="0.01" value={data.booking_deposit_amount} onChange={e => setData('booking_deposit_amount', e.target.value)} style={input} />
+        </Field>
+        <Field htmlFor="booking_deposit_percent" text="Booking Deposit (%)" error={errors.booking_deposit_percent} hint="As a percent of the total. Use instead of a flat amount.">
+          <input id="booking_deposit_percent" type="number" min={0} max={100} value={data.booking_deposit_percent} onChange={e => setData('booking_deposit_percent', e.target.value)} style={input} />
         </Field>
       </div>
 

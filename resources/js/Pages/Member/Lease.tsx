@@ -113,6 +113,14 @@ interface Props {
     can_pay: boolean
     pay_url: string
   } | null
+  booking_deposit: {
+    status: string | null
+    amount: string
+    paid: boolean
+    can_pay: boolean
+    pay_url: string
+    remaining_balance: string
+  } | null
   contacts: ContactDirectory | null
   signers: Signer[]
   sign_url: string | null
@@ -828,12 +836,13 @@ function CommunicationsSection({ data, isLessor }: { data: Communications; isLes
   )
 }
 
-export default function Lease({ lease, property, access_info, deposit, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications }: Props) {
+export default function Lease({ lease, property, access_info, deposit, booking_deposit, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
   const allSigned   = signers.every(s => s.status === 'signed')
   const [payingDeposit, setPayingDeposit] = useState(false)
+  const [payingBooking, setPayingBooking] = useState(false)
 
   return (
     <>
@@ -1000,14 +1009,65 @@ export default function Lease({ lease, property, access_info, deposit, contacts,
                   </button>
                 ) : (
                   <span style={{
-                    display: 'inline-block', padding: '4px 12px',
+                    display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 18px',
+                    background: deposit.status === 'held' ? OLIVE : 'transparent',
                     border: `1px solid ${deposit.status === 'held' ? OLIVE : TAN}`,
-                    fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em',
-                    textTransform: 'uppercase', color: deposit.status === 'held' ? OLIVE : TAN,
+                    fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em',
+                    textTransform: 'uppercase', color: deposit.status === 'held' ? '#F4ECDC' : TAN,
                   }}>
+                    {deposit.status === 'held' && (
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M13.5 4.5 6.5 11.5 3 8" stroke="#F4ECDC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
                     {deposit.status === 'held' ? 'Held' : deposit.status === 'released' ? 'Released' : deposit.status === 'partially_released' ? 'Partial' : 'Forfeited'}
                   </span>
                 )}
+              </div>
+            </Section>
+          )}
+
+          {/* Booking Deposit — lessee only; non-refundable, credited toward the total */}
+          {booking_deposit && (
+            <Section title="Booking Deposit">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+                <div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.1em', color: TAN, marginBottom: '5px' }}>
+                    {booking_deposit.can_pay ? 'Amount Due' : 'Booking Deposit'}
+                  </div>
+                  <div style={{ fontFamily: 'var(--body)', fontSize: '22px', fontWeight: 700, color: INK }}>${booking_deposit.amount}</div>
+                  <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: booking_deposit.paid ? OLIVE : TAN, marginTop: '4px' }}>
+                    {booking_deposit.paid
+                      ? `Non-refundable — credited toward your total. Remaining balance $${booking_deposit.remaining_balance}.`
+                      : 'Non-refundable down payment, credited toward your lease total.'}
+                  </div>
+                </div>
+
+                {booking_deposit.can_pay ? (
+                  <button
+                    type="button"
+                    disabled={payingBooking}
+                    onClick={() => {
+                      setPayingBooking(true)
+                      router.post(booking_deposit.pay_url, {}, { onFinish: () => setPayingBooking(false) })
+                    }}
+                    style={{ ...btnAccent, whiteSpace: 'nowrap', opacity: payingBooking ? 0.6 : 1 }}
+                  >
+                    {payingBooking ? 'Redirecting…' : 'Pay Booking Deposit'}
+                  </button>
+                ) : booking_deposit.paid ? (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 18px',
+                    background: OLIVE, border: `1px solid ${OLIVE}`,
+                    fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em',
+                    textTransform: 'uppercase', color: '#F4ECDC',
+                  }}>
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M13.5 4.5 6.5 11.5 3 8" stroke="#F4ECDC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Paid
+                  </span>
+                ) : null}
               </div>
             </Section>
           )}

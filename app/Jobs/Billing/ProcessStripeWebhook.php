@@ -9,6 +9,7 @@ use App\Models\Billing\StripeInvoiceProjection;
 use App\Models\Billing\Subscription;
 use App\Models\Identity\User;
 use App\Services\Audit\AuditService;
+use App\Services\Billing\BookingDepositService;
 use App\Services\Billing\PromoCodeService;
 use App\Services\Billing\SecurityDepositService;
 use App\Services\Billing\StripeInvoiceProjector;
@@ -104,6 +105,13 @@ class ProcessStripeWebhook implements ShouldQueue
         if (($this->object['mode'] ?? null) === 'payment'
             && ($this->object['metadata']['purpose'] ?? null) === 'security_deposit') {
             app(SecurityDepositService::class)->recordHeldFromCheckout($this->object);
+            return;
+        }
+
+        // A payment-mode Checkout funding a (non-refundable) booking deposit.
+        if (($this->object['mode'] ?? null) === 'payment'
+            && ($this->object['metadata']['purpose'] ?? null) === 'booking_deposit') {
+            app(BookingDepositService::class)->recordCollectedFromCheckout($this->object);
             return;
         }
 

@@ -451,6 +451,18 @@ class StripeService
     }
 
     /**
+     * Retrieve a Checkout Session by id. Used by the deposit success-return path to
+     * author the held row immediately rather than waiting on the webhook; the
+     * returned shape (metadata, payment_intent, currency, amount_total) matches the
+     * checkout.session.completed payload SecurityDepositService::recordHeldFromCheckout
+     * expects.
+     */
+    public function retrieveCheckoutSession(string $sessionId): Session
+    {
+        return Session::retrieve($sessionId);
+    }
+
+    /**
      * Refund a PaymentIntent directly — used to return a security deposit, which
      * is a one-time charge rather than an invoice. A null amount refunds the full
      * remaining balance; a cents amount issues a partial refund. An optional note

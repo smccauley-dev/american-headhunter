@@ -11,7 +11,9 @@ use App\Services\Documents\DocumentService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
+use App\Services\Billing\BookingDepositService;
 use App\Services\Billing\SecurityDepositService;
+use App\Services\Billing\StripeService;
 use App\Services\Lease\LeaseDocumentService;
 use App\Services\Lease\LeaseService;
 use App\Services\Property\PropertyMapService;
@@ -41,7 +43,7 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService): Response
     {
         $userId = session('auth.user_id');
 
@@ -187,6 +189,28 @@ class MemberController extends Controller
             }
         }
 
+        // Non-refundable booking deposit (lessee-facing). Credited toward the lease
+        // total; the page shows the remaining balance (total − booking deposit paid).
+        $bookingDeposit = null;
+        if (! $isLessor) {
+            $existingBooking = rescue(fn () => $bookingDepositService->forLease($lease), null);
+            $bookingDueCents = rescue(fn () => $bookingDepositService->amountDueCents($leaseRecord), 0) ?: 0;
+
+            if ($existingBooking || $bookingDueCents > 0) {
+                $bookingCents = $existingBooking ? (int) $existingBooking->amount_cents : $bookingDueCents;
+                $paid         = $existingBooking !== null && in_array($existingBooking->status, ['collected', 'disbursed'], true);
+                $remaining    = (float) $leaseRecord->total_price - ($paid ? $bookingCents / 100 : 0);
+                $bookingDeposit = [
+                    'status'            => $existingBooking?->status,
+                    'amount'            => number_format($bookingCents / 100, 2),
+                    'paid'              => $paid,
+                    'can_pay'           => ! $existingBooking && $bookingDueCents > 0,
+                    'pay_url'           => route('member.leases.booking-deposit', $lease),
+                    'remaining_balance' => number_format(max(0, $remaining), 2),
+                ];
+            }
+        }
+
         return Inertia::render('Member/Lease', [
             'lease' => [
                 'id'          => $leaseRecord->id,
@@ -210,6 +234,7 @@ class MemberController extends Controller
             ] : null,
             'access_info'    => $accessInfo,
             'deposit'        => $deposit,
+            'booking_deposit' => $bookingDeposit,
             'contacts'       => $contacts,
             'signers'         => $signers,
             'sign_url'        => $signUrl,
@@ -227,7 +252,7 @@ class MemberController extends Controller
      * Only the lessee pays. Redirects to Stripe; the held row is authored by the
      * webhook on payment success.
      */
-    public function payDeposit(string $lease, SecurityDepositService $depositService): \Symfony\Component\HttpFoundation\Response
+    public function payDeposit(Request $request, string $lease, SecurityDepositService $depositService): \Symfony\Component\HttpFoundation\Response
     {
         $userId = session('auth.user_id');
 
@@ -244,15 +269,128 @@ class MemberController extends Controller
             return back()->withErrors(['deposit' => 'No security deposit is due for this lease.']);
         }
 
+        // When the lessee pays from the signing step, send them back there once the
+        // deposit is held rather than to the lease page (return=sign). Default stays
+        // the lease page for the standalone "pay deposit" action.
+        $returnToSign = $request->input('return') === 'sign';
+        $cancelUrl = $returnToSign
+            ? route('member.leases.sign', $lease) . '?deposit=cancel'
+            : route('member.leases.show', $lease) . '?deposit=cancel';
+        $successUrl = route('member.leases.deposit.return', $lease) . '?session_id={CHECKOUT_SESSION_ID}'
+            . ($returnToSign ? '&return=sign' : '');
+
         $payer   = User::findOrFail($userId);
         $session = $depositService->createCheckoutSession(
             $leaseRecord,
             $payer,
-            route('member.leases.show', $lease) . '?deposit=paid',
-            route('member.leases.show', $lease) . '?deposit=cancel',
+            // Return through deposit/return so the held row is reconciled from the
+            // session immediately — the page then renders "Held" on first load
+            // without waiting on the webhook. Stripe substitutes the real id for
+            // {CHECKOUT_SESSION_ID}; leave the braces literal (do not url-encode).
+            $successUrl,
+            $cancelUrl,
         );
 
         return Inertia::location($session->url);
+    }
+
+    /**
+     * Stripe deposit-payment success return. Reconciles the held deposit row from
+     * the completed Checkout Session up front so the lessee sees "Held" without
+     * waiting on the checkout.session.completed webhook (which remains the backstop).
+     *
+     * Runs under the `db.system` role (BYPASSRLS) because security_deposits is
+     * system-authored — the runtime member role cannot write it. recordHeldFromCheckout
+     * is idempotent on the captured PaymentIntent, so racing the webhook is harmless.
+     */
+    public function depositReturn(Request $request, string $lease, SecurityDepositService $depositService, StripeService $stripe): RedirectResponse
+    {
+        $sessionId = (string) $request->query('session_id', '');
+
+        if ($sessionId !== '') {
+            // Best-effort: a Stripe hiccup must not block the member's return to
+            // their lease — the webhook still authors the row if this misses.
+            rescue(function () use ($stripe, $depositService, $sessionId, $lease) {
+                $session = $stripe->retrieveCheckoutSession($sessionId)->toArray();
+
+                // Only reconcile when the session is this lease's deposit, so a
+                // mismatched id can't author a row through the wrong lease URL.
+                if (($session['metadata']['lease_id'] ?? null) === $lease) {
+                    $depositService->recordHeldFromCheckout($session);
+                }
+            });
+        }
+
+        if ($request->query('return') === 'sign') {
+            return redirect()->route('member.leases.sign', $lease)
+                ->with('success', 'Deposit received. You can now sign your lease.');
+        }
+
+        return redirect()->route('member.leases.show', ['lease' => $lease, 'deposit' => 'paid']);
+    }
+
+    /**
+     * Start the hosted Checkout that funds a lease's non-refundable booking deposit.
+     * Only the lessee pays. Mirrors payDeposit; the collected row is authored by the
+     * webhook on payment success (booking_deposits is system-authored).
+     */
+    public function payBookingDeposit(Request $request, string $lease, BookingDepositService $bookingDeposits): \Symfony\Component\HttpFoundation\Response
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessee_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $existing = $bookingDeposits->forLease($lease);
+        if ($existing && in_array($existing->status, ['collected', 'disbursed'], true)) {
+            return back()->withErrors(['deposit' => 'A booking deposit has already been paid for this lease.']);
+        }
+        if ($bookingDeposits->amountDueCents($leaseRecord) <= 0) {
+            return back()->withErrors(['deposit' => 'No booking deposit is due for this lease.']);
+        }
+
+        $returnToSign = $request->input('return') === 'sign';
+        $cancelUrl = $returnToSign
+            ? route('member.leases.sign', $lease) . '?deposit=cancel'
+            : route('member.leases.show', $lease) . '?deposit=cancel';
+        $successUrl = route('member.leases.booking-deposit.return', $lease) . '?session_id={CHECKOUT_SESSION_ID}'
+            . ($returnToSign ? '&return=sign' : '');
+
+        $payer   = User::findOrFail($userId);
+        $session = $bookingDeposits->createCheckoutSession($leaseRecord, $payer, $successUrl, $cancelUrl);
+
+        return Inertia::location($session->url);
+    }
+
+    /**
+     * Stripe booking-deposit success return. Reconciles the collected row from the
+     * completed Checkout Session up front so the lessee sees it paid without waiting
+     * on the webhook (which remains the backstop). Runs under `db.system` because
+     * booking_deposits is system-authored. recordCollectedFromCheckout is idempotent
+     * on the captured PaymentIntent, so racing the webhook is harmless.
+     */
+    public function bookingDepositReturn(Request $request, string $lease, BookingDepositService $bookingDeposits, StripeService $stripe): RedirectResponse
+    {
+        $sessionId = (string) $request->query('session_id', '');
+
+        if ($sessionId !== '') {
+            rescue(function () use ($stripe, $bookingDeposits, $sessionId, $lease) {
+                $session = $stripe->retrieveCheckoutSession($sessionId)->toArray();
+
+                if (($session['metadata']['lease_id'] ?? null) === $lease) {
+                    $bookingDeposits->recordCollectedFromCheckout($session);
+                }
+            });
+        }
+
+        if ($request->query('return') === 'sign') {
+            return redirect()->route('member.leases.sign', $lease)
+                ->with('success', 'Booking deposit received. You can now sign your lease.');
+        }
+
+        return redirect()->route('member.leases.show', ['lease' => $lease, 'deposit' => 'paid']);
     }
 
     public function message(Request $request, string $lease, ApplicationMessageService $messageService): RedirectResponse
