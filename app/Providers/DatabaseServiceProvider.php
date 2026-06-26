@@ -2,11 +2,21 @@
 
 namespace App\Providers;
 
+use App\Database\RlsContext;
+use Illuminate\Database\Events\ConnectionEstablished;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\DB;
 
 class DatabaseServiceProvider extends ServiceProvider
 {
+    public function register(): void
+    {
+        // Request-scoped RLS context. Singleton so the middleware that arms it and
+        // the ConnectionEstablished listener that consumes it share one instance.
+        $this->app->singleton(RlsContext::class);
+    }
+
     /**
      * Inject per-connection encryption keys from environment into database config.
      * Keys come from Azure Key Vault in production, environment variables in dev.
@@ -15,6 +25,24 @@ class DatabaseServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->injectEncryptionKeys();
+        $this->injectRlsContextOnConnect();
+    }
+
+    /**
+     * SEC-055: apply the request's RLS context to each connection the moment it is
+     * established (i.e. only the databases a request actually uses), and re-apply
+     * after any reconnect/purge. Until InjectDatabaseContext arms the context this
+     * is a no-op, so console, queue and test connections are unaffected.
+     */
+    private function injectRlsContextOnConnect(): void
+    {
+        Event::listen(ConnectionEstablished::class, function (ConnectionEstablished $event): void {
+            $context = $this->app->make(RlsContext::class);
+
+            if ($context->isReady() && $context->appliesTo($event->connectionName)) {
+                $context->applyTo($event->connection);
+            }
+        });
     }
 
     private function injectEncryptionKeys(): void

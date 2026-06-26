@@ -1027,6 +1027,30 @@ With `APP_DEBUG=true`, Laravel renders the full Ignition error page on any unhan
 
 ---
 
+## SEC-055 — Eager RLS Context Injection Exhausts Connection Slots and Silently Skips Context (Intermittent Zero-Row RLS Reads) — Fixed 2026-06-25
+
+| Field | Detail |
+|---|---|
+| **Severity** | Medium (availability + correctness; fail-closed, no data exposure) |
+| **Status** | **FIXED (2026-06-25)** |
+| **Found** | 2026-06-25 |
+| **File** | `app/Http/Middleware/InjectDatabaseContext.php`, `app/Providers/DatabaseServiceProvider.php`, `app/Database/RlsContext.php` (new) |
+
+**Description:**
+`InjectDatabaseContext` set the RLS session variables (`app.current_user_id` / `app.user_role`) by looping over **all 14** RLS-bearing connections and calling `getPdo()` on each — eagerly opening a PostgreSQL connection to every database on **every** HTTP request, regardless of which databases the request actually touched. An Inertia page load issues several requests in parallel, and each held up to 14 open connections, so under modest concurrency Postgres ran out of non-superuser slots (`FATAL: remaining connection slots are reserved for roles with the SUPERUSER attribute`). The middleware caught that failure **per connection, logged a warning, and let the request continue** — so the connection that lost the race had no context set. Under `ah_runtime` an empty `app.current_user_id` makes every RLS policy default-deny, and that database's reads silently return **zero rows**.
+
+**How it surfaced:** A member paid a security deposit; the Checkout webhook authored the `held` row in `security_deposits` correctly, but the lease page kept rendering the **"Pay Deposit"** button. `MemberController::show()` computes `can_pay` from `SecurityDepositService::forLease()`, which returned `null` whenever the billing connection was the one that failed context injection — even though the row existed and was readable in isolation. The log showed 1069 `RLS context injection failed` warnings across connections (including `billing`), confirming the exhaustion was routine, not a one-off. Because it depends on concurrent load, an isolated reproduction (single tinker read under `ah_runtime` with context set) always succeeded — masking the bug.
+
+**Impact:** Intermittent, load-dependent. Any RLS-protected read could return empty for a legitimately-authorized user when that DB's slot was refused — a denial/correctness fault, fail-closed (it hides rows, never exposes them). No cross-tenant leakage.
+
+**Root cause:** Eagerly force-opening every connection per request (to set session variables up front) multiplied connection pressure ~14× and turned a transient slot shortage into silent context loss, compounded by swallowing the failure instead of surfacing it.
+
+**Fix (2026-06-25):** Inject context **lazily**. A request-scoped `App\Database\RlsContext` singleton holds the resolved user id + role; `InjectDatabaseContext` now just *arms* it (and applies to any connections already opened before the middleware ran, e.g. the identity connection used to resolve the role) instead of opening all 14. A `ConnectionEstablished` listener registered in `DatabaseServiceProvider` applies the context the moment each connection is actually opened — so a request opens only the databases it uses, and the context is **re-applied automatically on any reconnect/`DB::purge`** (which also closes the `ConnectionRole::asSystem`/`db.system` purge-drops-context gap). `applyTo` no longer swallows failures: if a connection genuinely cannot be opened, the read that needed it fails loudly rather than returning a misleading empty set. Until the context is armed the listener is a no-op, so console, queue, and test connections are unaffected.
+
+**Verification:** Probe under the real `ah_runtime` role (config-swapped + `DB::purge('billing')`, context armed, fresh resolve) returns `current_user=ah_runtime`, `app.current_user_id` set, `forLease=held`. `tests/Feature/Security` + `tests/Feature/Member` green (51 passed); the 6 `RlsEnforcementTest` policy cases unchanged.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -1043,6 +1067,7 @@ With `APP_DEBUG=true`, Laravel renders the full Ignition error page on any unhan
 | SEC-052 | Promo per-user-limit TOCTOU between checkout validation and webhook redemption (global cap safe) | Low | **FIXED (2026-06-21)** — `recordRedemption` re-checks per-user + global caps under a `lockForUpdate` row lock; regression test green | — |
 | SEC-053 | First-listing auto-apply once-per-user check not atomic → possible duplicate claim (no extra benefit) | Low | **FIXED (2026-06-21)** — partial unique index on `(user, period)` for trigger claims + decrement-on-violation; regression tests green | — |
 | SEC-054 | Env templates default to `APP_DEBUG=true`/`APP_ENV=local` → full debug error page (stack trace, SQL, versions, headers) if used for prod | Low | **OPEN** — warnings added to both env examples (2026-06-25); enforce `APP_DEBUG=false`/`APP_ENV=production` when prod deploy is built | Pre-launch hardening |
+| SEC-055 | RLS context-injection middleware eagerly opens all 14 databases per request → connection-slot exhaustion; the connection that loses the race has its context silently skipped (warning-logged, request continues), so that DB's RLS reads return zero rows — intermittent, load-dependent. Surfaced as a paid security deposit rendering "Pay Deposit" (the held row default-denied). | Medium | **FIXED (2026-06-25)** — lazy injection via `RlsContext` + `ConnectionEstablished` listener (only opens databases a request uses; re-applies on reconnect); fail-loud instead of swallowing; regression tests green (51 passed) | — |
 
 ---
 

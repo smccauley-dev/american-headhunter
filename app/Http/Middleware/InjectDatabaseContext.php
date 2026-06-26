@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Database\RlsContext;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -36,39 +37,22 @@ class InjectDatabaseContext
 
         $userRole = $this->resolveRole($tokenUser, $userId);
 
-        // RLS context is injected only for connections that carry (or may carry)
-        // user-scoped row-level-security policies reachable from an HTTP request.
-        //
-        // SEC-023/D02 — the following connections are INTENTIONALLY excluded:
-        //   - audit (DB 9):        append-only, immutable; no user-scoped RLS.
-        //   - analytics (DB 8):    read-only reporting via readonly_user; no RLS.
-        //   - analytics_etl (DB 8) and research (DB 14): touched only by ETL job
-        //     classes, never through the HTTP layer, so no request-time context
-        //     applies.
-        // If a user-scoped RLS policy is ever added to one of these databases, it
-        // MUST be added to the list below (and ETL writers given an explicit
-        // context-setting step), or its policies will silently see a NULL user.
-        $connections = [
-            'identity', 'property', 'property_read',
-            'lease', 'billing', 'wildlife', 'wildlife_read',
-            'commerce', 'communications',
-            'incidents', 'documents', 'platform',
-            'geospatial', 'geospatial_read',
-        ];
+        // SEC-055: arm lazy injection rather than eagerly opening every database.
+        // The ConnectionEstablished listener (DatabaseServiceProvider) applies the
+        // context to each RLS-bearing connection the first time it is actually
+        // opened, so a request never opens databases it does not use. Force-opening
+        // all ~14 here previously exhausted PostgreSQL's connection slots under
+        // load and left the loser without context — silent zero-row RLS reads.
+        $context = app(RlsContext::class);
+        $context->set($userId, $userRole);
 
-        foreach ($connections as $connection) {
-            try {
-                $conn       = DB::connection($connection);
-                $pdo        = $conn->getPdo();
-                $quotedId   = $pdo->quote($userId);
-                $quotedRole = $pdo->quote($userRole);
-                $conn->unprepared("SET SESSION app.current_user_id = {$quotedId}");
-                $conn->unprepared("SET SESSION app.user_role = {$quotedRole}");
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('RLS context injection failed', [
-                    'connection' => $connection,
-                    'error'      => $e->getMessage(),
-                ]);
+        // Any connections already opened before this middleware ran (e.g. the
+        // identity connection used to resolve the role above) missed the listener
+        // because the context was not yet armed — apply to them now. This only
+        // touches connections that are already resolved; it does not open new ones.
+        foreach (DB::getConnections() as $name => $connection) {
+            if ($context->appliesTo($name)) {
+                $context->applyTo($connection);
             }
         }
 
