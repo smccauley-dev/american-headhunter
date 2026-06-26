@@ -1000,10 +1000,10 @@ export default function Lease({ lease, property, access_info, deposit, contacts,
                   </button>
                 ) : (
                   <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px',
+                    display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 18px',
                     background: deposit.status === 'held' ? OLIVE : 'transparent',
                     border: `1px solid ${deposit.status === 'held' ? OLIVE : TAN}`,
-                    fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em',
+                    fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em',
                     textTransform: 'uppercase', color: deposit.status === 'held' ? '#F4ECDC' : TAN,
                   }}>
                     {deposit.status === 'held' && (
