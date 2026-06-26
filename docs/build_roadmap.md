@@ -897,7 +897,7 @@ The goal: real-time in-platform messaging via Laravel Reverb, multi-channel noti
 
 ### 7.2 DB 10 Incidents Migrations
 
-- [ ] `incident_reports` — structured incident reports (type enum, GPS, photos, witness info, timestamp_lock)
+- [x] `incident_reports` — structured incident reports (type enum, GPS, photos, witness info, timestamp_lock). *Built 2026-06-26: `evidence_document_ids` JSONB, SEC-045 system-authored/runtime-read-only RLS, soft deletes. Member db.system intake + Filament `IncidentReportResource` triage (open→investigating→resolved→closed). See `IncidentService`.*
 - [ ] `sos_incident_records` — permanent SOS incident records cross-referencing DB 7 `sos_event_log`
 - [x] `lease_disputes` — formal dispute records (category, evidence, status, outcome). *Built 2026-06-26 (forfeiture-contest loop): `security_deposit_id` + `evidence_document_ids`, SEC-045 system-authored/runtime-read-only RLS. See `DisputeService`.*
 - [x] `damage_claims` — property damage claim records linked to leases. *Built 2026-06-26: insurance columns + `evidence_document_ids`, same RLS shape. See `DamageClaimService`.*
@@ -942,7 +942,7 @@ The goal: real-time in-platform messaging via Laravel Reverb, multi-channel noti
 
 - [ ] `MessageModerationResource` — review queue for flagged messages; Approve / Hide / Delete / Warn Sender / Suspend Sender actions; all actions logged to DB 9
 - [ ] `SupportTicketResource` — ticket queue with priority routing, SLA timers, staff assignment
-- [ ] `IncidentResource` — incident reports by type; status workflow; evidence panel; one-click game warden contact
+- [x] `IncidentResource` — incident reports by type; status workflow; evidence panel; one-click game warden contact. *Built 2026-06-26 as `IncidentReportResource` (read-only list + view; severity/status badges, cross-DB property/reporter, photo-evidence panel; header actions Start Investigating / Resolve / Close → `IncidentService::updateStatus`). Gated by `AdminAuth::canManageSecurity()`. Game-warden one-click contact still pending.*
 - [~] `LeaseDisputeResource` — formal dispute workflow; evidence submission; outcome recording; Stripe refund trigger. *Built 2026-06-26 (forfeiture-contest adjudication: uphold/overturn/covered-by-insurance → `DisputeService::resolve`); `DamageClaimResource` added alongside. Broader incident/SOS/moderation resources still pending.*
 - [ ] Commit: "Filament moderation, support, and incidents"
 

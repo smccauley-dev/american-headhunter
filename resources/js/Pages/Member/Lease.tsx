@@ -138,6 +138,19 @@ interface Props {
     }[]
     file_url: string
   } | null
+  incidents: {
+    reports: {
+      incident_type: string
+      severity: string
+      status: string
+      occurred_at: string | null
+      location_description: string | null
+      description: string
+      injuries_reported: boolean
+      reported_at: string | null
+    }[]
+    report_url: string
+  } | null
   booking_deposit: {
     status: string | null
     amount: string
@@ -690,6 +703,147 @@ function DamageClaimsSection({ data }: { data: NonNullable<Props['damage_claims'
   )
 }
 
+const INCIDENT_TYPE_LABEL: Record<string, string> = {
+  hunting_accident: 'Hunting accident', trespassing: 'Trespassing', property_damage: 'Property damage',
+  wildlife_encounter: 'Wildlife encounter', medical: 'Medical', other: 'Other',
+}
+const INCIDENT_STATUS_LABEL: Record<string, string> = {
+  open: 'Open', investigating: 'Investigating', resolved: 'Resolved', closed: 'Closed',
+}
+
+function ReportIncidentForm({ url }: { url: string }) {
+  const [open, setOpen] = useState(false)
+  const { data, setData, post, processing, errors, reset } = useForm<{ incident_type: string; severity: string; occurred_at: string; location_description: string; description: string; injuries_reported: boolean; authorities_notified: boolean; authority_report_number: string; evidence: File[] }>(
+    { incident_type: 'trespassing', severity: 'minor', occurred_at: '', location_description: '', description: '', injuries_reported: false, authorities_notified: false, authority_report_number: '', evidence: [] },
+  )
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    post(url, { forceFormData: true, onSuccess: () => { reset(); setOpen(false) } })
+  }
+
+  const labelStyle: React.CSSProperties = { display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: OLIVE, marginBottom: '5px' }
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: `1px solid ${FIELD_BORDER}`, fontFamily: 'var(--body)', fontSize: '15px', background: '#fff', boxSizing: 'border-box' }
+  const checkRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--body)', fontSize: '14px', color: OLIVE }
+
+  if (!open) {
+    return <button onClick={() => setOpen(true)} style={btnDark}>+ Report an Incident</button>
+  }
+
+  return (
+    <form onSubmit={submit} style={{ background: '#fff', border: `1px solid ${FIELD_BORDER}`, padding: '18px', marginTop: '12px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '14px', fontWeight: 600 }}>
+        Report a Safety Incident
+      </div>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 200px' }}>
+          <label style={labelStyle}>Type *</label>
+          <select value={data.incident_type} onChange={e => setData('incident_type', e.target.value)} required style={{ ...inputStyle, cursor: 'pointer' }}>
+            <option value="hunting_accident">Hunting accident</option>
+            <option value="trespassing">Trespassing</option>
+            <option value="property_damage">Property damage</option>
+            <option value="wildlife_encounter">Wildlife encounter</option>
+            <option value="medical">Medical</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div style={{ flex: '1 1 140px' }}>
+          <label style={labelStyle}>Severity *</label>
+          <select value={data.severity} onChange={e => setData('severity', e.target.value)} required style={{ ...inputStyle, cursor: 'pointer' }}>
+            <option value="minor">Minor</option>
+            <option value="moderate">Moderate</option>
+            <option value="serious">Serious</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div style={{ flex: '1 1 180px' }}>
+          <label style={labelStyle}>When it occurred *</label>
+          <input type="datetime-local" value={data.occurred_at} onChange={e => setData('occurred_at', e.target.value)} required style={inputStyle} />
+          {errors.occurred_at && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.occurred_at}</div>}
+        </div>
+      </div>
+      <div style={{ marginBottom: '12px' }}>
+        <label style={labelStyle}>Location on the property (optional)</label>
+        <input value={data.location_description} onChange={e => setData('location_description', e.target.value)} maxLength={500} style={inputStyle} />
+      </div>
+      <div style={{ marginBottom: '12px' }}>
+        <label style={labelStyle}>What happened *</label>
+        <textarea value={data.description} onChange={e => setData('description', e.target.value)} rows={3} maxLength={2000} required style={{ ...inputStyle, resize: 'vertical' }} />
+        {errors.description && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.description}</div>}
+      </div>
+      <div style={{ display: 'flex', gap: '20px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <label style={checkRow}>
+          <input type="checkbox" checked={data.injuries_reported} onChange={e => setData('injuries_reported', e.target.checked)} />
+          Injuries occurred
+        </label>
+        <label style={checkRow}>
+          <input type="checkbox" checked={data.authorities_notified} onChange={e => setData('authorities_notified', e.target.checked)} />
+          Authorities notified
+        </label>
+      </div>
+      {data.authorities_notified && (
+        <div style={{ marginBottom: '12px' }}>
+          <label style={labelStyle}>Authority report number (optional)</label>
+          <input value={data.authority_report_number} onChange={e => setData('authority_report_number', e.target.value)} maxLength={100} style={inputStyle} />
+        </div>
+      )}
+      <div style={{ marginBottom: '16px' }}>
+        <label style={labelStyle}>Photo evidence (optional, up to 10)</label>
+        <FilePondUploader
+          name="evidence"
+          allowMultiple
+          maxFiles={10}
+          maxFileSize="10MB"
+          acceptedFileTypes={['image/*']}
+          labelIdle='Drag &amp; Drop photos or <span class="filepond--label-action">Browse</span>'
+          onupdatefiles={items => setData('evidence', items.map(i => i.file as File))}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button type="submit" disabled={processing} style={{ ...btnAccent, opacity: processing ? 0.7 : 1, cursor: processing ? 'not-allowed' : 'pointer' }}>
+          {processing ? 'Submitting…' : 'Submit Report'}
+        </button>
+        <button type="button" onClick={() => { reset(); setOpen(false) }} style={btnGhost}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+function IncidentsSection({ data }: { data: NonNullable<Props['incidents']> }) {
+  return (
+    <Section title="Safety Incidents">
+      {data.reports.length > 0 ? (
+        <div style={{ marginBottom: '14px' }}>
+          {data.reports.map((r, i) => (
+            <div key={i} style={{ borderBottom: i < data.reports.length - 1 ? `1px solid ${DIVIDER}` : 'none', paddingBottom: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ fontFamily: 'var(--body)', fontSize: '16px', fontWeight: 700, color: INK }}>
+                  {INCIDENT_TYPE_LABEL[r.incident_type] ?? r.incident_type}
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.08em', textTransform: 'uppercase', color: TAN, marginLeft: '8px' }}>
+                    {r.severity}{r.injuries_reported ? ' · injuries' : ''}
+                  </span>
+                </div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.08em', textTransform: 'uppercase', color: TAN }}>
+                  {INCIDENT_STATUS_LABEL[r.status] ?? r.status}{r.occurred_at ? ` · ${r.occurred_at}` : ''}
+                </div>
+              </div>
+              <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginTop: '4px' }}>{r.description}</div>
+              {r.location_description && (
+                <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: TAN, marginTop: '2px' }}>Location: {r.location_description}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: TAN, marginBottom: '14px' }}>
+          No incidents reported for this lease.
+        </div>
+      )}
+      <ReportIncidentForm url={data.report_url} />
+    </Section>
+  )
+}
+
 function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propertyTitle: string; onClose: () => void }) {
   const [active, setActive] = useState<string | null>(null)
   const count = map.markers.length
@@ -1122,7 +1276,7 @@ function CommunicationsSection({ data, isLessor }: { data: Communications; isLes
   )
 }
 
-export default function Lease({ lease, property, access_info, deposit, booking_deposit, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims }: Props) {
+export default function Lease({ lease, property, access_info, deposit, booking_deposit, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -1447,6 +1601,7 @@ export default function Lease({ lease, property, access_info, deposit, booking_d
 
           {/* Damage Claims — lessor files itemized claims against the held deposit */}
           {is_lessor && damage_claims && <DamageClaimsSection data={damage_claims} />}
+          {incidents && <IncidentsSection data={incidents} />}
 
           {/* Property Rules */}
           {(property?.rules?.length ?? 0) > 0 && (
