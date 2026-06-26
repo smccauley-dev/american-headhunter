@@ -16,6 +16,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\HtmlString;
 
 class SecurityDepositResource extends Resource
 {
@@ -78,6 +79,18 @@ class SecurityDepositResource extends Resource
     public static function statusLabel(string $state): string
     {
         return ucwords(str_replace('_', ' ', $state));
+    }
+
+    /** Render a raw cross-DB UUID as small muted mono helper text under a name. */
+    public static function rawIdHint(?string $id): ?HtmlString
+    {
+        if (! $id) {
+            return null;
+        }
+
+        return new HtmlString(
+            '<span style="font-size:10px;font-family:ui-monospace,monospace;color:#9ca3af;">'.e($id).'</span>'
+        );
     }
 
     public static function table(Table $table): Table
@@ -153,21 +166,21 @@ class SecurityDepositResource extends Resource
                         ->label('Lessee')
                         ->state(fn (SecurityDeposit $record): ?string => $record->getPayer()?->getFilamentName())
                         ->placeholder('Unknown user')
-                        ->helperText(fn (SecurityDeposit $record): ?string => $record->payer_user_id)
+                        ->helperText(fn (SecurityDeposit $record): ?HtmlString => self::rawIdHint($record->payer_user_id))
                         ->copyable()
                         ->copyableState(fn (SecurityDeposit $record): ?string => $record->payer_user_id),
                     TextEntry::make('payee_user_id')
                         ->label('Landowner')
                         ->state(fn (SecurityDeposit $record): ?string => $record->getPayee()?->getFilamentName())
                         ->placeholder('Unknown user')
-                        ->helperText(fn (SecurityDeposit $record): ?string => $record->payee_user_id)
+                        ->helperText(fn (SecurityDeposit $record): ?HtmlString => self::rawIdHint($record->payee_user_id))
                         ->copyable()
                         ->copyableState(fn (SecurityDeposit $record): ?string => $record->payee_user_id),
                     TextEntry::make('lease_id')
                         ->label('Lease')
                         ->state(fn (SecurityDeposit $record): ?string => $record->leaseLabel())
                         ->placeholder('—')
-                        ->helperText(fn (SecurityDeposit $record): ?string => $record->lease_id)
+                        ->helperText(fn (SecurityDeposit $record): ?HtmlString => self::rawIdHint($record->lease_id))
                         ->copyable()
                         ->copyableState(fn (SecurityDeposit $record): ?string => $record->lease_id),
                 ]),
