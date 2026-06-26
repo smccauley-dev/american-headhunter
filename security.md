@@ -1027,7 +1027,7 @@ With `APP_DEBUG=true`, Laravel renders the full Ignition error page on any unhan
 
 ---
 
-## SEC-055 — Eager RLS Context Injection Exhausts Connection Slots and Silently Skips Context (Intermittent Zero-Row RLS Reads) — Fixed 2026-06-25
+## SEC-056 — Eager RLS Context Injection Exhausts Connection Slots and Silently Skips Context (Intermittent Zero-Row RLS Reads) — Fixed 2026-06-25
 
 | Field | Detail |
 |---|---|
@@ -1067,7 +1067,7 @@ With `APP_DEBUG=true`, Laravel renders the full Ignition error page on any unhan
 | SEC-052 | Promo per-user-limit TOCTOU between checkout validation and webhook redemption (global cap safe) | Low | **FIXED (2026-06-21)** — `recordRedemption` re-checks per-user + global caps under a `lockForUpdate` row lock; regression test green | — |
 | SEC-053 | First-listing auto-apply once-per-user check not atomic → possible duplicate claim (no extra benefit) | Low | **FIXED (2026-06-21)** — partial unique index on `(user, period)` for trigger claims + decrement-on-violation; regression tests green | — |
 | SEC-054 | Env templates default to `APP_DEBUG=true`/`APP_ENV=local` → full debug error page (stack trace, SQL, versions, headers) if used for prod | Low | **OPEN** — warnings added to both env examples (2026-06-25); enforce `APP_DEBUG=false`/`APP_ENV=production` when prod deploy is built | Pre-launch hardening |
-| SEC-055 | RLS context-injection middleware eagerly opens all 14 databases per request → connection-slot exhaustion; the connection that loses the race has its context silently skipped (warning-logged, request continues), so that DB's RLS reads return zero rows — intermittent, load-dependent. Surfaced as a paid security deposit rendering "Pay Deposit" (the held row default-denied). | Medium | **FIXED (2026-06-25)** — lazy injection via `RlsContext` + `ConnectionEstablished` listener (only opens databases a request uses; re-applies on reconnect); fail-loud instead of swallowing; regression tests green (51 passed) | — |
+| SEC-056 | RLS context-injection middleware eagerly opens all 14 databases per request → connection-slot exhaustion; the connection that loses the race has its context silently skipped (warning-logged, request continues), so that DB's RLS reads return zero rows — intermittent, load-dependent. Surfaced as a paid security deposit rendering "Pay Deposit" (the held row default-denied). | Medium | **FIXED (2026-06-25)** — lazy injection via `RlsContext` + `ConnectionEstablished` listener (only opens databases a request uses; re-applies on reconnect); fail-loud instead of swallowing; regression tests green (51 passed) | — |
 
 ---
 

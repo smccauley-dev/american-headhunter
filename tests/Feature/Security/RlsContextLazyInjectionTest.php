@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
- * SEC-055 regression — RLS context is injected lazily, on connect.
+ * SEC-056 regression — RLS context is injected lazily, on connect.
  *
  * The original defect: InjectDatabaseContext eagerly opened every RLS-bearing
  * database per request to set the session variables up front. Under load that

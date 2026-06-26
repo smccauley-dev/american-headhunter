@@ -29,7 +29,7 @@ class DatabaseServiceProvider extends ServiceProvider
     }
 
     /**
-     * SEC-055: apply the request's RLS context to each connection the moment it is
+     * SEC-056: apply the request's RLS context to each connection the moment it is
      * established (i.e. only the databases a request actually uses), and re-apply
      * after any reconnect/purge. Until InjectDatabaseContext arms the context this
      * is a no-op, so console, queue and test connections are unaffected.

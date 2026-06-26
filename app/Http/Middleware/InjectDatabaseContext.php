@@ -37,7 +37,7 @@ class InjectDatabaseContext
 
         $userRole = $this->resolveRole($tokenUser, $userId);
 
-        // SEC-055: arm lazy injection rather than eagerly opening every database.
+        // SEC-056: arm lazy injection rather than eagerly opening every database.
         // The ConnectionEstablished listener (DatabaseServiceProvider) applies the
         // context to each RLS-bearing connection the first time it is actually
         // opened, so a request never opens databases it does not use. Force-opening

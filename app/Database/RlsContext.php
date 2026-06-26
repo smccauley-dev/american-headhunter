@@ -12,7 +12,7 @@ use Illuminate\Database\Connection;
  * policies read. Bound as a singleton; under PHP-FPM the application is rebuilt
  * per request, so each request gets a fresh, isolated context.
  *
- * Injection is LAZY (SEC-055). InjectDatabaseContext records the user here and a
+ * Injection is LAZY (SEC-056). InjectDatabaseContext records the user here and a
  * ConnectionEstablished listener (DatabaseServiceProvider) applies the context the
  * first time each connection is actually opened. The previous middleware opened a
  * PDO for all ~14 databases on every request to set the variables eagerly — under
