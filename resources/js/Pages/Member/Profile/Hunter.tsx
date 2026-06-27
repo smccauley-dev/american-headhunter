@@ -2551,7 +2551,7 @@ function PhotosTab({ photos, photoTags, editing, visibilityValue, onVisibility }
               key={p.id}
               type="button"
               onClick={() => setLightbox(p)}
-              style={{ position: 'relative', paddingBottom: '100%', background: 'var(--ah-ink)', overflow: 'hidden', border: 'none', cursor: 'pointer', padding: 0 }}
+              style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', background: 'var(--ah-ink)', overflow: 'hidden', border: 'none', cursor: 'pointer', padding: 0, display: 'block' }}
             >
               <img src={p.url} alt={p.caption ?? ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
               {(p.caption || p.tags.length > 0) && (
