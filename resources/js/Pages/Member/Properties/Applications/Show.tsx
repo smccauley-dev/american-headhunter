@@ -1,6 +1,6 @@
 import { useForm, usePage } from '@inertiajs/react'
 import { useState } from 'react'
-import { PortalChrome, TitleHead, Section, BackLink, Modal, INK, ACCENT, TAN, type PropertySummary } from '@/Components/Member/PropertyChrome'
+import { PortalChrome, TitleHead, Section, BackLink, Modal, ScaleIcon, DocumentTextIcon, UserIcon, PencilSquareIcon, PaperClipIcon, UserGroupIcon, ChatEllipsisIcon, ChatLeftRightIcon, ClockIcon, INK, ACCENT, TAN, type PropertySummary } from '@/Components/Member/PropertyChrome'
 
 interface Application {
   id: string
@@ -109,7 +109,7 @@ export default function ApplicationShow({ property, application, listing, applic
 
       {/* Decision actions */}
       {isPending && (
-        <Section title="Decision" description="Approve this application to create the lease and start the e-signature flow, or reject it with a reason for the applicant.">
+        <Section title="Decision" icon={<ScaleIcon />} description="Approve this application to create the lease and start the e-signature flow, or reject it with a reason for the applicant.">
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <button onClick={() => setModal('approve')} style={{ ...mono, fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: ACCENT, color: '#fff', border: 'none', cursor: 'pointer' }}>
               Approve & Create Lease
@@ -122,7 +122,7 @@ export default function ApplicationShow({ property, application, listing, applic
       )}
 
       {/* Application details */}
-      <Section title="Application Details">
+      <Section title="Application Details" icon={<DocumentTextIcon />} description="What the applicant requested — dates, party size, and their message to you.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
           <Datum label="Application ID"><span style={mono}>{application.ref}</span></Datum>
           <Datum label="Status"><StatusPill status={application.status} label={application.status_label} /></Datum>
@@ -140,7 +140,7 @@ export default function ApplicationShow({ property, application, listing, applic
       </Section>
 
       {/* Applicant */}
-      <Section title="Applicant">
+      <Section title="Applicant" icon={<UserIcon />} description="The hunter who submitted this application and the listing they applied to.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
           <Datum label="Name">{applicant.name}</Datum>
           <Datum label="Email">{applicant.email || '—'}</Datum>
@@ -152,7 +152,7 @@ export default function ApplicationShow({ property, application, listing, applic
 
       {/* Lease & signing status */}
       {lease && (
-        <Section title="Lease & Signing Status">
+        <Section title="Lease & Signing Status" icon={<PencilSquareIcon />} description="The lease created from this application and where each party stands in the e-signature flow.">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', padding: '16px', background: '#fff', border: '1px solid #e5ddd0', marginBottom: '16px' }}>
             <Datum label="Lease ID"><span style={mono}>{lease.ref}</span></Datum>
             <Datum label="Status"><StatusPill status={lease.status} label={lease.status.replace(/_/g, ' ')} /></Datum>
@@ -187,7 +187,7 @@ export default function ApplicationShow({ property, application, listing, applic
 
       {/* Lease documents */}
       {lease && documents.length > 0 && (
-        <Section title="Lease Documents" description="The contract sent for signature, the fully-executed copy, and any attachments.">
+        <Section title="Lease Documents" icon={<PaperClipIcon />} description="The contract sent for signature, the fully-executed copy, and any attachments.">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {documents.map((d, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 16px', background: '#fff', border: '1px solid #d4c9b0' }}>
@@ -211,7 +211,7 @@ export default function ApplicationShow({ property, application, listing, applic
       )}
 
       {/* Hunter roster */}
-      <Section title="Hunter Roster">
+      <Section title="Hunter Roster" icon={<UserGroupIcon />} description="Everyone named to hunt under this application.">
         {hunters.length === 0 ? (
           <p style={{ ...mono, fontSize: '11px', color: '#6b5e50' }}>No hunter details captured.</p>
         ) : (
@@ -236,13 +236,13 @@ export default function ApplicationShow({ property, application, listing, applic
 
       {/* Notes */}
       {application.admin_notes && (
-        <Section title="Notes" description="Visible to staff and landowner only — not shown to the applicant.">
+        <Section title="Notes" icon={<ChatEllipsisIcon />} description="Visible to staff and landowner only — not shown to the applicant.">
           <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: INK, whiteSpace: 'pre-wrap' }}>{application.admin_notes}</div>
         </Section>
       )}
 
       {/* Communications */}
-      <Section title="Communications" description="Messages between you and the applicant. The applicant is emailed when you send a message.">
+      <Section title="Communications" icon={<ChatLeftRightIcon />} description="Messages between you and the applicant. The applicant is emailed when you send a message.">
         {messages.length === 0 ? (
           <p style={{ ...mono, fontSize: '11px', color: '#6b5e50', marginBottom: '18px' }}>No messages yet.</p>
         ) : (
@@ -275,7 +275,7 @@ export default function ApplicationShow({ property, application, listing, applic
 
       {/* Review history */}
       {history.length > 0 && (
-        <Section title="Review History" description="Every approval, rejection, and override recorded in order.">
+        <Section title="Review History" icon={<ClockIcon />} description="Every approval, rejection, and override recorded in order.">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {history.map((r, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '10px 14px', background: '#fff', border: '1px solid #d4c9b0' }}>

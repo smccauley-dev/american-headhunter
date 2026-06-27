@@ -1,6 +1,6 @@
 import { useForm, router } from '@inertiajs/react'
 import { useState } from 'react'
-import { Section, INK, ACCENT } from './PropertyChrome'
+import { Section, UserGroupIcon, INK, ACCENT } from './PropertyChrome'
 
 export interface Manager {
   id: string
@@ -58,7 +58,7 @@ export default function PropertyTeamTab({ propertyId, managers, roles }: {
   ) : undefined
 
   return (
-    <Section title="Managers" action={grantAction}>
+    <Section title="Managers" icon={<UserGroupIcon />} description="Users who can manage this property on behalf of the owner." action={grantAction}>
       {granting && (
         <form onSubmit={grant} style={{ border: `1px solid ${ACCENT}`, background: '#fff', padding: '18px 16px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>

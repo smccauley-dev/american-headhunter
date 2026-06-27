@@ -1,4 +1,4 @@
-import { PortalChrome, PropertyHead, Section, BackLink, INK, TAN, type PropertySummary } from '@/Components/Member/PropertyChrome'
+import { PortalChrome, PropertyHead, Section, BackLink, InboxStackIcon, INK, TAN, type PropertySummary } from '@/Components/Member/PropertyChrome'
 
 interface AppRow {
   id: string
@@ -44,7 +44,7 @@ export default function ApplicationsIndex({ property, applications }: Props) {
 
       <PropertyHead property={property} />
 
-      <Section title="Lease Applications" description="Applications submitted for this property's listings. Open one to review the applicant, message them, and approve or reject.">
+      <Section title="Lease Applications" icon={<InboxStackIcon />} description="Applications submitted for this property's listings. Open one to review the applicant, message them, and approve or reject.">
 
         {applications.length === 0 ? (
           <div style={{ border: '1px dashed #d4c9b0', background: '#fff', padding: '36px 24px', textAlign: 'center' }}>
