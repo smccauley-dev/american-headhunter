@@ -54,6 +54,7 @@ class PropertyListingSettings extends Page implements HasForms
         'filter_state_enabled', 'filter_type_enabled', 'filter_price_enabled',
         'filter_acres_enabled', 'filter_hunters_enabled', 'filter_species_enabled',
         'card_show_acres', 'card_show_species', 'card_show_price', 'card_show_max_hunters',
+        'ownership_auto_approve',
     ];
 
     public function mount(): void
@@ -90,6 +91,8 @@ class PropertyListingSettings extends Page implements HasForms
             'card_show_species'      => (bool) (int) $p('card_show_species',     '1'),
             'card_show_price'        => (bool) (int) $p('card_show_price',       '1'),
             'card_show_max_hunters'  => (bool) (int) $p('card_show_max_hunters', '1'),
+            // Ownership proof
+            'ownership_auto_approve' => (bool) (int) $p('ownership_auto_approve', '0'),
         ]);
     }
 
@@ -174,6 +177,14 @@ class PropertyListingSettings extends Page implements HasForms
                         Toggle::make('card_show_price')->label('Show price'),
                         Toggle::make('card_show_max_hunters')->label('Show max hunters'),
                     ]),
+
+                Section::make('Proof of Ownership')
+                    ->description('Landowners must submit proof of ownership before a property can go Active. Staff normally Approve or Reject each submission manually.')
+                    ->schema([
+                        Toggle::make('ownership_auto_approve')
+                            ->label('Auto-approve proof of ownership')
+                            ->helperText('When ON, every new submission is approved instantly with no staff review, and any submissions already awaiting review are approved immediately. Turn OFF to return to manual Approve / Reject.'),
+                    ]),
             ])
             ->statePath('data');
     }
@@ -182,6 +193,10 @@ class PropertyListingSettings extends Page implements HasForms
     {
         $data = $this->form->getState();
         $t    = app(TenantService::class);
+
+        // Detect auto-approval being switched on so we can clear the existing backlog.
+        $autoApproveWasOn = (bool) (int) $t->getSetting('properties.ownership_auto_approve', '0');
+        $autoApproveNowOn = (bool) ($data['ownership_auto_approve'] ?? false);
 
         foreach ($data as $key => $value) {
             if (in_array($key, self::BOOL_KEYS, true)) {
@@ -193,6 +208,13 @@ class PropertyListingSettings extends Page implements HasForms
             }
 
             $t->setSetting("properties.{$key}", $stored);
+        }
+
+        // Turning auto-approval on clears any ownership submissions already waiting.
+        $swept = 0;
+        if ($autoApproveNowOn && ! $autoApproveWasOn) {
+            $swept = app(\App\Services\Property\PropertyService::class)
+                ->autoApproveOpenOwnershipVerifications(Auth::id());
         }
 
         app(AuditService::class)->log(
@@ -209,6 +231,9 @@ class PropertyListingSettings extends Page implements HasForms
 
         Notification::make()
             ->title('Property listings settings saved')
+            ->body($swept > 0
+                ? "Auto-approval enabled — {$swept} pending ownership submission(s) approved."
+                : null)
             ->success()
             ->send();
     }

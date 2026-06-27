@@ -425,6 +425,19 @@ class AdminPanelProvider extends PanelProvider
         .fi-sidebar-item.fi-active .fi-sidebar-item-label {
             color: #f4ecdc !important;
         }
+
+        /* Sidebar nav badges (e.g. ownership-review count): the global sidebar
+           span→cream rule above paints the badge's wrapper spans cream, and the
+           label inherits it — making the count invisible on the pale badge. Force
+           a solid, high-contrast gold pill with dark ink, scoped to the sidebar. */
+        .fi-sidebar-item-badge-ctn .fi-badge {
+            background-color: #b8934a !important;
+        }
+        .fi-sidebar-item-badge-ctn .fi-badge,
+        .fi-sidebar-item-badge-ctn .fi-badge .fi-badge-label-ctn,
+        .fi-sidebar-item-badge-ctn .fi-badge .fi-badge-label {
+            color: #0a1512 !important;
+        }
         .fi-sidebar-item.fi-active .fi-sidebar-item-btn svg {
             color: #c84c21 !important;
         }

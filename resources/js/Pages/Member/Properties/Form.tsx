@@ -1,5 +1,6 @@
 import { useForm } from '@inertiajs/react'
-import { PortalChrome, PropertyHead, TitleHead, Section, BackLink, INK, ACCENT, TAN } from '@/Components/Member/PropertyChrome'
+import { PortalChrome, PropertyHead, TitleHead, Section, BackLink, INK, ACCENT, TAN, SquaresIcon, InfoCircleIcon } from '@/Components/Member/PropertyChrome'
+import OwnershipSection, { OwnershipVerification } from '@/Components/Member/OwnershipSection'
 
 interface PropertyData {
   id: string
@@ -18,6 +19,9 @@ interface Props {
   property: PropertyData | null
   states: Record<string, string>
   statuses: Record<string, string>
+  ownership?: OwnershipVerification | null
+  ownerTypes?: Record<string, string>
+  suggestedProof?: Record<string, string[]>
 }
 
 const label: React.CSSProperties = {
@@ -60,7 +64,7 @@ function Field({ children, htmlFor, text, error }: { children: React.ReactNode; 
   )
 }
 
-export default function PropertyForm({ property, states, statuses }: Props) {
+export default function PropertyForm({ property, states, statuses, ownership = null, ownerTypes = {}, suggestedProof = {} }: Props) {
   const isEdit = property !== null
 
   const { data, setData, post, put, processing, errors, recentlySuccessful } = useForm({
@@ -94,7 +98,11 @@ export default function PropertyForm({ property, states, statuses }: Props) {
         : <TitleHead kicker="New Property" title="Add a Property" />}
 
       {isEdit && property && (
-        <Section title="Manage Property">
+        <Section
+          title="Manage Property"
+          icon={<SquaresIcon />}
+          description="Jump to the listings, lease applications, and the full details editor — game types, rules, amenities, photos, the property map, check-in log, team and contacts all live there."
+        >
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <a
               href={`/member/properties/${property.id}/listings`}
@@ -115,13 +123,14 @@ export default function PropertyForm({ property, states, statuses }: Props) {
               Lease Applications →
             </a>
           </div>
-          <p style={{ fontFamily: 'var(--body)', fontSize: '14px', color: '#6b5e50', marginTop: '14px', lineHeight: 1.5 }}>
-            Game types, rules, amenities, photos, the property map, check-in log, team and contacts are all managed on the details page.
-          </p>
         </Section>
       )}
 
-      <Section title="General Information">
+      <Section
+        title="General Information"
+        icon={<InfoCircleIcon />}
+        description="Name, location, size, and current listing status."
+      >
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
 
           <Field htmlFor="title" text="Property Name" error={errors.title}>
@@ -194,6 +203,15 @@ export default function PropertyForm({ property, states, statuses }: Props) {
           </div>
         </form>
       </Section>
+
+      {isEdit && property && (
+        <OwnershipSection
+          propertyId={property.id}
+          ownership={ownership}
+          ownerTypes={ownerTypes}
+          suggestedProof={suggestedProof}
+        />
+      )}
 
     </PortalChrome>
   )

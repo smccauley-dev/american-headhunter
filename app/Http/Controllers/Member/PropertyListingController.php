@@ -72,7 +72,13 @@ class PropertyListingController extends Controller
     {
         $this->authorizeManage($property);
 
-        $this->properties->createListing($property, $this->validated($request));
+        $data = $this->validated($request);
+
+        if ($error = $this->ownershipGate($property, $data['status'])) {
+            return back()->withErrors(['status' => $error])->withInput();
+        }
+
+        $this->properties->createListing($property, $data);
 
         return redirect()
             ->route('member.properties.listings.index', $property)
@@ -84,7 +90,13 @@ class PropertyListingController extends Controller
         $this->authorizeManage($property);
         $this->authorizeListing($property, $listing);
 
-        $this->properties->updateListing($listing, $this->validated($request));
+        $data = $this->validated($request);
+
+        if ($error = $this->ownershipGate($property, $data['status'])) {
+            return back()->withErrors(['status' => $error])->withInput();
+        }
+
+        $this->properties->updateListing($listing, $data);
 
         return redirect()
             ->route('member.properties.listings.index', $property)
@@ -206,6 +218,20 @@ class PropertyListingController extends Controller
             'booking_deposit_amount'  => 'nullable|numeric|min:0',
             'booking_deposit_percent' => 'nullable|integer|between:0,100',
         ]);
+    }
+
+    /**
+     * Publishing a listing (status 'active') requires the property to have
+     * staff-approved proof of ownership. Returns a user-facing message to block
+     * the publish, or null when it's allowed.
+     */
+    private function ownershipGate(string $propertyId, string $status): ?string
+    {
+        if ($status === 'active' && ! $this->properties->hasApprovedOwnership($propertyId)) {
+            return 'This listing can go Active only after the property\'s proof of ownership is approved by staff.';
+        }
+
+        return null;
     }
 
     /** Resolve a property the current user owns or actively manages, or 404. */
