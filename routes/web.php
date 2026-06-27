@@ -210,6 +210,8 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->name('profile.avatar.upload');
     Route::post('/profile/photos', [ProfileController::class, 'uploadPhoto'])->name('profile.photos.upload');
+    Route::post('/profile/photos/reorder', [ProfileController::class, 'reorderPhotos'])->name('profile.photos.reorder');
+    Route::patch('/profile/photos/{documentId}', [ProfileController::class, 'updatePhoto'])->name('profile.photos.update');
     Route::delete('/profile/photos/{documentId}', [ProfileController::class, 'deletePhoto'])->name('profile.photos.delete');
 
     // Landowner front-end property management. 'create' is declared before the
