@@ -277,16 +277,53 @@ class MemberController extends Controller
         // System-authored — rows are written only via the db.system report route.
         $incidentRows = rescue(fn () => $incidentService->forLease($lease), collect()) ?: collect();
         $incidents = [
-            'reports' => $incidentRows->map(fn ($i) => [
-                'incident_type'        => $i->incident_type,
-                'severity'             => $i->severity,
-                'status'               => $i->status,
-                'occurred_at'          => $i->occurred_at?->format('F j, Y'),
-                'location_description' => $i->location_description,
-                'description'          => $i->description,
-                'injuries_reported'    => $i->injuries_reported,
-                'reported_at'          => $i->created_at?->format('F j, Y'),
-            ])->values()->all(),
+            'reports' => $incidentRows->map(function ($i) use ($userId, $lease) {
+                // The reporter may fix their own report until the safety team resolves/closes it.
+                $isReporter = $i->reporter_user_id === $userId;
+                $canEdit    = $isReporter && in_array($i->status, ['open', 'investigating'], true);
+                $photos     = $isReporter
+                    ? collect($i->evidence_document_ids ?? [])->map(fn ($docId) => [
+                        'id'  => $docId,
+                        'url' => route('member.leases.incident-photo', ['lease' => $lease, 'incident' => $i->id, 'documentId' => $docId]),
+                    ])->values()->all()
+                    : [];
+
+                $items = collect($i->incident_items ?? [])->map(fn ($item) => [
+                    'type'              => $item['type'] ?? null,
+                    'severity'          => $item['severity'] ?? null,
+                    'occurred_at'       => isset($item['occurred_at']) ? \Illuminate\Support\Carbon::parse($item['occurred_at'])->format('M j, Y g:i A') : null,
+                    'occurred_at_input' => isset($item['occurred_at']) ? \Illuminate\Support\Carbon::parse($item['occurred_at'])->format('Y-m-d\TH:i') : null,
+                ])->values()->all();
+
+                // Parties (incl. any minor's name) are only exposed to the reporter who filed them.
+                $parties = $isReporter
+                    ? collect($i->parties_involved ?? [])->map(fn ($p) => [
+                        'full_name' => $p['full_name'] ?? '',
+                        'is_minor'  => (bool) ($p['is_minor'] ?? false),
+                    ])->values()->all()
+                    : [];
+
+                return [
+                    'id'                      => $i->id,
+                    'incident_number'         => $i->incident_number,
+                    'incident_type'           => $i->incident_type,
+                    'severity'                => $i->severity,
+                    'items'                   => $items,
+                    'parties'                 => $parties,
+                    'status'                  => $i->status,
+                    'occurred_at'             => $i->occurred_at?->format('F j, Y'),
+                    'occurred_at_input'       => $i->occurred_at?->format('Y-m-d\TH:i'),
+                    'location_description'    => $i->location_description,
+                    'description'             => $i->description,
+                    'injuries_reported'       => $i->injuries_reported,
+                    'authorities_notified'    => $i->authorities_notified,
+                    'authority_report_number' => $i->authority_report_number,
+                    'reported_at'             => $i->created_at?->format('F j, Y'),
+                    'photos'                  => $photos,
+                    'can_edit'                => $canEdit,
+                    'edit_url'                => $canEdit ? route('member.leases.incidents.update', ['lease' => $lease, 'incident' => $i->id]) : null,
+                ];
+            })->values()->all(),
             'report_url' => route('member.leases.incidents.store', $lease),
         ];
 
@@ -661,14 +698,18 @@ class MemberController extends Controller
             ->firstOrFail();
 
         $validated = $request->validate([
-            'incident_type'           => 'required|in:hunting_accident,trespassing,property_damage,wildlife_encounter,medical,other',
-            'severity'                => 'required|in:minor,moderate,serious,critical',
-            'occurred_at'             => 'required|date|before_or_equal:now',
+            'items'                   => 'required|array|min:1|max:10',
+            'items.*.type'            => 'required|in:hunting_accident,trespassing,property_damage,wildlife_encounter,medical,fire,other',
+            'items.*.severity'        => 'required|in:minor,moderate,serious,critical',
+            'items.*.occurred_at'     => 'required|date|before_or_equal:now',
             'location_description'    => 'nullable|string|max:500',
             'description'             => 'required|string|max:2000',
             'injuries_reported'       => 'boolean',
             'authorities_notified'    => 'boolean',
             'authority_report_number' => 'nullable|string|max:100',
+            'parties'                 => 'nullable|array|max:20',
+            'parties.*.full_name'     => 'nullable|string|max:200',
+            'parties.*.is_minor'      => 'boolean',
             'evidence'                => 'nullable|array|max:10',
             'evidence.*'              => 'file|image|max:10240',
         ]);
@@ -686,6 +727,83 @@ class MemberController extends Controller
         );
 
         return back()->with('success', 'Incident reported. Our safety team will review it.');
+    }
+
+    /**
+     * Edit a safety incident the member filed themselves (e.g. correcting a mistake).
+     * Only the reporter may edit, and only while the safety team has not yet resolved
+     * or closed it. Every change is diff-audited in IncidentService; added photos are
+     * appended — existing evidence can never be removed. Runs under db.system.
+     */
+    public function updateIncident(Request $request, string $lease, string $incident, IncidentService $incidentService, DocumentService $documentService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where(fn ($q) => $q->where('lessee_user_id', $userId)->orWhere('lessor_user_id', $userId))
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        // The reporter may edit only their own report on this lease, and only before triage closes it.
+        $report = \App\Models\Incidents\IncidentReport::where('id', $incident)
+            ->where('lease_id', $leaseRecord->id)
+            ->where('reporter_user_id', $userId)
+            ->firstOrFail();
+
+        abort_unless(in_array($report->status, [IncidentService::STATUS_OPEN, IncidentService::STATUS_INVESTIGATING], true), 403, 'This incident can no longer be edited.');
+
+        $validated = $request->validate([
+            'items'                   => 'required|array|min:1|max:10',
+            'items.*.type'            => 'required|in:hunting_accident,trespassing,property_damage,wildlife_encounter,medical,fire,other',
+            'items.*.severity'        => 'required|in:minor,moderate,serious,critical',
+            'items.*.occurred_at'     => 'required|date|before_or_equal:now',
+            'location_description'    => 'nullable|string|max:500',
+            'description'             => 'required|string|max:2000',
+            'injuries_reported'       => 'boolean',
+            'authorities_notified'    => 'boolean',
+            'authority_report_number' => 'nullable|string|max:100',
+            'parties'                 => 'nullable|array|max:20',
+            'parties.*.full_name'     => 'nullable|string|max:200',
+            'parties.*.is_minor'      => 'boolean',
+            'evidence'                => 'nullable|array|max:10',
+            'evidence.*'              => 'file|image|max:10240',
+        ]);
+
+        $addDocIds = [];
+        foreach ($request->file('evidence', []) as $file) {
+            $addDocIds[] = $documentService->storeUploadedFile($file, $userId, 'photo', unattached: true)->id;
+        }
+
+        $incidentService->updateDetails($report->id, $validated, $userId, $addDocIds);
+
+        return back()->with('success', 'Incident updated. Your changes have been recorded.');
+    }
+
+    /**
+     * Stream an incident's evidence photo to the reporter. The incident read runs under
+     * ah_runtime, so RLS already scopes it to the reporter (and staff); we additionally
+     * confirm the document actually belongs to this incident before serving it.
+     */
+    public function incidentPhoto(string $lease, string $incident, string $documentId)
+    {
+        $userId = session('auth.user_id');
+
+        $report = \App\Models\Incidents\IncidentReport::where('id', $incident)
+            ->where('lease_id', $lease)
+            ->where('reporter_user_id', $userId)
+            ->firstOrFail();
+
+        abort_unless(in_array($documentId, $report->evidence_document_ids ?? [], true), 404);
+
+        $doc  = \App\Models\Documents\Document::on('documents')->findOrFail($documentId);
+        $disk = \Illuminate\Support\Facades\Storage::disk(config('filesystems.defaults.documents', 'local'));
+        abort_unless($disk->exists($doc->storage_key), 404);
+
+        return $disk->response(
+            $doc->storage_key,
+            $doc->original_filename,
+            ['Content-Type' => $doc->mime_type ?? 'image/jpeg', 'Cache-Control' => 'private, max-age=3600'],
+        );
     }
 
     /**

@@ -41,20 +41,35 @@ $$ LANGUAGE plpgsql;
 ## Tables
 
 ### incident_reports
-Safety incidents occurring on or related to a property. Covers hunting accidents, trespassing, property damage, wildlife encounters, and medical emergencies.
+Safety incidents occurring on or related to a property. Covers hunting accidents, trespassing, property damage, wildlife encounters, fire, and medical emergencies. **A single real-world event can be several of these at once** (e.g. a fire AND a medical injury).
 
-**Built.** Adds one column beyond the original spec — `evidence_document_ids JSONB NOT NULL DEFAULT '[]'` (array of DB 11 `documents.id` UUIDs, photo proof; bare UUID ref assembled in the service layer, never a SQL foreign key). The table is **system-authored, runtime-read-only** (SEC-045): RLS enabled with a single `FOR SELECT TO ah_runtime` policy (`reporter_user_id = current user OR role in staff/super_admin`) and **no write policy**, so the inherited DML grant is inert for writes — only the trusted `ah_system` path (the `db.system` member route that files a report, and the Filament admin panel that triages it) may author or mutate rows. Uses soft deletes. Entry point: **`App\Services\Incidents\IncidentService`** — `file(Lease, User $reporter, array $data, array $evidenceDocIds)` (member intake; guards the reporter is a lease party, derives `property_id` from the lease) and `updateStatus($id, $status, $actorUserId, $extra)` (safety-team triage: `open → investigating → resolved → closed`, capturing authority + resolution detail). All writes audited via `AuditService`.
+**Built.** Adds these columns beyond the original spec — all bare UUID refs assembled in the service layer, never SQL foreign keys:
+- `incident_items JSONB NOT NULL DEFAULT '[]'` — the **line items**: a list of `{ type, severity, occurred_at }`, one per kind of incident in the same event. The scalar `incident_type` / `severity` / `occurred_at` columns are kept as a service-maintained **lead** derived from the items (lead type = first item; `severity` = the *worst* across items; `occurred_at` = the *earliest*), so the existing CHECKs, badges, filters, sorts, and the `(status, severity)` / `(occurred_at DESC)` indexes keep working. Item-level type/severity are validated at the request/service layer (they live inside JSONB), while the scalar lead columns stay CHECK-guarded. Member/admin UIs combine the item types into one title, e.g. "Fire · Medical".
+- `evidence_document_ids JSONB NOT NULL DEFAULT '[]'` — array of DB 11 `documents.id` UUIDs (photo proof). **Append-only: once a photo is uploaded it can never be removed.** Edits may add photos but no code path (member or admin) deletes one.
+- `listing_id UUID` — the property's DB 2 `property_listings.id`, resolved from `property_id` at file time and denormalised so the case-number sequence is stable even if the property is re-listed.
+- `incident_number VARCHAR(40)` (unique, partial index on `incident_number IS NOT NULL`) — the human-facing case number `IR-<first 8 chars of the listing id, uppercased>-<NN>`, where `NN` is a per-listing sequence (`01`, `02`, …). Falls back to the `property_id` prefix when a property has no listing.
+
+The table is **system-authored, runtime-read-only** (SEC-045): RLS enabled with a single `FOR SELECT TO ah_runtime` policy (`reporter_user_id = current user OR role in staff/super_admin`) and **no write policy**, so the inherited DML grant is inert for writes — only the trusted `ah_system` path (the `db.system` member routes that file/edit a report, and the Filament admin panel that triages it) may author or mutate rows. Uses soft deletes. Entry point: **`App\Services\Incidents\IncidentService`**:
+- `file(Lease, User $reporter, array $data, array $evidenceDocIds)` — member intake; guards the reporter is a lease party, derives `property_id` from the lease, normalises `$data['items']` (the line items) and derives the scalar lead, allocates the `incident_number`.
+- `updateDetails($id, $data, $actorUserId, $addEvidenceDocIds)` — corrects the line items (replaced as a set via `$data['items']`, re-deriving the scalar lead) and the descriptive fields (`EDITABLE_FIELDS`: location, description, injury/authority flags), and **appends** (never removes) photo evidence. Records a field-level before/after diff (`incident_report.updated`) and a separate `incident_report.evidence_added` event, both attributed to the actor. Used by both the reporter (member edit, only while `open`/`investigating`) and admins.
+- `updateStatus($id, $status, $actorUserId, $extra)` — safety-team triage: `open → investigating → resolved → closed`, capturing authority + resolution detail.
+
+Every write is audited via `AuditService`; the admin View page renders the full who/what/when change history from the DB 9 audit log. Member edit/photo routes: `POST /member/leases/{lease}/incidents/{incident}` (reporter-only, `db.system`) and `GET …/photos/{documentId}` (serves the reporter their evidence, RLS-scoped).
 
 ```sql
 CREATE TABLE incident_reports (
     id                      UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
     property_id             UUID NOT NULL,           -- References DB 2 (Property) properties.id
+    listing_id              UUID,                    -- References DB 2 (Property) property_listings.id (case-number scope)
+    incident_number         VARCHAR(40),             -- IR-<listing id8>-<NN>, unique (partial index)
     lease_id                UUID,                    -- References DB 3 (Lease) leases.id — NULL if no active lease
     reporter_user_id        UUID NOT NULL,           -- References DB 1 (Identity) users.id
-    incident_type           VARCHAR(30) NOT NULL,
-    severity                VARCHAR(20) NOT NULL,
+    incident_type           VARCHAR(30) NOT NULL,           -- lead type (first line item)
+    severity                VARCHAR(20) NOT NULL,           -- lead severity (worst across line items)
+    incident_items          JSONB NOT NULL DEFAULT '[]',    -- line items: [{type, severity, occurred_at}, …]
+    parties_involved        JSONB NOT NULL DEFAULT '[]',    -- involved people: [{full_name, is_minor}, …]; is_minor = "under 18" flag (no DOB stored)
     status                  VARCHAR(20) NOT NULL DEFAULT 'open',
-    occurred_at             TIMESTAMPTZ NOT NULL,
+    occurred_at             TIMESTAMPTZ NOT NULL,           -- lead occurred_at (earliest line item)
     location_description    TEXT,
     description             TEXT NOT NULL,
     injuries_reported       BOOLEAN NOT NULL DEFAULT false,
@@ -69,7 +84,7 @@ CREATE TABLE incident_reports (
     CONSTRAINT chk_incident_reports_type
         CHECK (incident_type IN (
             'hunting_accident', 'trespassing', 'property_damage',
-            'wildlife_encounter', 'medical', 'other'
+            'wildlife_encounter', 'medical', 'fire', 'other'
         )),
     CONSTRAINT chk_incident_reports_severity
         CHECK (severity IN ('minor', 'moderate', 'serious', 'critical')),
@@ -86,8 +101,39 @@ CREATE INDEX idx_incident_reports_status ON incident_reports (status, severity)
     WHERE deleted_at IS NULL AND status IN ('open', 'investigating');
 CREATE INDEX idx_incident_reports_occurred_at ON incident_reports (occurred_at DESC);
 
+CREATE UNIQUE INDEX uq_incident_reports_number ON incident_reports (incident_number)
+    WHERE incident_number IS NOT NULL;
+
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON incident_reports
     FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+```
+
+---
+
+### incident_admin_notes
+The safety team's **admin-only investigation log** for an incident — one timestamped line-item per note, newest first in the admin UI, **never shown to the reporter**. Append-only: there is no `updated_at`/`deleted_at` and the UI exposes no edit/delete — a note, once taken, stands as a record.
+
+Admin-only **by construction, not just convention.** `incident_reports` lets the reporter read their own row, so an admin-only column on that table would leak. This separate table's RLS SELECT policy is gated to **staff/super_admin only** — the reporter shares the parent incident but can never read its notes, even at the database level. There is no write policy, so the inherited `ah_runtime` DML grant is inert for writes (SEC-045): notes are authored only by `ah_system` (the Filament admin panel). `author_user_id` is a bare cross-DB (DB 1) UUID resolved in the service/resource layer; `incident_report_id` is an intra-DB FK (same database, so a real foreign key is allowed) with `ON DELETE CASCADE`.
+
+```sql
+CREATE TABLE incident_admin_notes (
+    id                 UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    incident_report_id UUID NOT NULL REFERENCES incident_reports (id) ON DELETE CASCADE,
+    author_user_id     UUID NOT NULL,           -- References DB 1 (Identity) users.id
+    note               TEXT NOT NULL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_incident_admin_notes_report
+    ON incident_admin_notes (incident_report_id, created_at DESC);
+
+ALTER TABLE incident_admin_notes ENABLE ROW LEVEL SECURITY;
+
+-- Staff/super_admin only — the reporter must never read investigation notes.
+-- No INSERT/UPDATE/DELETE policy: writes are system-authored (ah_system).
+CREATE POLICY incident_admin_notes_staff_only ON incident_admin_notes
+    FOR SELECT TO ah_runtime
+    USING (current_setting('app.user_role', true) IN ('staff', 'super_admin'));
 ```
 
 ---
@@ -438,9 +484,14 @@ The original spec's single, catch-all `IncidentService` was illustrative — DB 
 
 ### `App\Services\Incidents\IncidentService` — safety-incident intake & triage (`incident_reports`)
 
-- `file(Lease, User $reporter, array $data, array $evidenceDocIds = []): IncidentReport` — member intake; guards the reporter is a party to the lease (lessee or lessor), derives `property_id` from the lease, attaches photo evidence, opens the report. Called by the member db.system route.
-- `updateStatus(string $incidentId, string $status, ?string $actorUserId, array $extra = []): IncidentReport` — safety-team triage through `open → investigating → resolved → closed` (transitions validated; resolving/closing stamps `resolved_at`), optionally capturing `authorities_notified` / `authority_report_number` / `resolution_notes`. Called by the Filament `IncidentReportResource` view-page actions.
+- `file(Lease, User $reporter, array $data, array $evidenceDocIds = []): IncidentReport` — member intake; guards the reporter is a party to the lease (lessee or lessor), derives `property_id` from the lease, normalises the line items (`$data['items']` = list of `{type, severity, occurred_at}`) and derives the scalar lead (lead type, worst severity, earliest time), allocates the `incident_number` (`IR-<listing id8>-<NN>`, per-listing sequence), attaches photo evidence, opens the report. Called by the member db.system route.
+- `updateStatus(string $incidentId, string $status, ?string $actorUserId, array $extra = []): IncidentReport` — safety-team triage through `open → investigating → resolved → closed` (transitions validated; resolving/closing stamps `resolved_at`), optionally capturing `authorities_notified` / `authority_report_number` / `resolution_notes`. Called by the Filament `IncidentReportResource` view-page actions. Audits the `old → new` status.
+- `updateDetails(string $incidentId, array $data, ?string $actorUserId, array $addEvidenceDocIds = []): IncidentReport` — replaces the line items as a set (`$data['items']`, re-deriving the scalar lead), replaces the involved parties as a set (`$data['parties']` = list of `{full_name, is_minor}`; nameless rows dropped), and corrects the descriptive `EDITABLE_FIELDS` (location, description, injury/authority flags). Only changed keys are written; the edit is recorded as a field-level **before/after diff** in the audit log (`incident_report.updated`), attributed to the actor. Party changes are audited separately as `incident_report.parties_updated` recording **counts only** (`party_count` / `minor_count`) — minors' names are never written to the audit log. `$addEvidenceDocIds` **appends** photos (never removes existing ones — photos are permanent once uploaded) and is audited separately as `incident_report.evidence_added`. Called by both the view-page **Edit Details** admin action and the reporter's member edit route (`POST /member/leases/{lease}/incidents/{incident}`, reporter-only, allowed only while `open`/`investigating`).
+- `addAdminNote(string $incidentId, string $note, string $actorUserId): IncidentAdminNote` — appends one admin-only investigation note (`incident_admin_notes`), trimmed and non-empty, attributed to the actor and audited (`incident_report.note_added`, keyed by the note id). Staff-authored only — the reporter never sees these. Called by the Filament view-page **Add Note** action.
+- `adminNotes(string $incidentId): Collection<IncidentAdminNote>` — an incident's investigation notes, newest first, for the admin **Investigation Notes** section.
 - `forLease(leaseId)` / `forProperty(propertyId)` — newest-occurrence-first reads for the member portal and admin dashboards.
+
+Every incident write (`incident_report.filed`, `.status_changed`, `.updated`, `.parties_updated`, `.evidence_added`, `.note_added`) lands in the immutable audit log (DB 9). Report-field changes are keyed by `record_id = incident.id`; note additions by the note id. The Filament view page renders report-field history as a **Change History** timeline — who changed what, before → after, with timestamps — via `IncidentReportResource::changeLog()`, and the investigation notes (admin-only) as a separate **Investigation Notes** section via `adminNotesList()` (author ids resolved to names cross-DB).
 
 ### `App\Services\Incidents\DisputeService` — forfeiture-contest loop (`lease_disputes`)
 

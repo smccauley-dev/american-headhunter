@@ -1,5 +1,5 @@
 import { Head, useForm, router, usePage } from '@inertiajs/react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { formatPhone, telHref } from '@/lib/phone'
 import FilePondUploader from '@/Components/FilePondUploader'
@@ -140,14 +140,24 @@ interface Props {
   } | null
   incidents: {
     reports: {
+      id: string
+      incident_number: string | null
       incident_type: string
       severity: string
+      items: { type: string | null; severity: string | null; occurred_at: string | null; occurred_at_input: string | null }[]
+      parties: { full_name: string; is_minor: boolean }[]
       status: string
       occurred_at: string | null
+      occurred_at_input: string | null
       location_description: string | null
       description: string
       injuries_reported: boolean
+      authorities_notified: boolean
+      authority_report_number: string | null
       reported_at: string | null
+      photos: { id: string; url: string }[]
+      can_edit: boolean
+      edit_url: string | null
     }[]
     report_url: string
   } | null
@@ -478,7 +488,7 @@ function ContestForfeitureForm({ url }: { url: string }) {
           allowMultiple
           maxFiles={10}
           maxFileSize="10MB"
-          acceptedFileTypes={['image/*']}
+          acceptedFileTypes={['image/jpeg', 'image/png', 'image/webp']}
           labelIdle='Drag &amp; Drop photos or <span class="filepond--label-action">Browse</span>'
           onupdatefiles={items => setData('evidence', items.map(i => i.file as File))}
         />
@@ -645,7 +655,7 @@ function FileDamageClaimForm({ url }: { url: string }) {
           allowMultiple
           maxFiles={10}
           maxFileSize="10MB"
-          acceptedFileTypes={['image/*']}
+          acceptedFileTypes={['image/jpeg', 'image/png', 'image/webp']}
           labelIdle='Drag &amp; Drop photos or <span class="filepond--label-action">Browse</span>'
           onupdatefiles={items => setData('evidence', items.map(i => i.file as File))}
         />
@@ -705,16 +715,178 @@ function DamageClaimsSection({ data }: { data: NonNullable<Props['damage_claims'
 
 const INCIDENT_TYPE_LABEL: Record<string, string> = {
   hunting_accident: 'Hunting accident', trespassing: 'Trespassing', property_damage: 'Property damage',
-  wildlife_encounter: 'Wildlife encounter', medical: 'Medical', other: 'Other',
+  wildlife_encounter: 'Wildlife encounter', medical: 'Medical', fire: 'Fire', other: 'Other',
 }
 const INCIDENT_STATUS_LABEL: Record<string, string> = {
   open: 'Open', investigating: 'Investigating', resolved: 'Resolved', closed: 'Closed',
 }
+const INCIDENT_TYPES: { value: string; label: string }[] = [
+  { value: 'hunting_accident', label: 'Hunting accident' },
+  { value: 'trespassing', label: 'Trespassing' },
+  { value: 'property_damage', label: 'Property damage' },
+  { value: 'wildlife_encounter', label: 'Wildlife encounter' },
+  { value: 'medical', label: 'Medical' },
+  { value: 'fire', label: 'Fire' },
+  { value: 'other', label: 'Other' },
+]
+const INCIDENT_SEVERITIES = ['minor', 'moderate', 'serious', 'critical']
+
+type IncidentItem = { type: string; severity: string; occurred_at: string }
+
+/** Combine a report's line-item types into one title, e.g. "Fire · Medical". */
+function incidentTitle(items: { type?: string | null }[] | undefined, fallback: string): string {
+  const labels = (items ?? []).map(it => INCIDENT_TYPE_LABEL[it.type ?? ''] ?? it.type).filter(Boolean) as string[]
+  const unique = [...new Set(labels)]
+  return unique.length > 0 ? unique.join(' · ') : (INCIDENT_TYPE_LABEL[fallback] ?? fallback)
+}
+
+/**
+ * Dynamic line-item editor: one real event can be several things at once (a fire AND
+ * a medical injury), so each row carries its own type, severity, and when it occurred.
+ * At least one row is always present.
+ */
+function IncidentItemsEditor({ items, onChange, errors }: { items: IncidentItem[]; onChange: (items: IncidentItem[]) => void; errors?: Record<string, string> }) {
+  const update = (idx: number, patch: Partial<IncidentItem>) => onChange(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)))
+  const add = () => onChange([...items, { type: 'medical', severity: 'minor', occurred_at: '' }])
+  const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx))
+
+  return (
+    <div style={{ marginBottom: '12px' }}>
+      <label style={incidentLabelStyle}>What kind of incident? *</label>
+      <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: TAN, marginBottom: '8px' }}>
+        One event can be several things at once — add a row for each (e.g. a fire and a medical injury).
+      </div>
+      {items.map((it, idx) => {
+        const whenError = errors?.[`items.${idx}.occurred_at`]
+        return (
+          <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ flex: '1 1 170px' }}>
+              <label style={incidentLabelStyle}>Type *</label>
+              <select value={it.type} onChange={e => update(idx, { type: e.target.value })} required style={{ ...incidentInputStyle, cursor: 'pointer' }}>
+                {INCIDENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: '1 1 120px' }}>
+              <label style={incidentLabelStyle}>Severity *</label>
+              <select value={it.severity} onChange={e => update(idx, { severity: e.target.value })} required style={{ ...incidentInputStyle, cursor: 'pointer' }}>
+                {INCIDENT_SEVERITIES.map(s => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: '1 1 170px' }}>
+              <label style={incidentLabelStyle}>When *</label>
+              <input type="datetime-local" value={it.occurred_at} onChange={e => update(idx, { occurred_at: e.target.value })} required style={incidentInputStyle} />
+              {whenError && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{whenError}</div>}
+            </div>
+            {items.length > 1 && (
+              <button type="button" onClick={() => remove(idx)} style={{ ...btnGhost, padding: '8px 10px' }}>Remove</button>
+            )}
+          </div>
+        )
+      })}
+      <button type="button" onClick={add} style={{ ...btnGhost, marginTop: '2px' }}>+ Add another type</button>
+    </div>
+  )
+}
+
+type Photo = { id: string; url: string }
+
+/**
+ * Full-screen photo viewer: one large main image with a thumbnail strip beneath.
+ * Click a thumbnail to swap it into the main slot; click the backdrop / × / Esc to close.
+ */
+function PhotoLightbox({ photos, index, onClose }: { photos: Photo[]; index: number; onClose: () => void }) {
+  const [active, setActive] = useState(index)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return createPortal(
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.88)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
+      <button type="button" onClick={onClose} aria-label="Close" style={{ position: 'absolute', top: '16px', right: '20px', width: '40px', height: '40px', border: 'none', background: 'transparent', color: '#fff', fontSize: '28px', lineHeight: 1, cursor: 'pointer' }}>×</button>
+      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', maxWidth: '1000px', width: '100%' }}>
+        <img src={photos[active].url} alt="Incident evidence" style={{ maxWidth: '100%', maxHeight: '72vh', objectFit: 'contain' }} />
+        {photos.length > 1 && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {photos.map((p, i) => (
+              <button key={p.id} type="button" onClick={() => setActive(i)} style={{ width: '64px', height: '64px', padding: 0, cursor: 'pointer', background: 'transparent', border: `2px solid ${i === active ? ACCENT : 'rgba(255,255,255,0.35)'}` }}>
+                <img src={p.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+/** A row of clickable photo thumbnails that open the {@link PhotoLightbox} at the chosen image. */
+function PhotoThumbs({ photos, size = 56 }: { photos: Photo[]; size?: number }) {
+  const [open, setOpen] = useState<number | null>(null)
+  if (photos.length === 0) return null
+  return (
+    <>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        {photos.map((p, i) => (
+          <button key={p.id} type="button" onClick={() => setOpen(i)} style={{ width: `${size}px`, height: `${size}px`, padding: 0, cursor: 'pointer', background: 'transparent', border: `1px solid ${FIELD_BORDER}` }}>
+            <img src={p.url} alt="Incident evidence" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          </button>
+        ))}
+      </div>
+      {open !== null && <PhotoLightbox photos={photos} index={open} onClose={() => setOpen(null)} />}
+    </>
+  )
+}
+
+type Party = { full_name: string; is_minor: boolean }
+
+/**
+ * Dynamic editor for the people involved in an incident — one row per person.
+ * We capture a full name and a single "under 18" flag (no date of birth is stored).
+ * Parties are optional; start with no rows.
+ */
+function PartiesEditor({ parties, onChange, errors }: { parties: Party[]; onChange: (parties: Party[]) => void; errors?: Record<string, string> }) {
+  const update = (idx: number, patch: Partial<Party>) => onChange(parties.map((p, i) => (i === idx ? { ...p, ...patch } : p)))
+  const add = () => onChange([...parties, { full_name: '', is_minor: false }])
+  const remove = (idx: number) => onChange(parties.filter((_, i) => i !== idx))
+
+  return (
+    <div style={{ marginBottom: '12px' }}>
+      <label style={incidentLabelStyle}>Parties involved (optional)</label>
+      <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: TAN, marginBottom: '8px' }}>
+        The people involved in this incident. Tick "Under 18" for any minor — no date of birth is recorded.
+      </div>
+      {parties.map((p, idx) => {
+        const nameError = errors?.[`parties.${idx}.full_name`]
+        return (
+          <div key={idx} style={{ display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'flex-end' }}>
+            <div style={{ flex: '0 1 380px', minWidth: 0 }}>
+              <label style={incidentLabelStyle}>Full name *</label>
+              <input value={p.full_name} onChange={e => update(idx, { full_name: e.target.value })} maxLength={200} style={incidentInputStyle} />
+              {nameError && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{nameError}</div>}
+            </div>
+            <label style={{ ...incidentCheckRow, flexShrink: 0, whiteSpace: 'nowrap', paddingBottom: '9px' }}>
+              <input type="checkbox" checked={p.is_minor} onChange={e => update(idx, { is_minor: e.target.checked })} />
+              Under 18
+            </label>
+            <button type="button" onClick={() => remove(idx)} style={{ ...btnGhost, flexShrink: 0, padding: '8px 10px' }}>Remove</button>
+          </div>
+        )
+      })}
+      <button type="button" onClick={add} style={{ ...btnGhost, marginTop: '2px' }}>+ Add a person</button>
+    </div>
+  )
+}
+
+type IncidentFormData = { items: IncidentItem[]; parties: Party[]; location_description: string; description: string; injuries_reported: boolean; authorities_notified: boolean; authority_report_number: string; evidence: File[] }
 
 function ReportIncidentForm({ url }: { url: string }) {
   const [open, setOpen] = useState(false)
-  const { data, setData, post, processing, errors, reset } = useForm<{ incident_type: string; severity: string; occurred_at: string; location_description: string; description: string; injuries_reported: boolean; authorities_notified: boolean; authority_report_number: string; evidence: File[] }>(
-    { incident_type: 'trespassing', severity: 'minor', occurred_at: '', location_description: '', description: '', injuries_reported: false, authorities_notified: false, authority_report_number: '', evidence: [] },
+  const { data, setData, post, processing, errors, reset } = useForm<IncidentFormData>(
+    { items: [{ type: 'trespassing', severity: 'minor', occurred_at: '' }], parties: [], location_description: '', description: '', injuries_reported: false, authorities_notified: false, authority_report_number: '', evidence: [] },
   )
 
   function submit(e: React.FormEvent) {
@@ -735,33 +907,7 @@ function ReportIncidentForm({ url }: { url: string }) {
       <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '14px', fontWeight: 600 }}>
         Report a Safety Incident
       </div>
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 200px' }}>
-          <label style={labelStyle}>Type *</label>
-          <select value={data.incident_type} onChange={e => setData('incident_type', e.target.value)} required style={{ ...inputStyle, cursor: 'pointer' }}>
-            <option value="hunting_accident">Hunting accident</option>
-            <option value="trespassing">Trespassing</option>
-            <option value="property_damage">Property damage</option>
-            <option value="wildlife_encounter">Wildlife encounter</option>
-            <option value="medical">Medical</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-        <div style={{ flex: '1 1 140px' }}>
-          <label style={labelStyle}>Severity *</label>
-          <select value={data.severity} onChange={e => setData('severity', e.target.value)} required style={{ ...inputStyle, cursor: 'pointer' }}>
-            <option value="minor">Minor</option>
-            <option value="moderate">Moderate</option>
-            <option value="serious">Serious</option>
-            <option value="critical">Critical</option>
-          </select>
-        </div>
-        <div style={{ flex: '1 1 180px' }}>
-          <label style={labelStyle}>When it occurred *</label>
-          <input type="datetime-local" value={data.occurred_at} onChange={e => setData('occurred_at', e.target.value)} required style={inputStyle} />
-          {errors.occurred_at && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.occurred_at}</div>}
-        </div>
-      </div>
+      <IncidentItemsEditor items={data.items} onChange={items => setData('items', items)} errors={errors as Record<string, string>} />
       <div style={{ marginBottom: '12px' }}>
         <label style={labelStyle}>Location on the property (optional)</label>
         <input value={data.location_description} onChange={e => setData('location_description', e.target.value)} maxLength={500} style={inputStyle} />
@@ -771,6 +917,7 @@ function ReportIncidentForm({ url }: { url: string }) {
         <textarea value={data.description} onChange={e => setData('description', e.target.value)} rows={3} maxLength={2000} required style={{ ...inputStyle, resize: 'vertical' }} />
         {errors.description && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.description}</div>}
       </div>
+      <PartiesEditor parties={data.parties} onChange={parties => setData('parties', parties)} errors={errors as Record<string, string>} />
       <div style={{ display: 'flex', gap: '20px', marginBottom: '12px', flexWrap: 'wrap' }}>
         <label style={checkRow}>
           <input type="checkbox" checked={data.injuries_reported} onChange={e => setData('injuries_reported', e.target.checked)} />
@@ -794,7 +941,7 @@ function ReportIncidentForm({ url }: { url: string }) {
           allowMultiple
           maxFiles={10}
           maxFileSize="10MB"
-          acceptedFileTypes={['image/*']}
+          acceptedFileTypes={['image/jpeg', 'image/png', 'image/webp']}
           labelIdle='Drag &amp; Drop photos or <span class="filepond--label-action">Browse</span>'
           onupdatefiles={items => setData('evidence', items.map(i => i.file as File))}
         />
@@ -809,16 +956,109 @@ function ReportIncidentForm({ url }: { url: string }) {
   )
 }
 
+type IncidentReportRow = NonNullable<Props['incidents']>['reports'][number]
+
+function EditIncidentForm({ report }: { report: IncidentReportRow }) {
+  const [open, setOpen] = useState(false)
+  const initialItems: IncidentItem[] = (report.items && report.items.length > 0)
+    ? report.items.map(it => ({ type: it.type ?? 'other', severity: it.severity ?? 'minor', occurred_at: it.occurred_at_input ?? '' }))
+    : [{ type: report.incident_type, severity: report.severity, occurred_at: report.occurred_at_input ?? '' }]
+  const { data, setData, post, processing, errors, reset } = useForm<IncidentFormData>(
+    {
+      items: initialItems,
+      parties: (report.parties ?? []).map(p => ({ full_name: p.full_name, is_minor: p.is_minor })),
+      location_description: report.location_description ?? '',
+      description: report.description,
+      injuries_reported: report.injuries_reported,
+      authorities_notified: report.authorities_notified,
+      authority_report_number: report.authority_report_number ?? '',
+      evidence: [],
+    },
+  )
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    post(report.edit_url!, { forceFormData: true, onSuccess: () => { reset('evidence'); setOpen(false) } })
+  }
+
+  if (!open) {
+    return <button onClick={() => setOpen(true)} style={btnGhost}>Edit</button>
+  }
+
+  return (
+    <form onSubmit={submit} style={{ background: '#fff', border: `1px solid ${FIELD_BORDER}`, padding: '18px', marginTop: '12px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '14px', fontWeight: 600 }}>
+        Edit Incident {report.incident_number ?? ''} — every change is recorded
+      </div>
+      <IncidentItemsEditor items={data.items} onChange={items => setData('items', items)} errors={errors as Record<string, string>} />
+      <div style={{ marginBottom: '12px' }}>
+        <label style={incidentLabelStyle}>Location on the property (optional)</label>
+        <input value={data.location_description} onChange={e => setData('location_description', e.target.value)} maxLength={500} style={incidentInputStyle} />
+      </div>
+      <div style={{ marginBottom: '12px' }}>
+        <label style={incidentLabelStyle}>What happened *</label>
+        <textarea value={data.description} onChange={e => setData('description', e.target.value)} rows={3} maxLength={2000} required style={{ ...incidentInputStyle, resize: 'vertical' }} />
+        {errors.description && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.description}</div>}
+      </div>
+      <PartiesEditor parties={data.parties} onChange={parties => setData('parties', parties)} errors={errors as Record<string, string>} />
+      <div style={{ display: 'flex', gap: '20px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <label style={incidentCheckRow}>
+          <input type="checkbox" checked={data.injuries_reported} onChange={e => setData('injuries_reported', e.target.checked)} />
+          Injuries occurred
+        </label>
+        <label style={incidentCheckRow}>
+          <input type="checkbox" checked={data.authorities_notified} onChange={e => setData('authorities_notified', e.target.checked)} />
+          Authorities notified
+        </label>
+      </div>
+      {data.authorities_notified && (
+        <div style={{ marginBottom: '12px' }}>
+          <label style={incidentLabelStyle}>Authority report number (optional)</label>
+          <input value={data.authority_report_number} onChange={e => setData('authority_report_number', e.target.value)} maxLength={100} style={incidentInputStyle} />
+        </div>
+      )}
+      {report.photos.length > 0 && (
+        <div style={{ marginBottom: '16px' }}>
+          <label style={incidentLabelStyle}>Photos on file (permanent — cannot be removed)</label>
+          <PhotoThumbs photos={report.photos} size={72} />
+        </div>
+      )}
+      <div style={{ marginBottom: '16px' }}>
+        <label style={incidentLabelStyle}>Add more photos (optional, up to 10)</label>
+        <FilePondUploader
+          name="evidence"
+          allowMultiple
+          maxFiles={10}
+          maxFileSize="10MB"
+          acceptedFileTypes={['image/jpeg', 'image/png', 'image/webp']}
+          labelIdle='Drag &amp; Drop photos or <span class="filepond--label-action">Browse</span>'
+          onupdatefiles={items => setData('evidence', items.map(i => i.file as File))}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button type="submit" disabled={processing} style={{ ...btnAccent, opacity: processing ? 0.7 : 1, cursor: processing ? 'not-allowed' : 'pointer' }}>
+          {processing ? 'Saving…' : 'Save Changes'}
+        </button>
+        <button type="button" onClick={() => { reset(); setOpen(false) }} style={btnGhost}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+const incidentLabelStyle: React.CSSProperties = { display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: OLIVE, marginBottom: '5px' }
+const incidentInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: `1px solid ${FIELD_BORDER}`, fontFamily: 'var(--body)', fontSize: '15px', background: '#fff', boxSizing: 'border-box' }
+const incidentCheckRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--body)', fontSize: '14px', color: OLIVE }
+
 function IncidentsSection({ data }: { data: NonNullable<Props['incidents']> }) {
   return (
     <Section title="Safety Incidents">
       {data.reports.length > 0 ? (
         <div style={{ marginBottom: '14px' }}>
           {data.reports.map((r, i) => (
-            <div key={i} style={{ borderBottom: i < data.reports.length - 1 ? `1px solid ${DIVIDER}` : 'none', paddingBottom: '12px', marginBottom: '12px' }}>
+            <div key={r.id} style={{ borderBottom: i < data.reports.length - 1 ? `1px solid ${DIVIDER}` : 'none', paddingBottom: '12px', marginBottom: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' }}>
                 <div style={{ fontFamily: 'var(--body)', fontSize: '16px', fontWeight: 700, color: INK }}>
-                  {INCIDENT_TYPE_LABEL[r.incident_type] ?? r.incident_type}
+                  {incidentTitle(r.items, r.incident_type)}
                   <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.08em', textTransform: 'uppercase', color: TAN, marginLeft: '8px' }}>
                     {r.severity}{r.injuries_reported ? ' · injuries' : ''}
                   </span>
@@ -827,9 +1067,38 @@ function IncidentsSection({ data }: { data: NonNullable<Props['incidents']> }) {
                   {INCIDENT_STATUS_LABEL[r.status] ?? r.status}{r.occurred_at ? ` · ${r.occurred_at}` : ''}
                 </div>
               </div>
+              {r.incident_number && (
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.1em', color: ACCENT, marginTop: '3px' }}>{r.incident_number}</div>
+              )}
+              {(r.items?.length ?? 0) > 1 && (
+                <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  {r.items!.map((it, idx) => (
+                    <div key={idx} style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.04em', color: TAN }}>
+                      {INCIDENT_TYPE_LABEL[it.type ?? ''] ?? it.type} — {it.severity}{it.occurred_at ? ` · ${it.occurred_at}` : ''}
+                    </div>
+                  ))}
+                </div>
+              )}
               <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginTop: '4px' }}>{r.description}</div>
               {r.location_description && (
                 <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: TAN, marginTop: '2px' }}>Location: {r.location_description}</div>
+              )}
+              {(r.parties?.length ?? 0) > 0 && (
+                <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: TAN, marginTop: '2px' }}>
+                  Parties: {r.parties.map((p, idx) => (
+                    <span key={idx}>{idx > 0 ? ', ' : ''}{p.full_name}{p.is_minor ? ' (under 18)' : ''}</span>
+                  ))}
+                </div>
+              )}
+              {r.photos.length > 0 && (
+                <div style={{ marginTop: '8px' }}>
+                  <PhotoThumbs photos={r.photos} />
+                </div>
+              )}
+              {r.can_edit && (
+                <div style={{ marginTop: '10px' }}>
+                  <EditIncidentForm report={r} />
+                </div>
               )}
             </div>
           ))}

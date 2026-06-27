@@ -87,9 +87,9 @@ class ReportIncidentTest extends TestCase
     {
         $this->withSession(['auth.user_id' => $this->hunterId])
             ->post("/member/leases/{$this->leaseId}/incidents", [
-                'incident_type'        => 'wildlife_encounter',
-                'severity'             => 'serious',
-                'occurred_at'          => now()->subHours(3)->format('Y-m-d\TH:i'),
+                'items'                => [
+                    ['type' => 'wildlife_encounter', 'severity' => 'serious', 'occurred_at' => now()->subHours(3)->format('Y-m-d\TH:i')],
+                ],
                 'location_description' => 'Near the south food plot',
                 'description'          => 'Aggressive bear encountered while walking to the stand.',
                 'injuries_reported'    => true,
@@ -108,19 +108,140 @@ class ReportIncidentTest extends TestCase
         $this->assertCount(1, (array) $report->evidence_document_ids, 'the photo evidence should be attached');
     }
 
+    public function test_report_route_captures_involved_parties_with_a_minor_flag(): void
+    {
+        $this->withSession(['auth.user_id' => $this->hunterId])
+            ->post("/member/leases/{$this->leaseId}/incidents", [
+                'items'       => [
+                    ['type' => 'hunting_accident', 'severity' => 'serious', 'occurred_at' => now()->subHours(2)->format('Y-m-d\TH:i')],
+                ],
+                'description' => 'A youth hunter slipped climbing into the stand.',
+                'parties'     => [
+                    ['full_name' => 'Hank Hill', 'is_minor' => false],
+                    ['full_name' => 'Bobby Hill', 'is_minor' => true],
+                    ['full_name' => '', 'is_minor' => false],
+                ],
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $report = IncidentReport::where('lease_id', $this->leaseId)->firstOrFail();
+        // Nameless rows are dropped by the service; the minor flag is preserved.
+        $this->assertCount(2, (array) $report->parties_involved);
+        $this->assertSame('Bobby Hill', $report->parties_involved[1]['full_name']);
+        $this->assertTrue($report->parties_involved[1]['is_minor']);
+        $this->assertFalse($report->parties_involved[0]['is_minor']);
+    }
+
     public function test_landowner_party_may_also_report(): void
     {
         $this->withSession(['auth.user_id' => $this->landownerId])
             ->post("/member/leases/{$this->leaseId}/incidents", [
-                'incident_type' => 'trespassing',
-                'severity'      => 'moderate',
-                'occurred_at'   => now()->subDay()->format('Y-m-d\TH:i'),
-                'description'   => 'Found a deer stand that is not ours on the property.',
+                'items'       => [
+                    ['type' => 'trespassing', 'severity' => 'moderate', 'occurred_at' => now()->subDay()->format('Y-m-d\TH:i')],
+                ],
+                'description' => 'Found a deer stand that is not ours on the property.',
             ])
             ->assertRedirect()
             ->assertSessionHas('success');
 
         $this->assertSame($this->landownerId, IncidentReport::where('lease_id', $this->leaseId)->value('reporter_user_id'));
+    }
+
+    public function test_reporter_can_edit_their_incident_and_the_change_is_audited(): void
+    {
+        $this->withSession(['auth.user_id' => $this->hunterId])
+            ->post("/member/leases/{$this->leaseId}/incidents", [
+                'items'       => [
+                    ['type' => 'trespassing', 'severity' => 'minor', 'occurred_at' => now()->subDay()->format('Y-m-d\TH:i')],
+                ],
+                'description' => 'Saw a vehicle I did not recognise.',
+                'evidence'    => [UploadedFile::fake()->image('first.jpg', 400, 300)],
+            ])->assertRedirect();
+
+        $report  = IncidentReport::where('lease_id', $this->leaseId)->firstOrFail();
+        $firstId = ((array) $report->evidence_document_ids)[0];
+        $when    = $report->occurred_at->format('Y-m-d\TH:i');
+
+        // The reporter corrects it to TWO line items — a property-damage and a medical issue.
+        $this->withSession(['auth.user_id' => $this->hunterId])
+            ->post("/member/leases/{$this->leaseId}/incidents/{$report->id}", [
+                'items'       => [
+                    ['type' => 'property_damage', 'severity' => 'serious', 'occurred_at' => $when],
+                    ['type' => 'medical', 'severity' => 'moderate', 'occurred_at' => $when],
+                ],
+                'description' => 'Correction: the gate lock was cut and a hunter was injured.',
+                'evidence'    => [UploadedFile::fake()->image('second.jpg', 400, 300)],
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $report->refresh();
+        $this->assertSame('property_damage', $report->incident_type);
+        $this->assertSame('serious', $report->severity);
+        $this->assertCount(2, (array) $report->incident_items);
+        // Append-only evidence: the original photo is kept and the new one added.
+        $evidence = (array) $report->evidence_document_ids;
+        $this->assertCount(2, $evidence);
+        $this->assertContains($firstId, $evidence);
+
+        $audit = DB::connection('audit')->table('audit_log')
+            ->where('table_name', 'incident_reports')
+            ->where('record_id', $report->id)
+            ->where('event_type', 'incident_report.updated')
+            ->first();
+        $this->assertNotNull($audit, 'a member edit must be audited');
+        $this->assertSame($this->hunterId, $audit->user_id, 'the edit must be attributed to the reporter');
+    }
+
+    public function test_other_party_cannot_edit_someone_elses_incident(): void
+    {
+        $this->withSession(['auth.user_id' => $this->hunterId])
+            ->post("/member/leases/{$this->leaseId}/incidents", [
+                'items'       => [
+                    ['type' => 'trespassing', 'severity' => 'minor', 'occurred_at' => now()->subDay()->format('Y-m-d\TH:i')],
+                ],
+                'description' => 'Hunter-filed incident.',
+            ])->assertRedirect();
+
+        $report = IncidentReport::where('lease_id', $this->leaseId)->firstOrFail();
+
+        // The landowner is a lease party but not the reporter — the edit 404s.
+        $this->withSession(['auth.user_id' => $this->landownerId])
+            ->post("/member/leases/{$this->leaseId}/incidents/{$report->id}", [
+                'items'       => [
+                    ['type' => 'other', 'severity' => 'critical', 'occurred_at' => $report->occurred_at->format('Y-m-d\TH:i')],
+                ],
+                'description' => 'Trying to rewrite the hunter report.',
+            ])
+            ->assertNotFound();
+
+        $this->assertSame('trespassing', $report->refresh()->incident_type);
+    }
+
+    public function test_a_resolved_incident_can_no_longer_be_edited(): void
+    {
+        $this->withSession(['auth.user_id' => $this->hunterId])
+            ->post("/member/leases/{$this->leaseId}/incidents", [
+                'items'       => [
+                    ['type' => 'trespassing', 'severity' => 'minor', 'occurred_at' => now()->subDay()->format('Y-m-d\TH:i')],
+                ],
+                'description' => 'Will be resolved.',
+            ])->assertRedirect();
+
+        $report = IncidentReport::where('lease_id', $this->leaseId)->firstOrFail();
+        DB::connection('incidents')->table('incident_reports')->where('id', $report->id)->update(['status' => 'resolved']);
+
+        $this->withSession(['auth.user_id' => $this->hunterId])
+            ->post("/member/leases/{$this->leaseId}/incidents/{$report->id}", [
+                'items'       => [
+                    ['type' => 'property_damage', 'severity' => 'serious', 'occurred_at' => $report->occurred_at->format('Y-m-d\TH:i')],
+                ],
+                'description' => 'Too late to edit.',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame('trespassing', $report->refresh()->incident_type);
     }
 
     public function test_report_route_rejects_a_non_party(): void
@@ -133,10 +254,10 @@ class ReportIncidentTest extends TestCase
 
         $this->withSession(['auth.user_id' => $strangerId])
             ->post("/member/leases/{$this->leaseId}/incidents", [
-                'incident_type' => 'other',
-                'severity'      => 'minor',
-                'occurred_at'   => now()->subDay()->format('Y-m-d\TH:i'),
-                'description'   => 'Not my lease.',
+                'items'       => [
+                    ['type' => 'other', 'severity' => 'minor', 'occurred_at' => now()->subDay()->format('Y-m-d\TH:i')],
+                ],
+                'description' => 'Not my lease.',
             ])
             ->assertNotFound();
 
