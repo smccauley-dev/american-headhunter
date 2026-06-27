@@ -77,7 +77,26 @@ for anything that fails.
 
 ### Slice 1 verification log
 
-_(appended as steps run)_
+**2026-06-27 — automatable checks (container, test mode): all green.**
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Config loads | ✓ `key`/`secret`/`webhook_secret`/`connect_client_id` present (pk_test, sk_test, whsec) |
+| 2 | Live API connectivity | ✓ authenticated as `acct_1TjfAsAmDFq96cgK` (US); `Product::all` → 5 products (plans synced to test mode) |
+| 3 | Create paths | ✓ `createDepositCheckoutSession` minted `cs_test_…` with hosted URL; `hunter_pro` → `prod_Uji5SWEkn9df4q` (subscription price available) |
+| 4 | Webhook signature | ✓ valid signature accepted (`ping`); tampered signature rejected (`SignatureVerificationException`) |
+
+**Flag:** platform account `charges_enabled=false` — expected in test mode (no activation needed), but must be resolved before go-live.
+
+**Remaining — human-in-the-loop (needs Stripe CLI `stripe listen` + browser test card `4242…`):**
+- [ ] 5. Webhook delivery round-trip → `priority` queue (queue worker running + `stripe listen --forward-to <app>/api/webhooks/stripe`)
+- [ ] 6. Subscription Checkout completion → subscription written + plan version locked → entitlement flips
+- [ ] 7. Dunning (`stripe trigger invoice.payment_failed` → `past_due`)
+- [ ] 8. Connect onboarding round-trip (`account.updated` → `payouts_enabled`)
+- [ ] 9. Refund → `charge.refunded` → projection `refund_status`
+- [ ] 10. Promo auto-apply (Founding Landowner on signup, Honeymoon on first listing)
+
+Handoff commands for the manual steps are in the status report; these gate the Phase 5 Milestone but not Slice 1.5.
 
 ---
 
