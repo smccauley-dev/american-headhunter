@@ -462,6 +462,15 @@ interface Membership {
   renews_at: string | null
   trial_ends_at: string | null
   cancelled_at: string | null
+  discount: {
+    label: string
+    duration_label: string
+    is_recurring: boolean
+    ends_at: string | null
+    list_price: string
+    net_price: string
+    interval: 'monthly' | 'annual'
+  } | null
 }
 
 interface InvoiceItem {
@@ -1699,8 +1708,21 @@ function MembershipTab({ membership, checkout, billing, invoices }: { membership
 
   const renewLabel = membership.source === 'promotion' ? 'Promo Ends' : 'Renews'
 
-  const cells = [
-    { label: 'Price', value: priceLabel },
+  // A recurring discount changes the real billed price — show the net with the
+  // list struck through. A one-time discount leaves the recurring price as-is.
+  const discount = membership.discount
+  const intervalSuffix = (discount?.interval === 'annual' || membership.billing_interval === 'annual') ? '/yr' : '/mo'
+  const priceValue: React.ReactNode = !membership.is_free && discount && discount.is_recurring
+    ? (
+        <span>
+          <span style={{ textDecoration: 'line-through', color: '#a89874', marginRight: '6px', fontSize: '12px' }}>${discount.list_price}</span>
+          ${discount.net_price}{intervalSuffix}
+        </span>
+      )
+    : priceLabel
+
+  const cells: { label: string; value: React.ReactNode }[] = [
+    { label: 'Price', value: priceValue },
     { label: 'Billing', value: membership.status_label },
     { label: renewLabel, value: membership.renews_at ?? '—' },
   ]
@@ -1719,7 +1741,7 @@ function MembershipTab({ membership, checkout, billing, invoices }: { membership
       )}
       {billing === 'updated' && (
         <div style={{ padding: '12px 16px', background: 'rgba(74,124,89,0.12)', border: '1px solid rgba(74,124,89,0.4)', fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', letterSpacing: '.04em', color: '#3f6b4d' }}>
-          Payment method updated — we&apos;re retrying your payment. This page will reflect the new status shortly.
+          Payment method updated — your new card is on file. If a payment was past due, we&apos;re retrying it now.
         </div>
       )}
       {billing === 'cancel' && (
@@ -1763,6 +1785,17 @@ function MembershipTab({ membership, checkout, billing, invoices }: { membership
           ))}
         </div>
 
+        {discount && (
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', padding: '8px 18px', background: 'rgba(74,124,89,0.08)', borderTop: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: '#3f6b4d' }}>
+            <span style={{ fontWeight: 700 }}>{discount.label}</span>
+            <span style={{ color: '#7a8a72' }}>
+              {discount.is_recurring
+                ? `applied ${discount.duration_label}${discount.ends_at ? ` · through ${discount.ends_at}` : ''}`
+                : 'applied to your first payment'}
+            </span>
+          </div>
+        )}
+
         {membership.status === 'trialing' && membership.trial_ends_at && (
           <div style={{ padding: '8px 18px', background: 'rgba(184,147,74,0.1)', borderTop: '1px solid #e5ddd0', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', color: '#9a7b2e' }}>
             Trial ends {membership.trial_ends_at}.
@@ -1792,7 +1825,7 @@ function MembershipTab({ membership, checkout, billing, invoices }: { membership
         )}
 
         {/* Actions */}
-        <div style={{ display: 'flex', gap: '8px', padding: '14px 18px', borderTop: '1px solid #e5ddd0' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '14px 18px', borderTop: '1px solid #e5ddd0' }}>
           <a
             href="/pricing"
             style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: membership.is_free ? 'var(--ah-accent)' : 'var(--ah-ink)', color: membership.is_free ? '#fff' : '#F4ECDC', textDecoration: 'none' }}
@@ -1806,25 +1839,37 @@ function MembershipTab({ membership, checkout, billing, invoices }: { membership
             Compare Plans
           </a>
           {canManage && (
-            scheduledToCancel ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginLeft: 'auto' }}>
+              {/* Always available so a member can swap cards before a renewal —
+                  resuming/unpausing then charges the new card, not a stale one. */}
               <button
                 type="button"
-                onClick={resumeMembership}
+                onClick={updatePayment}
                 disabled={busy}
-                style={{ marginLeft: 'auto', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: '#3f6b4d', border: '1px solid rgba(74,124,89,0.5)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 }}
+                style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: 'var(--ah-ink)', border: '1px solid #d4c9b0', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 }}
               >
-                {busy ? 'Working…' : 'Resume Membership'}
+                {busy ? 'Working…' : 'Update Payment Method'}
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={cancelMembership}
-                disabled={busy}
-                style={{ marginLeft: 'auto', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: '#b03a2e', border: '1px solid rgba(176,58,46,0.4)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 }}
-              >
-                {busy ? 'Working…' : 'Cancel Membership'}
-              </button>
-            )
+              {scheduledToCancel ? (
+                <button
+                  type="button"
+                  onClick={resumeMembership}
+                  disabled={busy}
+                  style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: '#3f6b4d', border: '1px solid rgba(74,124,89,0.5)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 }}
+                >
+                  {busy ? 'Working…' : 'Resume Membership'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={cancelMembership}
+                  disabled={busy}
+                  style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 22px', background: 'transparent', color: '#b03a2e', border: '1px solid rgba(176,58,46,0.4)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 }}
+                >
+                  {busy ? 'Working…' : 'Cancel Membership'}
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
