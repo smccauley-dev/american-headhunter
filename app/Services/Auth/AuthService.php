@@ -42,6 +42,15 @@ class AuthService extends BaseService
             return null;
         }
 
+        // A billing pause (a 'pause_account' promo lapsed) blocks portal access
+        // until the user starts a paid subscription, which reactivates them. The
+        // reactivation entry point is the link in the expiry email, not the login
+        // form, so login is refused here like the moderation states above.
+        if ($user->status === 'paused') {
+            $this->recordFailedAttempt($user, 'account_paused', $request);
+            return null;
+        }
+
         if ($user->isLocked()) {
             $this->recordFailedAttempt($user, 'account_locked', $request);
             return null;

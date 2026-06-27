@@ -26,6 +26,7 @@ class BillingService
         private readonly SubscriptionService $subscriptions,
         private readonly EntitlementService $entitlements,
         private readonly AuditService $audit,
+        private readonly PromotionExpirationService $promotionExpiration,
     ) {}
 
     /**
@@ -39,7 +40,13 @@ class BillingService
     {
         $version = $this->subscriptions->currentVersionForPlan($planKey);
 
-        return $this->subscriptions->start($user->id, $version->id, $opts);
+        $sub = $this->subscriptions->start($user->id, $version->id, $opts);
+
+        // A member who was paused when a pause_account promo expired regains access
+        // the moment they start paying again.
+        $this->promotionExpiration->reactivate($user);
+
+        return $sub;
     }
 
     /**

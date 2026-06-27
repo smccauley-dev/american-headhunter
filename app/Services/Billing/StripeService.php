@@ -219,6 +219,30 @@ class StripeService
     }
 
     /**
+     * Create a Stripe subscription directly via the API (no hosted Checkout),
+     * charging the customer's existing default payment method. Used when a free
+     * promotional period whose on_expiration is 'auto_charge' lapses and the
+     * member is converted to a paid subscription at the granted tier's price.
+     *
+     * payment_behavior 'error_if_incomplete' makes Stripe throw synchronously when
+     * the customer has no usable payment method or the first charge fails, so the
+     * caller can fall back to a free downgrade instead of leaving a dangling
+     * incomplete subscription. The locked plan_version_id rides in metadata so the
+     * reconciling webhook records it verbatim.
+     *
+     * @param array<string,string> $metadata
+     */
+    public function createSubscription(string $customerId, string $priceId, array $metadata = []): StripeSubscription
+    {
+        return StripeSubscription::create([
+            'customer'         => $customerId,
+            'items'            => [['price' => $priceId]],
+            'payment_behavior' => 'error_if_incomplete',
+            'metadata'         => $metadata,
+        ]);
+    }
+
+    /**
      * Schedule a subscription to cancel at the end of the current paid period
      * (the member keeps access through what they've already paid for). Stripe
      * then fires customer.subscription.updated now and .deleted at period end.

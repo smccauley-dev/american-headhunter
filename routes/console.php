@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\Billing\ExpirePromotionClaims;
 use App\Jobs\Billing\ReconcileStripeInvoices;
 use App\Jobs\Billing\ReleaseEndedLeaseDeposits;
 use App\Jobs\Documents\CleanupStagedUploads;
@@ -43,6 +44,11 @@ Schedule::job(new ReconcileStripeInvoices)->dailyAt('04:00');
 // admin action. Normal endings only — terminated/cancelled leases are left for an
 // admin. Runs at 05:00 daily, after the invoice reconcile.
 Schedule::job(new ReleaseEndedLeaseDeposits)->dailyAt('05:00');
+
+// Send promotion-ending reminders (30/7/1 day) and process expired promo claims —
+// each per its on_expiration mode (downgrade to free / auto-charge to paid / pause).
+// Runs at 06:00 daily, after the deposit release.
+Schedule::job(new ExpirePromotionClaims)->dailyAt('06:00');
 
 // Recompute the platform analytics rollups (DB 8) that feed the admin dashboard
 // and public homepage stats. Hourly; the dashboard "Refresh now" button runs the

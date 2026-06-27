@@ -197,6 +197,23 @@ The one missing 5.4 piece.
 - Schedule in `routes/console.php` alongside the 04:00 jobs.
 - Tests: expiry→downgrade, expiry→paid, warning-window dispatch, idempotency.
 
+### Delivered (2026-06-27, commits on `feature/phase5-stripe-completion`)
+
+All three `on_expiration` modes built (decision: "build all three now"):
+
+| Mode | Behaviour at expiry |
+|---|---|
+| `downgrade_free` | Claim → `expired`, unlinked from any subscription, member reverts to free tier. |
+| `auto_charge` | Real Stripe paid subscription created at the granted tier's live `stripe_monthly_price_id` (`StripeService::createSubscription`), local subscription started, claim → `converted`. No usable payment method / no synced price → falls back to a free downgrade (`auto_charge_failed`), never left mid-conversion. An already-paying member's discount simply ends. |
+| `pause_account` | New `users.status = 'paused'` (identity migration + CHECK); `AuthService` blocks paused login like `suspended`. Never overrides a moderation state. |
+
+- `App\Services\Billing\PromotionExpirationService` — `expire()` branches on the mode; `reactivate()` lifts a pause when the member starts paying, wired into **`BillingService::subscribe`** and the **`checkout.session.completed`** webhook path.
+- `App\Jobs\Billing\ExpirePromotionClaims` — `default` queue; reminder pass (30/7/1d, guarded by `reminder_*_sent_at`, nearer window backfills further ones so copy is never out of order) sending `PromotionExpiringMail`; expiry pass delegating to the service. Per-claim try/catch. Scheduled daily at 06:00.
+- `PromotionExpiringMail` (`TemplatedMailable`, key `billing.promotion_expiring`) + markdown fallback view; window copy reflects the expiry mode.
+- Tests: `tests/Feature/Billing/PromotionExpirationServiceTest.php` (12 green) — all three modes, auto-charge fallback paths, reactivate, reminder dispatch + idempotency.
+
+**Follow-up (not in this slice):** a paused member is bounced from `/member` + login, so a **self-service reactivation UX** (a billing-only page reachable while paused that runs `subscribe` → `reactivate`) is still needed for the `pause_account` mode to be end-to-end usable. The billing-layer reactivation is in place and tested.
+
 ---
 
 ## Slice 3 — Tax & 1099 (5.5)

@@ -1,0 +1,31 @@
+feat(billing): Phase 5.4 Slice 2 — promotion expiry (all three modes)
+
+Daily ExpirePromotionClaims job: 30/7/1-day reminder emails (idempotent,
+guarded by reminder_*_sent_at) + expiry processing that branches on each
+promo's on_expiration mode.
+
+- downgrade_free: claim expired, unlinked from subscription, revert to free.
+- auto_charge: real Stripe paid subscription at the granted tier's live price
+  (StripeService::createSubscription); claim -> converted. No payment method
+  or unsynced price falls back to a free downgrade rather than leaving the
+  member mid-conversion.
+- pause_account: new users.status 'paused' (identity migration + CHECK);
+  AuthService blocks paused login like suspended; never overrides a moderation
+  state.
+
+PromotionExpirationService::reactivate() lifts a pause when the member starts
+paying again, wired into BillingService::subscribe and the
+checkout.session.completed webhook path.
+
+PromotionExpiringMail (TemplatedMailable) renders all three windows; copy
+reflects the expiry mode. Scheduled daily at 06:00.
+
+Tests: PromotionExpirationServiceTest (12 green) — all modes, auto-charge
+fallback paths, reactivate, reminder dispatch + idempotency. Billing/webhook/
+auth suites green (48).
+
+Follow-up: paused members are bounced from /member + login, so a self-service
+reactivation UX is still needed for pause_account to be end-to-end usable; the
+billing-layer reactivation is in place and tested.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

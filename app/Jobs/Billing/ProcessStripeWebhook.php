@@ -159,6 +159,12 @@ class ProcessStripeWebhook implements ShouldQueue
                 'status'                 => 'active',
             ], $periodOpts));
             $created = true;
+
+            // Lift a billing pause (pause_account promo expiry) now that the member
+            // is paying again. A reactivation failure must not fail the webhook.
+            if ($user = User::find($userId)) {
+                app(\App\Services\Billing\PromotionExpirationService::class)->reactivate($user);
+            }
         } catch (\RuntimeException $e) {
             // start() throws if the user already holds an active subscription —
             // treat as already-reconciled rather than failing the webhook.
