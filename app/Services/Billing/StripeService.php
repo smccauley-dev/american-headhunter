@@ -683,6 +683,8 @@ class StripeService
     {
         return Session::create([
             'mode'              => 'setup',
+            // Stripe requires a currency for setup-mode Checkout sessions.
+            'currency'          => 'usd',
             'customer'          => $this->getOrCreateCustomer($user),
             'success_url'       => $successUrl,
             'cancel_url'        => $cancelUrl,
