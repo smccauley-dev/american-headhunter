@@ -11,6 +11,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
+use Filament\Support\Colors\Color;
 
 class PropertyInfolistV2
 {
@@ -24,7 +25,11 @@ class PropertyInfolistV2
                     Tab::make('General Info')
                         ->icon('heroicon-o-information-circle')
                         ->schema([
-                            Section::make()
+                            Section::make('General Info')
+                                ->icon('heroicon-o-information-circle')
+                                ->iconColor(Color::hex('#c84c21'))
+                                ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                                ->description('Name, location, size, and current listing status.')
                                 ->columns(2)
                                 ->schema([
                                     TextEntry::make('title')
@@ -69,7 +74,11 @@ class PropertyInfolistV2
                     Tab::make('Game Type')
                         ->icon('heroicon-o-trophy')
                         ->schema([
-                            Section::make()
+                            Section::make('Game Types')
+                                ->icon('heroicon-o-trophy')
+                                ->iconColor(Color::hex('#c84c21'))
+                                ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                                ->description('The huntable species offered on this property.')
                                 ->schema([
                                     RepeatableEntry::make('species')
                                         ->columns(2)
@@ -89,7 +98,11 @@ class PropertyInfolistV2
                     Tab::make('Property Rules')
                         ->icon('heroicon-o-clipboard-document-list')
                         ->schema([
-                            Section::make()
+                            Section::make('Property Rules')
+                                ->icon('heroicon-o-clipboard-document-list')
+                                ->iconColor(Color::hex('#c84c21'))
+                                ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                                ->description('Rules every hunter must follow on this property.')
                                 ->schema([
                                     RepeatableEntry::make('rules')
                                         ->schema([
@@ -109,7 +122,11 @@ class PropertyInfolistV2
                     Tab::make('Listings')
                         ->icon('heroicon-o-tag')
                         ->schema([
-                            Section::make()
+                            Section::make('Listings')
+                                ->icon('heroicon-o-tag')
+                                ->iconColor(Color::hex('#c84c21'))
+                                ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                                ->description('The lease and day-hunt offerings published for this property.')
                                 ->schema([
                                     RepeatableEntry::make('listings')
                                         ->columns(2)
@@ -213,6 +230,13 @@ class PropertyInfolistV2
             )
             ->all();
 
-        return [Grid::make(2)->schema($sections)];
+        return [
+            Section::make('Amenities')
+                ->icon('heroicon-o-sparkles')
+                ->iconColor(Color::hex('#c84c21'))
+                ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                ->description('Features and facilities available on the property, grouped by category.')
+                ->schema([Grid::make(2)->schema($sections)]),
+        ];
     }
 }

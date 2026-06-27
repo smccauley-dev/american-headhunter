@@ -134,6 +134,36 @@ class EmailTemplateSeeder extends Seeder
                 This message was sent because you have an active application on {platform_name}. Application ID: {application_ref}
                 TEXT,
         );
+
+        $this->seed(
+            key: 'property.ownership_status',
+            name: 'Property Ownership Review Status',
+            subject: 'Proof of ownership {status_label}: {property_title}',
+            htmlBody: $this->layout(<<<'HTML'
+                <p>Hi {recipient_name},</p>
+                <p>Here's an update on the proof of ownership you submitted for <strong>{property_title}</strong>.</p>
+                <p style="margin: 0 0 20px;">
+                    <span style="display: inline-block; background: #f5f0eb; border-left: 3px solid #C5392A; padding: 6px 14px; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase; font-size: 13px;">{status_label}</span>
+                </p>
+                <p>{status_message}</p>
+                <p><a href="{property_url}" class="button">View Property Status</a></p>
+                <p style="font-size: 13px; color: #7a6552;">You're receiving this because you submitted proof of ownership on {platform_name}. Questions? Contact us at {support_email}.</p>
+                HTML),
+            textBody: <<<'TEXT'
+                Hi {recipient_name},
+
+                Here's an update on the proof of ownership you submitted for {property_title}.
+
+                STATUS: {status_label}
+
+                {status_message}
+
+                View your property status:
+                {property_url}
+
+                You're receiving this because you submitted proof of ownership on {platform_name}. Questions? Contact us at {support_email}.
+                TEXT,
+        );
     }
 
     private function seed(string $key, string $name, string $subject, ?string $htmlBody, ?string $textBody): void

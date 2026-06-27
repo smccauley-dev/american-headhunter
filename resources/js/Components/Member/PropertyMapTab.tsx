@@ -2,7 +2,7 @@ import { useForm, router } from '@inertiajs/react'
 import { useRef, useState } from 'react'
 import FilePondUploader from '../FilePondUploader'
 import {
-  Section, INK, ACCENT, TAN,
+  Section, MapIcon, INK, ACCENT, TAN,
   Modal, UploadIcon,
   fieldLabel as label, fieldInput as input,
   toolbarBtn as ghostBtn, toolbarInkBtn as inkBtn, toolbarDangerBtn as dangerBtn,
@@ -251,7 +251,7 @@ export default function PropertyMapTab({ propertyId, images, deletedImages, mark
   const boundaryDescription = 'The boundary map is shown on the public listing (without markers). Add markers for amenities, game locations, stands, and other points of interest — markers are admin/member only.'
 
   return (
-    <Section title="Boundary Map" description={boundaryDescription} action={uploadAction}>
+    <Section title="Boundary Map" icon={<MapIcon />} description={boundaryDescription} action={uploadAction}>
       {images.length === 0 && deletedImages.length === 0 ? (
         <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: 0 }}>
           No map images yet. Use <strong>Upload Map Images</strong> above — the first upload becomes the boundary map.

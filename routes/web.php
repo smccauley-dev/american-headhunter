@@ -18,6 +18,7 @@ use App\Http\Controllers\Member\PropertyListingController as MemberPropertyListi
 use App\Http\Controllers\Member\PropertyManagerController as MemberPropertyManagerController;
 use App\Http\Controllers\Member\PropertyPhotoController as MemberPropertyPhotoController;
 use App\Http\Controllers\Member\PropertyMapController as MemberPropertyMapController;
+use App\Http\Controllers\Member\PropertyOwnershipController as MemberPropertyOwnershipController;
 use App\Http\Controllers\Member\PropertyContactController as MemberPropertyContactController;
 use App\Http\Controllers\Api\MentionController;
 use App\Http\Controllers\Member\SecurityController;
@@ -217,6 +218,14 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/properties',           [MemberPropertyController::class, 'store'])->name('properties.store');
     Route::get('/properties/{property}', [MemberPropertyController::class, 'edit'])->name('properties.edit');
     Route::put('/properties/{property}', [MemberPropertyController::class, 'update'])->name('properties.update');
+
+    // Proof of ownership / management — gates the property going Active. The /temp
+    // routes (FilePond instant-upload + revert) are declared before the document
+    // serve route so neither captures the other.
+    Route::post('/properties/{property}/ownership/temp',                  [MemberPropertyOwnershipController::class, 'tempStore'])->name('properties.ownership.temp.store')->middleware('throttle:60,1');
+    Route::delete('/properties/{property}/ownership/temp',                [MemberPropertyOwnershipController::class, 'tempRevert'])->name('properties.ownership.temp.revert')->middleware('throttle:60,1');
+    Route::post('/properties/{property}/ownership',                       [MemberPropertyOwnershipController::class, 'store'])->name('properties.ownership.store')->middleware('throttle:20,1');
+    Route::get('/properties/{property}/ownership/documents/{documentId}', [MemberPropertyOwnershipController::class, 'serveDocument'])->name('properties.ownership.document');
 
     // Property details (game types, rules, amenities) nested under a property.
     Route::get('/properties/{property}/details', [MemberPropertyDetailController::class, 'edit'])->name('properties.details.edit');

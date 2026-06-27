@@ -4,6 +4,7 @@ namespace App\Filament\Admin\Resources\Properties\Schemas;
 
 use App\Models\Property\PropertyAmenity;
 use App\Models\Property\PropertyManager;
+use App\Models\Property\PropertyOwnershipVerification;
 use App\Models\Property\PropertyPhoto;
 use App\Services\Property\PropertyMapService;
 use App\Services\Property\PropertyService;
@@ -26,6 +27,7 @@ use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Alignment;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
@@ -749,6 +751,262 @@ class PropertyFormV2
             ]);
     }
 
+    // ── Ownership proof (proof-of-ownership / management review) ─────────────────
+
+    /** The open (submitted or under-review) proof-of-ownership submission for a property, if any. */
+    private static function pendingVerificationFor($record): ?PropertyOwnershipVerification
+    {
+        if (! $record?->id) {
+            return null;
+        }
+
+        return PropertyOwnershipVerification::on('property')
+            ->where('property_id', $record->id)
+            ->whereIn('status', PropertyService::OPEN_OWNERSHIP_STATUSES)
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')
+            ->first();
+    }
+
+    /** The latest non-deleted submission for a property regardless of status — notes attach to it. */
+    private static function latestVerificationFor($record): ?PropertyOwnershipVerification
+    {
+        if (! $record?->id) {
+            return null;
+        }
+
+        return PropertyOwnershipVerification::on('property')
+            ->where('property_id', $record->id)
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')
+            ->first();
+    }
+
+    private static function approveOwnershipAction(): Action
+    {
+        return Action::make('approve_ownership')
+            ->label('Approve')
+            ->icon('heroicon-o-check')
+            ->color('success')
+            ->visible(fn ($record) => \App\Support\AdminAuth::canManageProperties() && self::pendingVerificationFor($record) !== null)
+            ->requiresConfirmation()
+            ->modalHeading('Approve Proof of Ownership')
+            ->modalDescription('Confirms this landowner owns or manages the property. The property can then be set Active and appear publicly.')
+            ->modalSubmitActionLabel('Approve')
+            ->action(function ($record): void {
+                abort_unless(\App\Support\AdminAuth::canManageProperties(), 403);
+
+                $v = self::pendingVerificationFor($record);
+                if (! $v) {
+                    Notification::make()->title('No pending submission to approve.')->warning()->send();
+                    return;
+                }
+
+                try {
+                    app(PropertyService::class)->approveOwnershipVerification($v->id, auth()->id());
+                } catch (\Throwable $e) {
+                    report($e);
+                    Notification::make()->title('Approval failed')->danger()->send();
+                    return;
+                }
+
+                Notification::make()->title('Ownership approved')->success()->send();
+            });
+    }
+
+    private static function rejectOwnershipAction(): Action
+    {
+        return Action::make('reject_ownership')
+            ->label('Reject')
+            ->icon('heroicon-o-x-mark')
+            ->color('danger')
+            ->visible(fn ($record) => \App\Support\AdminAuth::canManageProperties() && self::pendingVerificationFor($record) !== null)
+            ->modalHeading('Reject Proof of Ownership')
+            ->modalDescription('The property stays a private draft. Your reason is shown to the landowner so they can resubmit.')
+            ->modalSubmitActionLabel('Reject')
+            ->form([
+                Textarea::make('notes')
+                    ->label('Reason for Rejection')
+                    ->required()
+                    ->maxLength(1000)
+                    ->helperText('Shown to the landowner — explain what is missing or unclear.'),
+            ])
+            ->action(function (array $data, $record): void {
+                abort_unless(\App\Support\AdminAuth::canManageProperties(), 403);
+
+                $v = self::pendingVerificationFor($record);
+                if (! $v) {
+                    Notification::make()->title('No pending submission to reject.')->warning()->send();
+                    return;
+                }
+
+                try {
+                    app(PropertyService::class)->rejectOwnershipVerification($v->id, auth()->id(), $data['notes']);
+                } catch (\Throwable $e) {
+                    report($e);
+                    Notification::make()->title('Rejection failed')->danger()->send();
+                    return;
+                }
+
+                Notification::make()->title('Ownership rejected')->warning()->send();
+            });
+    }
+
+    private static function markUnderReviewAction(): Action
+    {
+        return Action::make('mark_ownership_under_review')
+            ->label('Mark Under Review')
+            ->icon('heroicon-o-clock')
+            ->color('warning')
+            ->visible(fn ($record) => \App\Support\AdminAuth::canManageProperties()
+                && self::pendingVerificationFor($record)?->status === 'submitted')
+            ->requiresConfirmation()
+            ->modalHeading('Mark Proof Under Review')
+            ->modalDescription('Flags this submission as actively under staff review. The landowner sees it is being looked at; no decision is recorded yet.')
+            ->modalSubmitActionLabel('Mark Under Review')
+            ->action(function ($record): void {
+                abort_unless(\App\Support\AdminAuth::canManageProperties(), 403);
+
+                $v = self::pendingVerificationFor($record);
+                if (! $v || $v->status !== 'submitted') {
+                    Notification::make()->title('No new submission to review.')->warning()->send();
+                    return;
+                }
+
+                try {
+                    app(PropertyService::class)->markOwnershipUnderReview($v->id, auth()->id());
+                } catch (\Throwable $e) {
+                    report($e);
+                    Notification::make()->title('Could not update status')->danger()->send();
+                    return;
+                }
+
+                Notification::make()->title('Marked under review')->success()->send();
+            });
+    }
+
+    private static function addOwnershipNoteAction(): Action
+    {
+        return Action::make('add_ownership_note')
+            ->label('Add Note')
+            ->icon('heroicon-o-chat-bubble-left-ellipsis')
+            ->color('gray')
+            ->visible(fn ($record) => \App\Support\AdminAuth::canManageProperties()
+                && self::latestVerificationFor($record) !== null)
+            ->modalHeading('Add Internal Review Note')
+            ->modalDescription('Staff-only — record a question or observation about the documents. Date-time and author stamped. Never shown to the landowner.')
+            ->modalSubmitActionLabel('Save Note')
+            ->form([
+                Textarea::make('note')
+                    ->label('Note')
+                    ->required()
+                    ->maxLength(2000)
+                    ->rows(4),
+            ])
+            ->action(function (array $data, $record): void {
+                abort_unless(\App\Support\AdminAuth::canManageProperties(), 403);
+
+                $v = self::latestVerificationFor($record);
+                if (! $v) {
+                    Notification::make()->title('Nothing to note — no submission yet.')->warning()->send();
+                    return;
+                }
+
+                try {
+                    app(PropertyService::class)->addOwnershipReviewNote(
+                        $record->id, $v->id, auth()->id(), trim($data['note']),
+                    );
+                } catch (\Throwable $e) {
+                    report($e);
+                    Notification::make()->title('Could not save note')->danger()->send();
+                    return;
+                }
+
+                Notification::make()->title('Note added')->success()->send();
+            });
+    }
+
+    private static function renderOwnershipHtml($record): HtmlString
+    {
+        if (! $record?->id) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;">Save the property first to review proof of ownership.</p>'
+            );
+        }
+
+        try {
+            $v = PropertyOwnershipVerification::on('property_read')
+                ->where('property_id', $record->id)
+                ->whereNull('deleted_at')
+                ->orderByDesc('created_at')
+                ->first();
+        } catch (\Throwable $e) {
+            report($e);
+            return new HtmlString('<p style="color:#6b7280;font-size:0.875rem;">Unavailable.</p>');
+        }
+
+        if (! $v) {
+            return new HtmlString(
+                view('filament.admin.properties.ownership-detail', [
+                    'verification' => null,
+                ])->render()
+            );
+        }
+
+        // Resolve the submitted proof documents (DB 11) into gallery items.
+        $ids   = (array) ($v->document_ids ?? []);
+        $docs  = $ids
+            ? \App\Models\Documents\Document::whereIn('id', $ids)->get()->keyBy('id')
+            : collect();
+        $items   = [];
+        $missing = [];
+        foreach ($ids as $id) {
+            $doc = $docs->get($id);
+            if (! $doc) {
+                $missing[] = $id;
+                continue;
+            }
+            $items[] = [
+                'url'     => route('admin.documents.view', ['documentId' => $doc->id]),
+                'name'    => $doc->original_filename ?? 'Document',
+                'isImage' => str_starts_with((string) ($doc->mime_type ?? ''), 'image/'),
+            ];
+        }
+
+        return new HtmlString(view('filament.admin.properties.ownership-detail', [
+            'verification' => [
+                'status'             => $v->status,
+                'owner_type'         => $v->owner_type,
+                'owner_type_label'   => $v->ownerTypeLabel(),
+                'entity_name'        => $v->entity_name,
+                'submitter'          => $v->getSubmitter()?->getFilamentName(),
+                'certification_name' => $v->certification_name,
+                'certified_at'       => $v->certified_at?->format('M j, Y'),
+                'reviewer'           => $v->getReviewer()?->getFilamentName(),
+                'reviewed_at'        => $v->reviewed_at?->format('M j, Y'),
+                'review_notes'       => $v->review_notes,
+            ],
+            'items'   => $items,
+            'missing' => $missing,
+        ])->render());
+    }
+
+    /** The internal staff review notes for this property, newest first — its own section. */
+    private static function renderOwnershipNotesHtml($record): HtmlString
+    {
+        if (! $record?->id) {
+            return new HtmlString(
+                '<p style="color:#6b7280;font-size:0.875rem;">Save the property first to add review notes.</p>'
+            );
+        }
+
+        $notes = app(PropertyService::class)->getOwnershipReviewNotes($record->id);
+
+        return new HtmlString(view('filament.admin.properties.ownership-notes', [
+            'notes' => $notes,
+        ])->render());
+    }
+
     private static function amenitiesTabSchema(): array
     {
         $sections = PropertyAmenity::distinct()
@@ -760,7 +1018,14 @@ class PropertyFormV2
             )
             ->all();
 
-        return [Grid::make(2)->schema($sections)];
+        return [
+            Section::make('Amenities')
+                ->icon('heroicon-o-sparkles')
+                ->iconColor(Color::hex('#c84c21'))
+                ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                ->description('Features and facilities available on the property, grouped by category.')
+                ->schema([Grid::make(2)->schema($sections)]),
+        ];
     }
 
     private static function amenityCategoryCheckboxList(string $category): CheckboxList
@@ -801,7 +1066,11 @@ class PropertyFormV2
                         Tab::make('General Info')
                             ->icon('heroicon-o-information-circle')
                             ->schema([
-                                Section::make()
+                                Section::make('General Info')
+                                    ->icon('heroicon-o-information-circle')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                                    ->description('Name, location, size, and current listing status.')
                                     ->columns(2)
                                     ->schema([
                                         TextInput::make('title')
@@ -867,10 +1136,64 @@ class PropertyFormV2
                                     ]),
                             ]),
 
+                        Tab::make('Ownership')
+                            ->icon('heroicon-o-document-check')
+                            ->visible(fn ($record) => $record !== null)
+                            ->badge(function ($record) {
+                                $v = self::pendingVerificationFor($record);
+                                if (! $v) {
+                                    return null;
+                                }
+                                // 'submitted' = a new, untouched submission needing a first look;
+                                // 'pending' = staff has marked it under review. Reflect the stage so
+                                // the badge visibly changes after "Mark Under Review".
+                                return $v->status === 'pending' ? 'In Review' : 'New';
+                            })
+                            ->badgeColor('warning')
+                            ->schema([
+                                Section::make('Proof of Ownership')
+                                    ->icon('heroicon-o-document-check')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                                    ->description('The landowner certifies, under penalty of perjury, that they own or manage this property and uploads supporting documents. A property cannot go Active until proof is approved here.')
+                                    ->headerActions([
+                                        self::markUnderReviewAction(),
+                                        self::approveOwnershipAction(),
+                                        self::rejectOwnershipAction(),
+                                    ])
+                                    ->schema([
+                                        Placeholder::make('property_ownership_display')
+                                            ->hiddenLabel()
+                                            ->content(function (Placeholder $component) {
+                                                return static::renderOwnershipHtml($component->getRecord());
+                                            }),
+                                    ]),
+
+                                Section::make('Internal Staff Notes')
+                                    ->icon('heroicon-o-chat-bubble-left-ellipsis')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                                    ->description('Staff-only review notes on this submission — date-time and author stamped, append-only. Never shown to the landowner.')
+                                    ->headerActions([
+                                        self::addOwnershipNoteAction(),
+                                    ])
+                                    ->schema([
+                                        Placeholder::make('property_ownership_notes_display')
+                                            ->hiddenLabel()
+                                            ->content(function (Placeholder $component) {
+                                                return static::renderOwnershipNotesHtml($component->getRecord());
+                                            }),
+                                    ]),
+                            ]),
+
                         Tab::make('Game Type')
                             ->icon('heroicon-o-trophy')
                             ->schema([
-                                Section::make()
+                                Section::make('Game Types')
+                                    ->icon('heroicon-o-trophy')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                                    ->description('The huntable species offered on this property.')
                                     ->schema([
                                         Repeater::make('species')
                                             ->relationship()
@@ -896,7 +1219,11 @@ class PropertyFormV2
                         Tab::make('Property Rules')
                             ->icon('heroicon-o-clipboard-document-list')
                             ->schema([
-                                Section::make()
+                                Section::make('Property Rules')
+                                    ->icon('heroicon-o-clipboard-document-list')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                                    ->description('Rules every hunter must follow on this property.')
                                     ->schema([
                                         Repeater::make('rules')
                                             ->relationship()
@@ -930,6 +1257,9 @@ class PropertyFormV2
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Photo Gallery')
+                                    ->icon('heroicon-o-photo')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
                                     ->description('Photos shown on the public listing. The primary photo is the cover image; use the arrows to set display order.')
                                     ->headerActions([self::uploadPhotosAction()])
                                     ->schema([
@@ -946,6 +1276,9 @@ class PropertyFormV2
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Boundary Map')
+                                    ->icon('heroicon-o-map')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
                                     ->description('The boundary map is shown on the public listing (without markers). Add markers for amenities, game locations, stands, and other points of interest — markers are admin/member only.')
                                     ->headerActions([self::uploadMapImagesAction()])
                                     ->schema([
@@ -963,7 +1296,11 @@ class PropertyFormV2
                         Tab::make('Listings')
                             ->icon('heroicon-o-tag')
                             ->schema([
-                                Section::make()
+                                Section::make('Listings')
+                                    ->icon('heroicon-o-tag')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
+                                    ->description('The lease and day-hunt offerings published for this property.')
                                     ->schema([
                                         Repeater::make('listings')
                                             ->relationship()
@@ -1089,6 +1426,9 @@ class PropertyFormV2
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Field Check-In Log')
+                                    ->icon('heroicon-o-map-pin')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
                                     ->description('A running record of every hunter check-in and check-out on this property, across all leases. Newest first.')
                                     ->schema([
                                         Placeholder::make('property_checkins_display')
@@ -1104,6 +1444,9 @@ class PropertyFormV2
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Active Managers')
+                                    ->icon('heroicon-o-user-group')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
                                     ->description('Users who can manage this property on behalf of the owner.')
                                     ->headerActions([self::grantManagerAction()])
                                     ->schema([
@@ -1120,6 +1463,9 @@ class PropertyFormV2
                             ->visible(fn ($record) => $record !== null)
                             ->schema([
                                 Section::make('Landowner & Managers')
+                                    ->icon('heroicon-o-users')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
                                     ->description('Landowner is pulled automatically from the owner account. Managers are opt-in — use Add Manager Contact to expose a manager to hunters as a field contact.')
                                     ->headerActions([self::addManagerContactAction()])
                                     ->schema([
@@ -1130,6 +1476,9 @@ class PropertyFormV2
                                             }),
                                     ]),
                                 Section::make('Emergency & Local Contacts')
+                                    ->icon('heroicon-o-phone-arrow-up-right')
+                                    ->iconColor(Color::hex('#c84c21'))
+                                    ->extraAttributes(['class' => 'ah-section-lead-icon'])
                                     ->description('Local law enforcement, game warden, emergency, and any other contacts (e.g. a neighbor) a hunter may need in the field. These are shown to active lessees on the lease page and the mobile app.')
                                     ->schema([
                                         self::contactsRepeater(),

@@ -1,19 +1,19 @@
 import { useForm } from '@inertiajs/react'
-import { PortalChrome, PropertyHead, Section, BackLink, TabBar, useTabQuery, INK, ACCENT, type PropertySummary } from '@/Components/Member/PropertyChrome'
+import { PortalChrome, PropertyHead, Section, BackLink, TabBar, useTabQuery, TrophyIcon, ClipboardListIcon, SparklesIcon, MapPinIcon, PhotoIcon, MapIcon, UserGroupIcon, UsersIcon, INK, ACCENT, type PropertySummary } from '@/Components/Member/PropertyChrome'
 import PropertyPhotosTab, { type Photo } from '@/Components/Member/PropertyPhotosTab'
 import PropertyMapTab, { type MapImage, type DeletedMapImage } from '@/Components/Member/PropertyMapTab'
 import PropertyTeamTab, { type Manager } from '@/Components/Member/PropertyTeamTab'
 import PropertyContactsTab, { type ContactDirectory, type EligibleManager, type EditableContact } from '@/Components/Member/PropertyContactsTab'
 
 const TABS = [
-  { key: 'game_type', label: 'Game Type' },
-  { key: 'rules', label: 'Property Rules' },
-  { key: 'amenities', label: 'Amenities' },
-  { key: 'photos', label: 'Photos' },
-  { key: 'map', label: 'Map' },
-  { key: 'checkin', label: 'Check In/Out' },
-  { key: 'team', label: 'Team' },
-  { key: 'contacts', label: 'Contacts' },
+  { key: 'game_type', label: 'Game Type', icon: <TrophyIcon /> },
+  { key: 'rules', label: 'Property Rules', icon: <ClipboardListIcon /> },
+  { key: 'amenities', label: 'Amenities', icon: <SparklesIcon /> },
+  { key: 'photos', label: 'Photos', icon: <PhotoIcon /> },
+  { key: 'map', label: 'Map', icon: <MapIcon /> },
+  { key: 'checkin', label: 'Check In/Out', icon: <MapPinIcon /> },
+  { key: 'team', label: 'Team', icon: <UserGroupIcon /> },
+  { key: 'contacts', label: 'Contacts', icon: <UsersIcon /> },
 ]
 
 const DETAIL_TABS = ['game_type', 'rules', 'amenities']
@@ -157,7 +157,7 @@ export default function PropertyDetails(props: Props) {
 
         {/* Game Type */}
         {tab === 'game_type' && (
-        <Section title="Game Type">
+        <Section title="Game Type" icon={<TrophyIcon />} description="The huntable species offered on this property.">
           {data.species.length === 0 && (
             <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: '0 0 14px' }}>
               No game types added yet.
@@ -183,7 +183,7 @@ export default function PropertyDetails(props: Props) {
 
         {/* Property Rules */}
         {tab === 'rules' && (
-        <Section title="Property Rules">
+        <Section title="Property Rules" icon={<ClipboardListIcon />} description="Rules every hunter must follow on this property.">
           {data.rules.length === 0 && (
             <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: '0 0 14px' }}>
               No rules added yet.
@@ -212,7 +212,7 @@ export default function PropertyDetails(props: Props) {
 
         {/* Amenities */}
         {tab === 'amenities' && (
-        <Section title="Amenities">
+        <Section title="Amenities" icon={<SparklesIcon />} description="Features and facilities available on the property, grouped by category.">
           {amenityCatalog.length === 0 ? (
             <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: 0 }}>
               No amenities are configured on the platform yet.
@@ -264,7 +264,7 @@ export default function PropertyDetails(props: Props) {
 
       {/* Check In/Out */}
       {tab === 'checkin' && (
-        <Section title="Check-In Log">
+        <Section title="Check-In Log" icon={<MapPinIcon />} description="A running record of every hunter check-in and check-out on this property, across all leases. Newest first.">
           {checkIns.length === 0 ? (
             <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: 0 }}>
               No check-ins recorded on this property yet.

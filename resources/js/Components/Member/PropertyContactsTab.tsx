@@ -1,6 +1,6 @@
 import { useForm, router } from '@inertiajs/react'
 import { useState } from 'react'
-import { Section, INK, ACCENT } from './PropertyChrome'
+import { Section, UsersIcon, IdentificationIcon, INK, ACCENT } from './PropertyChrome'
 
 interface PartyContact {
   name: string
@@ -126,7 +126,7 @@ export default function PropertyContactsTab({ propertyId, directory, eligibleMan
 
   return (
     <>
-      <Section title="Landowner & Managers">
+      <Section title="Landowner & Managers" icon={<UsersIcon />} description="The landowner and managers shown to active hunters as on-site field contacts.">
         {directory.landowner && partyCard(directory.landowner, 'Landowner')}
         {directory.managers.map(m => (
           <div key={m.manager_id}>{partyCard(m, 'Manager', m.manager_id ? () => removeManagerContact(m.manager_id!) : undefined)}</div>
@@ -153,6 +153,8 @@ export default function PropertyContactsTab({ propertyId, directory, eligibleMan
 
       <Section
         title="Emergency & Local Contacts"
+        icon={<IdentificationIcon />}
+        description="Local emergency and service numbers shown to hunters on this property — sheriff, game warden, nearest hospital, and the like."
         action={!adding && editingId === null ? (
           <button type="button" onClick={startAdd} style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 16px', background: INK, color: '#F4ECDC', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ Add Contact</button>
         ) : undefined}

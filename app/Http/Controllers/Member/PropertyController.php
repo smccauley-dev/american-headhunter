@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
 use App\Models\Identity\User;
+use App\Models\Property\PropertyOwnershipVerification;
 use App\Services\Property\PropertyService;
 use App\Support\UsStates;
 use Illuminate\Http\RedirectResponse;
@@ -49,6 +50,14 @@ class PropertyController extends Controller
 
         $data = $this->validated($request);
 
+        // A brand-new property has no approved proof of ownership yet, so it cannot
+        // start Active. Create it as a draft and surface why.
+        if ($data['status'] === 'active') {
+            return back()->withErrors([
+                'status' => 'A new property starts as a draft. Submit proof of ownership and have it approved before going Active.',
+            ])->withInput();
+        }
+
         $property = $this->properties->createProperty(session('auth.user_id'), $data);
 
         return redirect()
@@ -73,8 +82,11 @@ class PropertyController extends Controller
                 'total_acres'    => $record->total_acres !== null ? (float) $record->total_acres : null,
                 'huntable_acres' => $record->huntable_acres !== null ? (float) $record->huntable_acres : null,
             ],
-            'states'   => UsStates::names(),
-            'statuses' => self::STATUS_OPTIONS,
+            'states'         => UsStates::names(),
+            'statuses'       => self::STATUS_OPTIONS,
+            'ownership'      => $this->properties->getOwnershipVerification($record->id),
+            'ownerTypes'     => PropertyOwnershipVerification::OWNER_TYPES,
+            'suggestedProof' => PropertyOwnershipVerification::SUGGESTED_PROOF,
         ]);
     }
 
@@ -83,6 +95,13 @@ class PropertyController extends Controller
         $this->authorizeManage($property);
 
         $data = $this->validated($request);
+
+        // Going Active requires staff-approved proof of ownership (gates listing live).
+        if ($data['status'] === 'active' && ! $this->properties->hasApprovedOwnership($property)) {
+            return back()->withErrors([
+                'status' => 'This property can go Active only after your proof of ownership is approved by staff.',
+            ])->withInput();
+        }
 
         $this->properties->updateProperty($property, $data);
 

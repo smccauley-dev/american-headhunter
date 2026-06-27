@@ -36,6 +36,23 @@ class PropertyResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'title';
 
+    public static function getNavigationBadge(): ?string
+    {
+        $count = app(\App\Services\Property\PropertyService::class)->countPendingOwnershipVerifications();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
+    }
+
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return 'Ownership proofs awaiting review';
+    }
+
     public static function form(Schema $schema): Schema
     {
         return PropertyForm::configure($schema);

@@ -2,6 +2,7 @@
 
 use App\Jobs\Billing\ReconcileStripeInvoices;
 use App\Jobs\Billing\ReleaseEndedLeaseDeposits;
+use App\Jobs\Documents\CleanupStagedUploads;
 use App\Jobs\Documents\CleanupUnattachedDocuments;
 use App\Jobs\Etl\SyncPlatformSnapshot;
 use App\Jobs\ExpireListingsJob;
@@ -19,6 +20,11 @@ Schedule::job(new ExpireListingsJob)->dailyAt('00:30');
 // Remove unattached documents (created by in-flight apply submissions that never committed).
 // Threshold is DOCUMENT_REAPER_TTL_MINUTES (default 120 min). Runs every two hours.
 Schedule::job(new CleanupUnattachedDocuments)->everyTwoHours();
+
+// Sweep abandoned FilePond staging files (ownership proof / photos / map images) left by
+// uploads that were never submitted. Threshold is STAGED_UPLOAD_TTL_MINUTES (default
+// 1440 min / 24h). Runs hourly — the layer before CleanupUnattachedDocuments.
+Schedule::job(new CleanupStagedUploads)->hourly();
 
 // Purge consumed and long-expired MFA challenge rows (SEC-041).
 // Runs at 03:00 daily — off-peak, after the 00:30 listing expiry job.

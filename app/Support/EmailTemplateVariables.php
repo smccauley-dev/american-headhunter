@@ -44,6 +44,13 @@ class EmailTemplateVariables
             'application_ref' => ['label' => 'Short application reference',      'sample' => 'A1B2C3D4'],
             'login_url'       => ['label' => 'Link to log in and reply',         'sample' => 'https://americanheadhunter.com/apply/login'],
         ],
+        'property.ownership_status' => [
+            'recipient_name' => ['label' => "Recipient's name",                 'sample' => 'John Doe'],
+            'property_title' => ['label' => 'Property name',                    'sample' => 'Whitetail Ridge — 320 ac'],
+            'status_label'   => ['label' => 'Review status label',             'sample' => 'Under Review'],
+            'status_message' => ['label' => 'Status-specific message body',    'sample' => 'Your proof of ownership is now being actively reviewed by our team. We will let you know the moment a decision is made.'],
+            'property_url'   => ['label' => 'Link to the property page',        'sample' => 'https://americanheadhunter.com/member/properties/sample-id'],
+        ],
     ];
 
     /** All variables (template-specific + global) for a template key. */

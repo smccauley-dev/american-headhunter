@@ -59,6 +59,9 @@ export interface FilePondUploaderProps {
   /** e.g. "10MB" — enables the size-validation plugin. */
   maxFileSize?: string
   acceptedFileTypes?: string[]
+  /** Set false to suppress FilePond's built-in image-preview canvas (e.g. when the
+   * parent renders its own thumbnails). Defaults to true. */
+  allowImagePreview?: boolean
   labelIdle?: string
   /** Staged/direct mode: POST target for each file. Omit for local (form) mode. */
   processUrl?: string
@@ -93,6 +96,7 @@ const FilePondUploader = forwardRef<any, FilePondUploaderProps>(function FilePon
       maxFiles={props.maxFiles}
       maxFileSize={props.maxFileSize}
       acceptedFileTypes={props.acceptedFileTypes}
+      allowImagePreview={props.allowImagePreview ?? true}
       labelIdle={props.labelIdle ?? DEFAULT_LABEL}
       stylePanelLayout={props.stylePanelLayout}
       imagePreviewHeight={props.imagePreviewHeight}

@@ -2,7 +2,7 @@ import { router } from '@inertiajs/react'
 import { useRef, useState } from 'react'
 import FilePondUploader from '../FilePondUploader'
 import {
-  Section, INK, ACCENT, TAN,
+  Section, PhotoIcon, INK, ACCENT, TAN,
   Modal, PillToggle, UploadIcon, CheckIcon, XIcon,
   fieldLabel as label, fieldInput as input, modalHelper as mHelper,
   toolbarBtn as ghostBtn, toolbarDangerBtn as dangerBtn,
@@ -165,7 +165,7 @@ export default function PropertyPhotosTab({ propertyId, photos }: { propertyId: 
   const total = photos.length
 
   return (
-    <Section title="Photo Gallery" description={galleryDescription} action={uploadAction}>
+    <Section title="Photo Gallery" icon={<PhotoIcon />} description={galleryDescription} action={uploadAction}>
       {total === 0 ? (
         <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: 0 }}>
           No photos yet. Use <strong>Upload Photos</strong> above — the first photo you upload becomes the cover photo.

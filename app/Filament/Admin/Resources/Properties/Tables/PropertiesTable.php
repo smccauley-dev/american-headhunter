@@ -16,6 +16,15 @@ use Filament\Tables\Table;
 
 class PropertiesTable
 {
+    /** Memoized map (property_id => open ownership status) for the list-page column. */
+    private static ?array $ownershipStatuses = null;
+
+    private static function ownershipStatuses(): array
+    {
+        return self::$ownershipStatuses ??=
+            app(\App\Services\Property\PropertyService::class)->openOwnershipStatusByPropertyId();
+    }
+
     public static function configure(Table $table): Table
     {
         return $table
@@ -34,6 +43,17 @@ class PropertiesTable
                         default     => 'gray',
                     })
                     ->sortable(),
+                TextColumn::make('ownership_review')
+                    ->label('Ownership')
+                    ->badge()
+                    ->color('warning')
+                    ->state(fn ($record): ?string => match (self::ownershipStatuses()[$record->id] ?? null) {
+                        'submitted' => 'New',       // submitted, not yet looked at
+                        'pending'   => 'In Review', // staff marked it under review
+                        default     => null,
+                    })
+                    ->tooltip('Proof of ownership awaiting review')
+                    ->placeholder('—'),
                 TextColumn::make('state_code')
                     ->label('State')
                     ->formatStateUsing(fn ($state) => \App\Support\UsStates::names()[$state] ?? $state)

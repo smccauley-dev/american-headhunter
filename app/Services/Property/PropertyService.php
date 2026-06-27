@@ -3,6 +3,7 @@
 namespace App\Services\Property;
 
 use App\Database\ConnectionRole;
+use App\Jobs\Property\SendOwnershipStatusEmail;
 use App\Models\Identity\User;
 use App\Models\Property\Property;
 use App\Models\Property\PropertyListing;
@@ -10,6 +11,7 @@ use App\Models\Property\PropertyManager;
 use App\Models\Property\PropertyContact;
 use App\Models\Property\PropertyMapImage;
 use App\Models\Property\PropertyMapMarker;
+use App\Models\Property\PropertyOwnershipVerification;
 use App\Models\Property\PropertyAccessInfo;
 use App\Models\Property\PropertyAmenity;
 use App\Models\Property\PropertyAvailability;
@@ -1756,7 +1758,397 @@ class PropertyService extends BaseService
         ]);
     }
 
+    // ─── Ownership verification (proof of ownership / management) ───────────────
+
+    /**
+     * The latest non-deleted ownership verification for a property, assembled for
+     * the member portal Ownership section — owner type, entity, status, the review
+     * note, and a summary of each uploaded proof document. Returns null when none
+     * has been submitted. Read replica.
+     */
+    public function getOwnershipVerification(string $propertyId): ?array
+    {
+        $v = PropertyOwnershipVerification::on('property_read')
+            ->where('property_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')
+            ->first();
+
+        if (! $v) {
+            return null;
+        }
+
+        return [
+            'id'                 => $v->id,
+            'owner_type'         => $v->owner_type,
+            'owner_type_label'   => $v->ownerTypeLabel(),
+            'entity_name'        => $v->entity_name,
+            'status'             => $v->status,
+            'certification_name' => $v->certification_name,
+            'certified_at'       => $v->certified_at?->format('M j, Y'),
+            'reviewed_at'        => $v->reviewed_at?->format('M j, Y'),
+            'review_notes'       => $v->review_notes,
+            'documents'          => $this->summarizeProofDocuments((array) $v->document_ids),
+        ];
+    }
+
+    /** Whether a property has an approved ownership verification (gates going live). */
+    public function hasApprovedOwnership(string $propertyId): bool
+    {
+        return PropertyOwnershipVerification::on('property_read')
+            ->where('property_id', $propertyId)
+            ->where('status', 'approved')
+            ->whereNull('deleted_at')
+            ->exists();
+    }
+
+    /**
+     * Ownership submissions that still need a staff decision: just-submitted and
+     * explicitly under-review both count as "open" / awaiting review.
+     */
+    public const OPEN_OWNERSHIP_STATUSES = ['submitted', 'pending'];
+
+    /** Count of properties with a proof-of-ownership submission awaiting staff review. */
+    public function countPendingOwnershipVerifications(): int
+    {
+        return PropertyOwnershipVerification::on('property_read')
+            ->whereIn('status', self::OPEN_OWNERSHIP_STATUSES)
+            ->whereNull('deleted_at')
+            ->count();
+    }
+
+    /**
+     * Open ownership submissions keyed by property id => status ('submitted' | 'pending'),
+     * so the list-page column can distinguish a new submission from one already under review.
+     * Only one submission is ever open per property (prior ones are superseded on resubmit).
+     *
+     * @return array<string, string>
+     */
+    public function openOwnershipStatusByPropertyId(): array
+    {
+        return PropertyOwnershipVerification::on('property_read')
+            ->whereIn('status', self::OPEN_OWNERSHIP_STATUSES)
+            ->whereNull('deleted_at')
+            ->pluck('status', 'property_id')
+            ->all();
+    }
+
+    /**
+     * Record a landowner's proof-of-ownership submission for a property. Any prior
+     * pending submission is superseded (soft-deleted) so only one is ever open. The
+     * caller has already stored the proof documents (DB 11) as unattached; this
+     * records the row, then promotes those documents (attach after commit). The
+     * penalty-of-perjury attestation (certification_name / certified_at) is captured
+     * on the row.
+     *
+     * @param  list<string>  $documentIds
+     */
+    public function submitOwnershipVerification(
+        string $propertyId,
+        string $userId,
+        string $ownerType,
+        ?string $entityName,
+        array $documentIds,
+        string $certificationName,
+    ): PropertyOwnershipVerification {
+        $documentIds = array_values(array_filter($documentIds));
+
+        $verification = DB::connection('property')->transaction(function () use (
+            $propertyId, $userId, $ownerType, $entityName, $documentIds, $certificationName
+        ) {
+            // Ownership verifies once and stays verified — refuse a new submission when
+            // an approved record already exists (checked on the write connection to
+            // avoid replica lag). The member UI hides the form after approval; this is
+            // the integrity guard for any direct/non-UI caller. Existing approved proof
+            // is never superseded or replaced here.
+            $alreadyApproved = PropertyOwnershipVerification::on('property')
+                ->where('property_id', $propertyId)
+                ->where('status', 'approved')
+                ->whereNull('deleted_at')
+                ->exists();
+
+            if ($alreadyApproved) {
+                throw new \RuntimeException('Ownership is already verified for this property.');
+            }
+
+            // Supersede any open submission so the one-open unique index holds.
+            PropertyOwnershipVerification::on('property')
+                ->where('property_id', $propertyId)
+                ->whereIn('status', self::OPEN_OWNERSHIP_STATUSES)
+                ->whereNull('deleted_at')
+                ->get()
+                ->each(function (PropertyOwnershipVerification $old) {
+                    $old->deleted_at = now();
+                    $old->save();
+                });
+
+            return PropertyOwnershipVerification::on('property')->create([
+                'property_id'          => $propertyId,
+                'submitted_by_user_id' => $userId,
+                'owner_type'           => $ownerType,
+                'entity_name'          => $entityName ?: null,
+                'status'               => 'submitted',
+                'document_ids'         => $documentIds,
+                'certification_name'   => $certificationName,
+                'certified_at'         => now(),
+            ]);
+        });
+
+        $this->documentService->attachDocuments($documentIds);
+
+        app(\App\Services\Audit\AuditService::class)->log(
+            eventType:      'property_ownership_verification_submitted',
+            sourceDatabase: 'ah_property',
+            tableName:      'property_ownership_verifications',
+            recordId:       $verification->id,
+            userId:         $userId,
+            actionSummary:  "Proof of ownership submitted ({$ownerType})",
+            changedFields:  ['owner_type', 'document_ids', 'certification_name'],
+        );
+
+        // Platform-wide auto-approval: when staff have flipped the toggle on, every
+        // new submission clears instantly (no manual review). Returns the now-approved
+        // row so callers see the final state. No status emails are sent on the auto path
+        // — there is no review for the landowner to track.
+        if ($this->ownershipAutoApproveEnabled()) {
+            $this->autoApproveOwnershipVerification($verification);
+            $verification->refresh();
+        } else {
+            SendOwnershipStatusEmail::dispatch($propertyId, $userId, 'submitted');
+        }
+
+        return $verification;
+    }
+
+    /** Whether platform-wide auto-approval of ownership proof is switched on. */
+    public function ownershipAutoApproveEnabled(): bool
+    {
+        return (bool) (int) app(\App\Services\Platform\TenantService::class)
+            ->getSetting('properties.ownership_auto_approve', '0');
+    }
+
+    /**
+     * Staff move a just-submitted proof into the explicit "under review" state — a
+     * signal to the landowner that staff (or, later, AI verification) are looking at
+     * it. No reviewer/decision is recorded yet.
+     */
+    public function markOwnershipUnderReview(string $verificationId, string $reviewerUserId): void
+    {
+        $v = PropertyOwnershipVerification::on('property')->whereNull('deleted_at')->findOrFail($verificationId);
+
+        $v->update(['status' => 'pending']);
+
+        app(\App\Services\Audit\AuditService::class)->log(
+            eventType:      'property_ownership_verification_under_review',
+            sourceDatabase: 'ah_property',
+            tableName:      'property_ownership_verifications',
+            recordId:       $v->id,
+            userId:         $reviewerUserId,
+            actionSummary:  'Proof of ownership marked under review',
+        );
+
+        SendOwnershipStatusEmail::dispatch($v->property_id, $v->submitted_by_user_id, 'pending');
+    }
+
+    /**
+     * Approve every currently-open ownership submission in one sweep — run when an
+     * admin switches auto-approval on, to clear the existing backlog. Returns the
+     * number approved.
+     */
+    public function autoApproveOpenOwnershipVerifications(?string $actorUserId): int
+    {
+        $open = PropertyOwnershipVerification::on('property')
+            ->whereIn('status', self::OPEN_OWNERSHIP_STATUSES)
+            ->whereNull('deleted_at')
+            ->get();
+
+        foreach ($open as $v) {
+            $this->autoApproveOwnershipVerification($v, $actorUserId);
+        }
+
+        return $open->count();
+    }
+
+    /** Mark a single open submission auto-approved (no human reviewer recorded). */
+    private function autoApproveOwnershipVerification(PropertyOwnershipVerification $v, ?string $actorUserId = null): void
+    {
+        $v->update([
+            'status'              => 'approved',
+            'reviewed_by_user_id' => null,
+            'reviewed_at'         => now(),
+            'review_notes'        => null,
+        ]);
+
+        $this->invalidatePropertyCache($v->property_id, $this->slugFor($v->property_id), $this->ownerFor($v->property_id));
+
+        app(\App\Services\Audit\AuditService::class)->log(
+            eventType:      'property_ownership_verification_auto_approved',
+            sourceDatabase: 'ah_property',
+            tableName:      'property_ownership_verifications',
+            recordId:       $v->id,
+            userId:         $actorUserId,
+            actionSummary:  'Proof of ownership auto-approved (auto-approval enabled)',
+        );
+    }
+
+    /** Staff approval of a proof-of-ownership submission — clears the way to go live. */
+    public function approveOwnershipVerification(string $verificationId, string $reviewerUserId): void
+    {
+        $v = PropertyOwnershipVerification::on('property')->whereNull('deleted_at')->findOrFail($verificationId);
+
+        $v->update([
+            'status'              => 'approved',
+            'reviewed_by_user_id' => $reviewerUserId,
+            'reviewed_at'         => now(),
+            'review_notes'        => null,
+        ]);
+
+        $this->invalidatePropertyCache($v->property_id, $this->slugFor($v->property_id), $this->ownerFor($v->property_id));
+
+        app(\App\Services\Audit\AuditService::class)->log(
+            eventType:      'property_ownership_verification_approved',
+            sourceDatabase: 'ah_property',
+            tableName:      'property_ownership_verifications',
+            recordId:       $v->id,
+            userId:         $reviewerUserId,
+            actionSummary:  'Proof of ownership approved',
+        );
+
+        SendOwnershipStatusEmail::dispatch($v->property_id, $v->submitted_by_user_id, 'approved');
+    }
+
+    /** Staff rejection of a proof-of-ownership submission with a reason for the landowner. */
+    public function rejectOwnershipVerification(string $verificationId, string $reviewerUserId, string $notes): void
+    {
+        $v = PropertyOwnershipVerification::on('property')->whereNull('deleted_at')->findOrFail($verificationId);
+
+        $v->update([
+            'status'              => 'rejected',
+            'reviewed_by_user_id' => $reviewerUserId,
+            'reviewed_at'         => now(),
+            'review_notes'        => $notes,
+        ]);
+
+        app(\App\Services\Audit\AuditService::class)->log(
+            eventType:      'property_ownership_verification_rejected',
+            sourceDatabase: 'ah_property',
+            tableName:      'property_ownership_verifications',
+            recordId:       $v->id,
+            userId:         $reviewerUserId,
+            actionSummary:  'Proof of ownership rejected',
+        );
+
+        SendOwnershipStatusEmail::dispatch($v->property_id, $v->submitted_by_user_id, 'rejected', $notes);
+    }
+
+    /**
+     * Add an internal staff note about a property's ownership proof (a question or
+     * observation). Append-only, date-time and author stamped, staff-only. The
+     * note is tied to the latest submission via $verificationId when one exists.
+     */
+    public function addOwnershipReviewNote(
+        string $propertyId,
+        ?string $verificationId,
+        string $authorUserId,
+        string $note,
+    ): \App\Models\Property\PropertyOwnershipReviewNote {
+        // Let PostgreSQL stamp created_at (DEFAULT NOW()) so its microsecond precision
+        // gives a deterministic newest-first ordering even for rapid successive notes.
+        $row = \App\Models\Property\PropertyOwnershipReviewNote::on('property')->create([
+            'property_id'     => $propertyId,
+            'verification_id' => $verificationId,
+            'author_user_id'  => $authorUserId,
+            'note'            => $note,
+        ]);
+
+        app(\App\Services\Audit\AuditService::class)->log(
+            eventType:      'property_ownership_review_note_added',
+            sourceDatabase: 'ah_property',
+            tableName:      'property_ownership_review_notes',
+            recordId:       $row->id,
+            userId:         $authorUserId,
+            actionSummary:  'Internal note added to property ownership review',
+        );
+
+        return $row;
+    }
+
+    /**
+     * Internal staff review notes for a property, newest first, with each author's
+     * display name resolved cross-DB (DB 1). Read replica.
+     *
+     * @return list<array{id:string, author:string, note:string, created_at:string}>
+     */
+    public function getOwnershipReviewNotes(string $propertyId): array
+    {
+        $notes = \App\Models\Property\PropertyOwnershipReviewNote::on('property_read')
+            ->where('property_id', $propertyId)
+            ->orderByDesc('created_at')
+            ->get();
+
+        if ($notes->isEmpty()) {
+            return [];
+        }
+
+        $userService = app(\App\Services\Identity\UserService::class);
+        $names = [];
+        foreach ($notes->pluck('author_user_id')->unique() as $authorId) {
+            $names[$authorId] = $userService->findById($authorId)?->getFilamentName() ?? 'Unknown staff';
+        }
+
+        return $notes->map(fn (\App\Models\Property\PropertyOwnershipReviewNote $n) => [
+            'id'         => $n->id,
+            'author'     => $names[$n->author_user_id] ?? 'Unknown staff',
+            'note'       => $n->note,
+            'created_at' => $n->created_at?->format('M j, Y · g:i A'),
+        ])->all();
+    }
+
+    /**
+     * Map proof-document UUIDs (DB 11) to display summaries (id, filename, whether
+     * it is an image). Missing ids are skipped; the caller builds the view URL.
+     *
+     * @param  list<string>  $documentIds
+     * @return list<array{id:string, filename:string, is_image:bool}>
+     */
+    public function summarizeProofDocuments(array $documentIds): array
+    {
+        $ids = array_values(array_filter($documentIds));
+        if (empty($ids)) {
+            return [];
+        }
+
+        $docs = \App\Models\Documents\Document::whereIn('id', $ids)->get()->keyBy('id');
+
+        $out = [];
+        foreach ($ids as $id) {
+            $doc = $docs->get($id);
+            if (! $doc) {
+                continue;
+            }
+            $out[] = [
+                'id'       => $doc->id,
+                'filename' => $doc->original_filename ?? 'Document',
+                'is_image' => str_starts_with((string) ($doc->mime_type ?? ''), 'image/'),
+            ];
+        }
+
+        return $out;
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    /** Current slug for a property (read replica) — for cache invalidation. */
+    private function slugFor(string $propertyId): string
+    {
+        return (string) Property::on('property_read')->whereKey($propertyId)->value('slug');
+    }
+
+    /** Current owner id for a property (read replica) — for cache invalidation. */
+    private function ownerFor(string $propertyId): string
+    {
+        return (string) Property::on('property_read')->whereKey($propertyId)->value('owner_user_id');
+    }
 
     private function generateSlug(string $title): string
     {

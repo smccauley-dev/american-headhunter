@@ -1,6 +1,6 @@
 import { useForm } from '@inertiajs/react'
 import { TrashIcon } from '@heroicons/react/24/outline'
-import { PortalChrome, PropertyHead, Section, BackLink, INK, ACCENT, type PropertySummary } from '@/Components/Member/PropertyChrome'
+import { PortalChrome, PropertyHead, Section, BackLink, CalendarDaysIcon, ClockIcon, NoSymbolIcon, INK, ACCENT, type PropertySummary } from '@/Components/Member/PropertyChrome'
 
 type DayStatus = 'available' | 'booked' | 'blocked' | 'maintenance' | 'out' | 'pad'
 
@@ -184,7 +184,7 @@ export default function PropertyAvailability({ property, listing, calendar, blac
       <PropertyHead property={property} />
 
       {hasSeason && (
-        <Section title="Booked Dates" description="Lease-reserved dates with the agreed cost. Managed automatically — cancel or terminate the lease to free them.">
+        <Section title="Booked Dates" icon={<ClockIcon />} description="Lease-reserved dates with the agreed cost. Managed automatically — cancel or terminate the lease to free them.">
           {bookings.length === 0 ? (
             <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50' }}>
               No bookings yet. Activated day-hunt leases will appear here.
@@ -208,6 +208,7 @@ export default function PropertyAvailability({ property, listing, calendar, blac
 
       <Section
         title="Day-Hunt Calendar"
+        icon={<CalendarDaysIcon />}
         description={hasSeason
           ? <>Season {calendar.season_start} – {calendar.season_end}. Booked dates come from activated leases and free up automatically when a lease is cancelled or terminated.</>
           : undefined}
@@ -240,7 +241,7 @@ export default function PropertyAvailability({ property, listing, calendar, blac
       </Section>
 
       {hasSeason && (
-        <Section title="Blackout Dates" description="Close dates so they can't be booked. Ranges cannot overlap a booking or each other.">
+        <Section title="Blackout Dates" icon={<NoSymbolIcon />} description="Close dates so they can't be booked. Ranges cannot overlap a booking or each other.">
           <BlackoutEditor property={property} listing={listing} blackouts={blackouts} />
         </Section>
       )}

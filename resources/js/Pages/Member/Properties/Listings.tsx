@@ -1,6 +1,6 @@
 import { useForm, router } from '@inertiajs/react'
 import { useState } from 'react'
-import { PortalChrome, PropertyHead, Section, BackLink, INK, ACCENT, type PropertySummary } from '@/Components/Member/PropertyChrome'
+import { PortalChrome, PropertyHead, Section, BackLink, TagIcon, INK, ACCENT, type PropertySummary } from '@/Components/Member/PropertyChrome'
 
 interface Listing {
   id: string
@@ -252,7 +252,7 @@ export default function PropertyListings({ property, listings, listingTypes, sta
 
       <PropertyHead property={property} />
 
-      <Section title="Listings" action={addAction}>
+      <Section title="Listings" icon={<TagIcon />} description="The lease and day-hunt offerings published for this property." action={addAction}>
 
         {/* Create / edit form */}
         {editing === 'new' && (
