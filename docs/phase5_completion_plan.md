@@ -147,6 +147,44 @@ Handoff commands for the manual steps are in the status report; these gate the P
 - Partial refund → fixed fee fully recovered, % pro-rated.
 - `FeeScheduleTest`, refund-allocation tests, RLS/admin gate test, `npm run build`.
 
+### Delivered (2026-06-27, commits on `feature/phase5-stripe-completion`)
+
+Built the **fee model + reusable money-movement primitives + admin UI**, and
+stopped at a deliberate integration boundary (below):
+
+| Piece | Status |
+|---|---|
+| `fee_schedules` table (DB 4, RLS system-authored / runtime-read) | ✅ `887381d` |
+| `FeeSchedule` model + `FeeService::processingFee()` (Valkey-cached, most-specific wins) | ✅ `887381d` |
+| `FeeService::refundFeeClawback()` — locked allocation (full $0.30 on any refund + pro-rated %) | ✅ |
+| `StripeService::reverseTransfer()` — the missing `Transfer::createReversal` (latent-bug primitive) | ✅ |
+| `StripeService::chargeStripeFee()` / `chargeIdForPaymentIntent()` — read the **actual** fee from `balance_transaction` | ✅ |
+| `FeeScheduleResource` Filament admin (Billing group, `canManagePricing`, flushes FeeService cache on save) | ✅ |
+| `FeeServiceTest` — resolution (5) + clawback math (4) = 9 green | ✅ |
+
+### Integration boundary (intentionally NOT wired yet)
+
+The surcharge **checkout line item** and the **refund→transfer-reversal** orchestration
+both require an upstream **customer-charge → landowner-transfer** flow to attach to.
+Today no such flow exists for one-time transactables:
+- **Subscriptions** are AH's *own* revenue — no Connect transfer, so a subscription
+  refund has nothing to reverse (the latent bug doesn't bite here).
+- **Security deposits** are *held* by the platform (no transfer at capture); the
+  forfeiture *disbursement* + its reversal are owned by the DB-10 dispute slice
+  (`reverseForfeitFault`), which is where `reverseTransfer` + `refundFeeClawback`
+  should be called from.
+- **Lease rent** is the natural home for the surcharge line item + refund reversal,
+  but its **collection** flow is the plan's deferred `DisburseLandownerPayout` item
+  (no `BillingService` lease-rent charge path exists yet).
+
+So `reverseTransfer` / `chargeStripeFee` / `refundFeeClawback` are shipped as tested,
+caller-ready primitives. Wiring them into a live refund (and adding the customer
+surcharge line item) is deferred to whichever lands first — the DB-10 forfeiture
+reversal or lease-rent collection — rather than building orchestration against a
+charge flow that doesn't exist. `PayoutService::quote` is left unchanged for the
+same reason (it has no transaction category/state at the payout site to price a
+surcharge from).
+
 ---
 
 ## Slice 2 — `ExpirePromotionClaims` job

@@ -664,6 +664,66 @@ class StripeService
     }
 
     /**
+     * Reverse all or part of a transfer, pulling funds back from a landowner's
+     * connected account to the platform balance. This is the counterpart to
+     * createTransfer that a refund must perform: under separate charges & transfers
+     * the landowner was already paid their net, so refunding the customer without
+     * reversing the transfer would leave the landowner overpaid and the platform
+     * out of pocket. A null amount reverses the full remaining transfer; a cents
+     * amount reverses partially. Returns the Stripe TransferReversal.
+     *
+     * @param array<string,string> $metadata
+     */
+    public function reverseTransfer(string $transferId, ?int $amountCents = null, array $metadata = []): \Stripe\TransferReversal
+    {
+        $params = [];
+        if ($amountCents !== null) {
+            $params['amount'] = $amountCents;
+        }
+        if ($metadata !== []) {
+            $params['metadata'] = $metadata;
+        }
+
+        return $this->withoutStripeNotice(fn () => Transfer::createReversal($transferId, $params));
+    }
+
+    /**
+     * The actual Stripe processing fee (in cents) charged on a captured payment,
+     * read from the charge's balance transaction — the authoritative figure, not an
+     * estimate. Used when allocating who bears the lost Stripe fee on a refund
+     * (Stripe keeps its fee when a charge is refunded). Returns 0 when the charge
+     * has no settled balance transaction yet.
+     */
+    public function chargeStripeFee(string $chargeId): int
+    {
+        $charge = Charge::retrieve(['id' => $chargeId, 'expand' => ['balance_transaction']]);
+        $txn    = $charge->balance_transaction;
+
+        return is_object($txn) ? (int) ($txn->fee ?? 0) : 0;
+    }
+
+    /**
+     * Resolve the charge id backing a PaymentIntent — needed to read the Stripe
+     * fee (chargeStripeFee) and to correlate a refund back to its original charge.
+     * Returns null when the intent has no captured charge.
+     */
+    public function chargeIdForPaymentIntent(string $paymentIntentId): ?string
+    {
+        $intent = \Stripe\PaymentIntent::retrieve([
+            'id'     => $paymentIntentId,
+            'expand' => ['latest_charge'],
+        ]);
+
+        $charge = $intent->latest_charge ?? null;
+
+        if (is_object($charge)) {
+            return (string) $charge->id;
+        }
+
+        return is_string($charge) && $charge !== '' ? $charge : null;
+    }
+
+    /**
      * Run a Stripe SDK call while neutralizing the informational `stripe-notice`
      * response header. Recent Stripe API versions return that header on the v1
      * Account endpoints (recommending Accounts v2); stripe-php emits it via

@@ -88,6 +88,46 @@ class FeeService extends BaseService
         }, 30);
     }
 
+    /**
+     * Allocate the Stripe processing fee that is lost on a refund. Stripe keeps its
+     * fee when a charge is refunded, so under separate charges & transfers the
+     * landowner (not American Headhunter) bears that loss. The clawback is:
+     *
+     *   - the **full fixed** portion ($0.30) on *any* refund, partial or full; plus
+     *   - the **percentage** portion (actual fee − fixed) pro-rated by the refunded
+     *     fraction of the original charge.
+     *
+     * `$stripeFeeCents` is the actual fee read from the charge's balance transaction
+     * (StripeService::chargeStripeFee) — never an estimate. A zero/over-cap refund
+     * is clamped. Returns the breakdown; `fee_clawback_cents` is the total the
+     * transfer reversal should additionally pull back beyond the refunded net.
+     *
+     * @return array{refund_fraction:float, fixed_cents:int, pct_cents:int, fee_clawback_cents:int}
+     */
+    public function refundFeeClawback(int $stripeFeeCents, int $grossCents, int $refundCents, int $fixedFeeCents = 30): array
+    {
+        $zero = ['refund_fraction' => 0.0, 'fixed_cents' => 0, 'pct_cents' => 0, 'fee_clawback_cents' => 0];
+
+        if ($refundCents <= 0 || $grossCents <= 0 || $stripeFeeCents <= 0) {
+            return $zero;
+        }
+
+        $fraction = (float) min(1.0, $refundCents / $grossCents);
+
+        // The fixed portion is recovered in full on any refund (capped at the fee
+        // actually charged); the remainder is the percentage portion, pro-rated.
+        $fixed      = min($fixedFeeCents, $stripeFeeCents);
+        $pctPortion = max(0, $stripeFeeCents - $fixed);
+        $pct        = (int) round($pctPortion * $fraction);
+
+        return [
+            'refund_fraction'    => $fraction,
+            'fixed_cents'        => $fixed,
+            'pct_cents'          => $pct,
+            'fee_clawback_cents' => $fixed + $pct,
+        ];
+    }
+
     /** Drop all cached fee-rule resolutions — call after any admin mutation. */
     public function flushCache(): void
     {
