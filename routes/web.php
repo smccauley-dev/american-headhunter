@@ -170,6 +170,12 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/leases/{lease}/forfeiture/opt-out', [MemberController::class, 'optOutForfeiture'])->name('leases.forfeiture.opt-out')->middleware(['db.system', 'throttle:10,1']);
     Route::post('/leases/{lease}/damage-claims', [MemberController::class, 'fileDamageClaim'])->name('leases.damage-claims.store')->middleware(['db.system', 'throttle:10,1']);
     Route::post('/leases/{lease}/incidents', [MemberController::class, 'reportIncident'])->name('leases.incidents.store')->middleware(['db.system', 'throttle:10,1']);
+    // Reporter edits their own incident (e.g. correcting a mistake). System-authored
+    // (db.system, BYPASSRLS) — every edit is diff-audited; added photos are appended
+    // (existing evidence can never be removed). Multipart for the optional new photos.
+    Route::post('/leases/{lease}/incidents/{incident}', [MemberController::class, 'updateIncident'])->name('leases.incidents.update')->middleware(['db.system', 'throttle:10,1']);
+    // Serve an incident's evidence photo to the reporter (RLS scopes the read to them).
+    Route::get('/leases/{lease}/incidents/{incident}/photos/{documentId}', [MemberController::class, 'incidentPhoto'])->name('leases.incident-photo');
 
     Route::post('/leases/{lease}/booking-deposit', [MemberController::class, 'payBookingDeposit'])->name('leases.booking-deposit')->middleware('throttle:10,1');
     // Stripe booking-deposit success return — reconciles the collected row as

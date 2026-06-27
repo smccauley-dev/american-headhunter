@@ -571,6 +571,20 @@ class AdminPanelProvider extends PanelProvider
             letter-spacing: 0.08em !important;
             color: #0a1512 !important;
         }
+        /* Oversized lead icon, vertically centered against the title + description
+           block (opt-in via the ah-section-lead-icon class on the section). */
+        .ah-section-lead-icon .fi-section-header {
+            align-items: center !important;
+            column-gap: 0.85rem !important;
+        }
+        .ah-section-lead-icon .fi-section-header > svg {
+            width: 2.25rem !important;
+            height: 2.25rem !important;
+            /* Match the page-heading icon exactly — Filament's Color::hex palette
+               renders a lighter mid-shade, so force the raw blaze hex. */
+            color: #c84c21 !important;
+            stroke: #c84c21 !important;
+        }
         .fi-section-content {
             background-color: transparent !important;
         }

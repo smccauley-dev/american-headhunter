@@ -23,10 +23,14 @@ class IncidentReport extends BaseModel
 
     protected $fillable = [
         'property_id',
+        'listing_id',
+        'incident_number',
         'lease_id',
         'reporter_user_id',
         'incident_type',
         'severity',
+        'incident_items',
+        'parties_involved',
         'status',
         'occurred_at',
         'location_description',
@@ -46,6 +50,8 @@ class IncidentReport extends BaseModel
             'injuries_reported'     => 'boolean',
             'authorities_notified'  => 'boolean',
             'evidence_document_ids' => 'array',
+            'incident_items'        => 'array',
+            'parties_involved'      => 'array',
             'resolved_at'           => 'datetime',
             'deleted_at'            => 'datetime',
         ]);
