@@ -318,6 +318,9 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, has
     const [promoOpen, setPromoOpen] = useState(false)
     const [promoInput, setPromoInput] = useState('')
     const cardRef = useRef<HTMLDivElement>(null)
+    // A rejected promo code comes back as a 302 with errors.promo_code; surface it
+    // on the open card instead of letting the page silently re-render.
+    const promoError = usePage().props.errors?.promo_code as string | undefined
 
     // When deep-linked via ?plan=, bring this card into view once on mount.
     useEffect(() => {
@@ -487,19 +490,29 @@ function PlanCard({ plan, cycle, authenticated, canSubscribe, isCurrentPlan, has
                 {/* Optional manual promo code (for codes not advertised on the card) */}
                 {showCheckout && (
                     promoOpen ? (
-                        <input
-                            type="text"
-                            value={promoInput}
-                            onChange={e => setPromoInput(e.target.value.toUpperCase())}
-                            placeholder="Promo code"
-                            autoFocus
-                            style={{
-                                fontFamily: 'var(--mono)', fontSize: 12, letterSpacing: '.06em',
-                                textTransform: 'uppercase', color: 'var(--ink)',
-                                padding: '9px 10px', background: 'var(--bone)',
-                                border: '1px solid var(--parch-dim)', outline: 'none',
-                            }}
-                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <input
+                                type="text"
+                                value={promoInput}
+                                onChange={e => setPromoInput(e.target.value.toUpperCase())}
+                                placeholder="Promo code"
+                                autoFocus
+                                style={{
+                                    fontFamily: 'var(--mono)', fontSize: 12, letterSpacing: '.06em',
+                                    textTransform: 'uppercase', color: 'var(--ink)',
+                                    padding: '9px 10px', background: 'var(--bone)',
+                                    border: `1px solid ${promoError ? 'var(--blaze)' : 'var(--parch-dim)'}`, outline: 'none',
+                                }}
+                            />
+                            {promoError && (
+                                <span style={{
+                                    fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.06em',
+                                    color: 'var(--blaze)',
+                                }}>
+                                    {promoError}
+                                </span>
+                            )}
+                        </div>
                     ) : (
                         <button
                             type="button"

@@ -114,6 +114,11 @@ class PromotionExpirationServiceTest extends TestCase
             'monthly_price_cents'     => 1999,
             'annual_price_cents'      => 19999,
             'stripe_monthly_price_id' => $priceId,
+            // These rows are written to the real dev DB (no transaction) and rely on
+            // tearDown to remove them. Keep them off the public pricing page so a
+            // leaked fixture (interrupted run) can never surface as a phantom plan.
+            'is_public'               => false,
+            'is_active'               => false,
         ]);
         $this->planIds[] = $planId;
 

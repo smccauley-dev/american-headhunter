@@ -79,6 +79,18 @@ class MembershipCheckoutService
             $period = PromotionalPeriod::on('platform')->find($auto->promotional_period_id);
         }
 
+        // A promo that grants a price discount must have a synced Stripe Coupon, or
+        // hosted Checkout would silently charge full price. Refuse rather than
+        // overcharge — coupons are wired automatically when a promotion is activated,
+        // so this only trips on one that was never synced (e.g. Stripe was down at
+        // activation; the fix is to re-save the promotion or run stripe:sync-promos).
+        if ($period && $this->grantsDiscount($period) && empty($period->stripe_coupon_id)) {
+            return [
+                'error' => 'This promo code is not ready yet. Please try again shortly or contact support.',
+                'field' => ! empty($promoCode) ? 'promo_code' : 'plan_key',
+            ];
+        }
+
         $couponId      = $period?->stripe_coupon_id;
         $extraMetadata = $promo
             ? ['promo_code_id' => (string) $promo->id, 'promotional_period_id' => (string) $period->id]
@@ -99,6 +111,13 @@ class MembershipCheckoutService
         );
 
         return ['url' => $session->url];
+    }
+
+    /** A period that grants a price discount needs a Stripe Coupon to apply it. */
+    private function grantsDiscount(PromotionalPeriod $period): bool
+    {
+        return ($period->discount_percentage && $period->discount_percentage > 0)
+            || ($period->discount_amount_cents && $period->discount_amount_cents > 0);
     }
 
     /**

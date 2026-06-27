@@ -219,6 +219,25 @@ class StripeService
     }
 
     /**
+     * Sync a period's monetary discount to a Stripe Coupon and persist the id back
+     * onto the period when it changes. Returns the coupon id (or null for a promo
+     * with no monetary discount). Shared by the stripe:sync-promos backfill command
+     * and the admin create/edit pages, so activating a promotion in Filament wires
+     * its coupon immediately rather than waiting for the command.
+     */
+    public function syncPromotionCoupon(PromotionalPeriod $promo): ?string
+    {
+        $couponId = $this->upsertCoupon($promo);
+
+        if ($couponId && $couponId !== $promo->stripe_coupon_id) {
+            $promo->stripe_coupon_id = $couponId;
+            $promo->save();
+        }
+
+        return $couponId;
+    }
+
+    /**
      * Create a Stripe subscription directly via the API (no hosted Checkout),
      * charging the customer's existing default payment method. Used when a free
      * promotional period whose on_expiration is 'auto_charge' lapses and the

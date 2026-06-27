@@ -269,14 +269,10 @@ class PromotionalPeriodResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('promo_key')
-                    ->label('Key')
-                    ->searchable()
-                    ->sortable()
-                    ->fontFamily('mono'),
                 TextColumn::make('display_name')
                     ->label('Name')
-                    ->searchable(),
+                    // promo_key kept searchable so the internal key still finds a row.
+                    ->searchable(['display_name', 'promo_key']),
                 TextColumn::make('promotion_type')
                     ->label('Type')
                     ->badge()

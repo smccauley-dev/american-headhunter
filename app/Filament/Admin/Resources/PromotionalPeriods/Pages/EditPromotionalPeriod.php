@@ -3,13 +3,14 @@
 namespace App\Filament\Admin\Resources\PromotionalPeriods\Pages;
 
 use App\Filament\Admin\Concerns\HasEditPageScaffold;
+use App\Filament\Admin\Concerns\SyncsPromotionCoupon;
 use App\Filament\Admin\Resources\PromotionalPeriods\PromotionalPeriodResource;
-use App\Services\Platform\EntitlementService;
 use Filament\Resources\Pages\EditRecord;
 
 class EditPromotionalPeriod extends EditRecord
 {
     use HasEditPageScaffold;
+    use SyncsPromotionCoupon;
 
     protected static string $resource = PromotionalPeriodResource::class;
 
@@ -20,7 +21,9 @@ class EditPromotionalPeriod extends EditRecord
 
     protected function afterSave(): void
     {
-        // Terms or status changes can alter active claimants' entitlements.
-        app(EntitlementService::class)->invalidateAll();
+        $this->invalidateEntitlements();
+        // Mirror the discount to a Stripe Coupon so an active promo actually
+        // discounts checkout — otherwise the code validates but charges full price.
+        $this->syncPromotionCoupon($this->record);
     }
 }

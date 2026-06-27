@@ -3,13 +3,14 @@
 namespace App\Filament\Admin\Resources\PromotionalPeriods\Pages;
 
 use App\Filament\Admin\Concerns\HasCreatePageScaffold;
+use App\Filament\Admin\Concerns\SyncsPromotionCoupon;
 use App\Filament\Admin\Resources\PromotionalPeriods\PromotionalPeriodResource;
-use App\Services\Platform\EntitlementService;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreatePromotionalPeriod extends CreateRecord
 {
     use HasCreatePageScaffold;
+    use SyncsPromotionCoupon;
 
     protected static string $resource = PromotionalPeriodResource::class;
 
@@ -22,7 +23,9 @@ class CreatePromotionalPeriod extends CreateRecord
 
     protected function afterCreate(): void
     {
-        // A new promotion can change what users resolve to once active.
-        app(EntitlementService::class)->invalidateAll();
+        $this->invalidateEntitlements();
+        // If the promotion is created already-active, mirror its discount to a
+        // Stripe Coupon now so checkout discounts immediately.
+        $this->syncPromotionCoupon($this->record);
     }
 }
