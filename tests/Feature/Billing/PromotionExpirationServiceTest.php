@@ -79,6 +79,14 @@ class PromotionExpirationServiceTest extends TestCase
             'status'        => $status,
             'account_type'  => 'hunter',
         ]);
+        // Fully populate the account — a leaked fixture (interrupted run) should
+        // never show up nameless on /admin/platform-users.
+        DB::connection('identity')->table('user_profiles')->insert([
+            'id'         => (string) Str::uuid(),
+            'user_id'    => $id,
+            'first_name' => 'PromoExp',
+            'last_name'  => 'Test User',
+        ]);
         $this->userIds[] = $id;
 
         return User::on('identity')->find($id);
