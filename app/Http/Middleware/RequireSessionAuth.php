@@ -41,6 +41,28 @@ class RequireSessionAuth
             return $next($request);
         }
 
+        // The reactivation waiting room (reactivate/checkout/return/logout) runs
+        // with `auth.session:allow-paused`: a 'paused' account (lapsed
+        // pause_account promo) is valid there so the member can pay to reactivate,
+        // but — like allow-pending — this lighter check always re-queries and never
+        // writes the shared active-check cache below, so a paused user can never
+        // slip past the active-only guard on /apply|/member, and reactivation is
+        // seen on the very next request.
+        if ($mode === 'allow-paused') {
+            $allowed = User::on('identity')
+                ->whereKey($userId)
+                ->whereIn('status', ['active', 'paused'])
+                ->exists();
+
+            if (! $allowed) {
+                $request->session()->forget(['auth.user_id', 'auth.active_checked_at']);
+
+                return redirect()->route('auth.login');
+            }
+
+            return $next($request);
+        }
+
         // SEC-037: a session token alone is not enough — re-confirm the account is
         // still active so a suspended or deleted user loses access immediately
         // rather than at natural session expiry. Result is cached in-session for

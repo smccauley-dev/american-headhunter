@@ -285,7 +285,10 @@ class AuthController extends Controller
             return back()->withErrors(['email' => 'These credentials do not match our records.']);
         }
 
-        if (! $user->isActive()) {
+        // A paused account (lapsed pause_account promo) is allowed through to MFA
+        // and on to the reactivation waiting room below; every other non-active
+        // status (e.g. pending_verification) is bounced here.
+        if (! $user->isActive() && $user->status !== 'paused') {
             return back()->withErrors(['email' => 'Your account is not active. Please verify your email.']);
         }
 
@@ -304,6 +307,13 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
         $request->session()->put('auth.user_id', $user->id);
+
+        // A paused account lands in the reactivation waiting room — pay to
+        // reactivate. The active-only guard keeps the rest of the portal closed
+        // until a paid subscription lifts the pause.
+        if ($user->status === 'paused') {
+            return redirect()->route('reactivate.show');
+        }
 
         // First login after signing up with a chosen plan: a paid plan routes to
         // checkout, a free plan needs no action. Consumed once, then cleared.

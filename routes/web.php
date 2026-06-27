@@ -20,6 +20,7 @@ use App\Http\Controllers\Member\PropertyPhotoController as MemberPropertyPhotoCo
 use App\Http\Controllers\Member\PropertyMapController as MemberPropertyMapController;
 use App\Http\Controllers\Member\PropertyOwnershipController as MemberPropertyOwnershipController;
 use App\Http\Controllers\Member\PropertyContactController as MemberPropertyContactController;
+use App\Http\Controllers\Member\ReactivationController;
 use App\Http\Controllers\Api\MentionController;
 use App\Http\Controllers\Member\SecurityController;
 use App\Http\Controllers\Public\HunterPublicProfileController;
@@ -297,6 +298,18 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/security/mfa/{method}/disable',    [SecurityController::class, 'disableMfa'])->name('security.mfa.disable');
     Route::post('/security/profile-visibility',      [SecurityController::class, 'setProfileVisibility'])->name('security.profile.visibility');
     Route::get('/security/username-check/{username}', [SecurityController::class, 'checkUsername'])->name('security.username.check')->middleware('throttle:30,1');
+});
+
+// Reactivation waiting room for a paused account (lapsed pause_account promo).
+// `auth.session:allow-paused` admits a paused (or active) session to these
+// billing-only routes while the default active-only guard keeps paused members
+// out of the rest of /member and /apply. The Stripe return authors a
+// subscription, so it runs as the trusted ah_system role (db.system), mirroring
+// the deposit-return reconcile.
+Route::middleware('auth.session:allow-paused')->group(function () {
+    Route::get('/reactivate', [ReactivationController::class, 'show'])->name('reactivate.show');
+    Route::post('/reactivate/checkout', [ReactivationController::class, 'checkout'])->name('reactivate.checkout')->middleware('throttle:10,1');
+    Route::get('/reactivate/return', [ReactivationController::class, 'return'])->name('reactivate.return')->middleware('db.system');
 });
 
 // SEC-043: the auth bootstrap (login, register, email verification, MFA,

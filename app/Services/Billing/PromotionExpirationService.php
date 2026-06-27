@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Mail\AccountPausedMail;
 use App\Models\Billing\PromotionClaim;
 use App\Models\Billing\Subscription;
 use App\Models\Identity\User;
@@ -11,6 +12,7 @@ use App\Services\Audit\AuditService;
 use App\Services\Identity\UserService;
 use App\Services\Platform\EntitlementService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 /**
  * Terminal handling of an expired promotion claim (DB 4), branching on the
@@ -174,9 +176,11 @@ class PromotionExpirationService
         $this->unlinkFromSubscription($claim);
 
         // Never override a moderation state; pause only an otherwise-active account.
+        $paused = false;
         if ($user->status === 'active') {
             $user->status = 'paused';
             $user->save();
+            $paused = true;
         }
 
         $this->entitlements->invalidateForUser($user->id);
@@ -189,6 +193,19 @@ class PromotionExpirationService
             userId:         $user->id,
             actionSummary:  'Promotion expired — account paused pending a paid subscription',
         );
+
+        // Tell the member how to get back in. Best-effort — a mail failure must
+        // not fail the expiry run. Only sent when we actually paused them.
+        if ($paused) {
+            try {
+                Mail::to($user->email)->send(new AccountPausedMail(
+                    recipientName: $user->getFilamentName(),
+                    reactivateUrl: url('/reactivate'),
+                ));
+            } catch (\Throwable $e) {
+                Log::warning('Account-paused email failed to send', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+            }
+        }
 
         return 'paused';
     }

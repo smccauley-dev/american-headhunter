@@ -2,9 +2,12 @@
 
 namespace App\Services\Billing;
 
+use App\Models\Billing\PromoCode;
+use App\Models\Billing\Subscription;
 use App\Models\Identity\User;
 use App\Models\Platform\MembershipPlan;
 use App\Models\Platform\PromotionalPeriod;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Builds a hosted Stripe Checkout session for a membership subscription and
@@ -96,5 +99,88 @@ class MembershipCheckoutService
         );
 
         return ['url' => $session->url];
+    }
+
+    /**
+     * Reconcile a completed subscription Checkout into a local subscription row.
+     * Shared by ProcessStripeWebhook (checkout.session.completed) and the instant
+     * reactivation return (ReactivationController::return) so a paused member lands
+     * back in the portal active without waiting for the webhook. Idempotent — a
+     * replay or a race with the webhook is a no-op.
+     *
+     * Returns true when a subscription exists for the user after this call (created
+     * here or already present), so the caller knows it can lift a billing pause.
+     */
+    public function recordSubscriptionFromCheckout(array $session): bool
+    {
+        if (($session['mode'] ?? null) !== 'subscription') {
+            return false;
+        }
+
+        $stripeSubId   = $session['subscription'] ?? null;
+        $stripeCustId  = $session['customer'] ?? null;
+        $userId        = $session['metadata']['user_id'] ?? null;
+        $planVersionId = $session['metadata']['plan_version_id'] ?? null;
+
+        if (! $stripeSubId || ! $userId || ! $planVersionId) {
+            Log::warning('MembershipCheckout: subscription checkout missing fields', ['stripe_subscription_id' => $stripeSubId]);
+            return false;
+        }
+
+        // Idempotent: the subscription may already exist from a replay or a racing
+        // customer.subscription.* event (or the webhook beating this return).
+        if (Subscription::where('stripe_subscription_id', $stripeSubId)->exists()) {
+            return true;
+        }
+
+        // Read the real interval + period window from Stripe so the renew date and
+        // price cadence on the membership card are authoritative rather than a
+        // local guess. A read failure must not block creating the subscription —
+        // fall back to start()'s estimate (monthly).
+        $periodOpts = [];
+        try {
+            $period = $this->stripe->subscriptionPeriod($stripeSubId);
+            $periodOpts = [
+                'interval'             => $period['interval'],
+                'current_period_start' => $period['current_period_start'],
+                'current_period_end'   => $period['current_period_end'],
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('MembershipCheckout: could not read subscription period', ['error' => $e->getMessage(), 'stripe_subscription_id' => $stripeSubId]);
+        }
+
+        $created = false;
+        try {
+            $this->subscriptions->start($userId, $planVersionId, array_merge([
+                'stripe_subscription_id' => $stripeSubId,
+                'stripe_customer_id'     => $stripeCustId,
+                'status'                 => 'active',
+            ], $periodOpts));
+            $created = true;
+        } catch (\RuntimeException $e) {
+            // start() throws if the user already holds an active subscription —
+            // treat as already-reconciled rather than failing the caller. An
+            // unexpected error still bubbles so the webhook retries.
+            Log::info('MembershipCheckout: subscription reconcile skipped', ['error' => $e->getMessage(), 'user_id' => $userId]);
+            return true;
+        }
+
+        // A promo code rode along on the checkout metadata — record the redemption
+        // (increment the code's count + author the claim) now that the paid
+        // subscription exists. A promo failure must never fail the caller.
+        $promoCodeId = $session['metadata']['promo_code_id'] ?? null;
+        if ($created && $promoCodeId) {
+            try {
+                $user = User::find($userId);
+                $code = PromoCode::on('billing')->find($promoCodeId);
+                if ($user && $code) {
+                    $this->promoCodes->recordRedemption($user, $code);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('MembershipCheckout: promo redemption failed', ['error' => $e->getMessage(), 'promo_code_id' => $promoCodeId]);
+            }
+        }
+
+        return true;
     }
 }
