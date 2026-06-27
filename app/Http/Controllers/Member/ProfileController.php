@@ -12,6 +12,8 @@ use App\Models\Billing\StripeInvoiceProjection;
 use App\Models\Lease\CheckIn;
 use App\Models\Wildlife\HarvestLog;
 use App\Services\Documents\DocumentService;
+use App\Services\Identity\ProfilePhotoService;
+use App\Support\PhotoTagVocabulary;
 use App\Services\Billing\PayoutService;
 use App\Services\Lease\LeaseService;
 use App\Services\Platform\EntitlementService;
@@ -29,7 +31,10 @@ use Inertia\Response;
 
 class ProfileController extends Controller
 {
-    public function __construct(private readonly DocumentService $documents) {}
+    public function __construct(
+        private readonly DocumentService $documents,
+        private readonly ProfilePhotoService $photos,
+    ) {}
 
     public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, EntitlementService $entitlements, PayoutService $payouts, string $initialTab = 'about'): Response
     {
@@ -40,17 +45,7 @@ class ProfileController extends Controller
 
         $isLandowner = $user->account_type === 'landowner';
 
-        $photos = Document::where('owner_user_id', $userId)
-            ->where('document_type', 'profile_photo')
-            ->whereNull('deleted_at')
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(fn ($doc) => [
-                'id'  => $doc->id,
-                'url' => route('member.profile.photos.serve', $doc->id),
-            ])
-            ->values()
-            ->toArray();
+        $photos = $this->photos->listForUser($userId);
 
         $props = [
             'user' => [
@@ -108,6 +103,7 @@ class ProfileController extends Controller
                 ],
             ],
             'photos'      => $photos,
+            'photo_tags'  => PhotoTagVocabulary::forClient(),
             'activity'    => $this->buildActivityProps($userId),
             'security'    => $this->buildSecurityProps($userId),
             'leases'      => $leaseService->getLeaseSummariesForLessee($userId),
@@ -335,6 +331,10 @@ class ProfileController extends Controller
         $filename = Str::uuid() . '.' . $ext;
         $dir      = "profile_photos/{$userId}";
 
+        // Read EXIF GPS from the source upload before it is moved/normalised. Only
+        // the real temp path carries the original bytes; storage may re-encode.
+        $exifPath = $file->getRealPath() ?: null;
+
         Storage::disk('local')->putFileAs($dir, $file, $filename);
 
         $doc = $this->documents->register(
@@ -347,6 +347,8 @@ class ProfileController extends Controller
             storageKey:       "{$dir}/{$filename}",
             storageProvider:  'garage',
         );
+
+        $this->photos->createForUpload($userId, $doc, $exifPath);
 
         return response($doc->id)->header('Content-Type', 'text/plain');
     }
@@ -376,13 +378,49 @@ class ProfileController extends Controller
     {
         $userId = session('auth.user_id');
 
-        $doc = Document::where('id', $documentId)->whereNull('deleted_at')->firstOrFail();
+        $this->photos->delete($userId, $documentId);
 
-        if ($doc->owner_user_id !== $userId) {
-            abort(403);
-        }
+        return redirect()->route('member.profile');
+    }
 
-        $doc->delete();
+    /**
+     * Update one gallery photo's metadata: caption, description, controlled tags,
+     * and optional location (with the EXIF opt-in handled client-side by copying
+     * the detected coords into latitude/longitude before submit).
+     */
+    public function updatePhoto(Request $request, string $documentId)
+    {
+        $userId = session('auth.user_id');
+
+        $data = $request->validate([
+            'caption'       => 'nullable|string|max:140',
+            'description'   => 'nullable|string|max:2000',
+            'tags'          => 'nullable|array',
+            'tags.*'        => 'string|max:40',
+            'latitude'      => 'nullable|numeric|between:-90,90',
+            'longitude'     => 'nullable|numeric|between:-180,180',
+            'location_name' => 'nullable|string|max:160',
+        ]);
+
+        $this->photos->updateMeta($userId, $documentId, $data);
+
+        return redirect()->route('member.profile');
+    }
+
+    /**
+     * Persist a new gallery order from a drag-and-drop reorder. Body carries the
+     * full ordered list of document ids.
+     */
+    public function reorderPhotos(Request $request)
+    {
+        $userId = session('auth.user_id');
+
+        $data = $request->validate([
+            'order'   => 'required|array',
+            'order.*' => 'string|max:36',
+        ]);
+
+        $this->photos->reorder($userId, $data['order']);
 
         return redirect()->route('member.profile');
     }

@@ -365,6 +365,21 @@ interface ProfileData {
 interface PhotoItem {
   id: string
   url: string
+  caption: string | null
+  description: string | null
+  tags: string[]
+  latitude: number | null
+  longitude: number | null
+  location_name: string | null
+  has_exif_gps: boolean
+  exif_latitude: number | null
+  exif_longitude: number | null
+}
+
+interface PhotoTagGroup {
+  key: string
+  label: string
+  tags: { key: string; label: string }[]
 }
 
 interface MfaMethodStatus {
@@ -464,6 +479,8 @@ interface Props {
   user: UserData
   profile: ProfileData
   photos: PhotoItem[]
+  // Controlled vocabulary for photo tags (species / terrain / season).
+  photo_tags: PhotoTagGroup[]
   activity: { events: ActivityEvent[] }
   security: {
     mfa: MfaStatus
@@ -753,7 +770,7 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, activity, security, leases, membership, invoices, checkout, billing, initial_tab, template, properties, payouts, payouts_status }: Props) {
+export default function HunterProfile({ user, profile, photos, photo_tags, activity, security, leases, membership, invoices, checkout, billing, initial_tab, template, properties, payouts, payouts_status }: Props) {
   // Landowner accounts reuse this profile shell but swap the hunting-specific
   // modules (gear, hunting prefs) for a "My Properties" blade.
   const isLandowner = user.account_type === 'landowner'
@@ -1460,6 +1477,7 @@ export default function HunterProfile({ user, profile, photos, activity, securit
                   ) : tab === 'photos' ? (
                     <PhotosTab
                       photos={photos}
+                      photoTags={photo_tags}
                       editing={editing}
                       visibilityValue={form.visibility?.photos ?? 'public'}
                       onVisibility={v => visibility('photos', v)}
@@ -2414,21 +2432,59 @@ function SocialTab({ profile, form, editing, onSocial, visibilityValue, onVisibi
 
 // ── Photos tab ────────────────────────────────────────────────────────────────
 
-function PhotosTab({ photos, editing, visibilityValue, onVisibility }: {
+function PhotosTab({ photos, photoTags, editing, visibilityValue, onVisibility }: {
   photos: PhotoItem[]
+  photoTags: PhotoTagGroup[]
   editing: boolean
   visibilityValue: 'public' | 'private'
   onVisibility: (val: 'public' | 'private') => void
 }) {
   const pondRef = useRef<any>(null)
-  const [deleting, setDeleting]   = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [order, setOrder]       = useState<PhotoItem[]>(photos)
+  const [dragId, setDragId]     = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<PhotoItem | null>(null)
+
+  // Re-sync local order whenever the server sends a fresh gallery (upload,
+  // delete, metadata save, or a persisted reorder all return new props).
+  useEffect(() => { setOrder(photos) }, [photos])
+
+  // Flat key → label lookup across every tag group, for rendering chips read-only.
+  const tagLabel = useCallback((key: string): string => {
+    for (const g of photoTags) {
+      const hit = g.tags.find(t => t.key === key)
+      if (hit) return hit.label
+    }
+    return key
+  }, [photoTags])
 
   function handleDelete(id: string) {
     setDeleting(id)
     router.delete(`/member/profile/photos/${id}`, {
+      preserveScroll: true,
       preserveState: true,
       onFinish: () => setDeleting(null),
     })
+  }
+
+  function persistReorder(next: PhotoItem[]) {
+    setOrder(next)
+    router.post('/member/profile/photos/reorder', { order: next.map(p => p.id) }, {
+      preserveScroll: true,
+      preserveState: true,
+    })
+  }
+
+  function handleDrop(targetId: string) {
+    if (dragId === null || dragId === targetId) { setDragId(null); return }
+    const from = order.findIndex(p => p.id === dragId)
+    const to   = order.findIndex(p => p.id === targetId)
+    if (from === -1 || to === -1) { setDragId(null); return }
+    const next = [...order]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    setDragId(null)
+    persistReorder(next)
   }
 
   return (
@@ -2440,7 +2496,7 @@ function PhotosTab({ photos, editing, visibilityValue, onVisibility }: {
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
           <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874' }}>
-            {photos.length} {photos.length === 1 ? 'Photo' : 'Photos'}
+            {order.length} {order.length === 1 ? 'Photo' : 'Photos'}
           </span>
         </div>
         <FilePondUploader
@@ -2456,45 +2512,7 @@ function PhotosTab({ photos, editing, visibilityValue, onVisibility }: {
         />
       </div>
 
-      {/* Grid */}
-      {photos.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
-          {photos.map(p => (
-            <div
-              key={p.id}
-              style={{ position: 'relative', paddingBottom: '100%', background: 'var(--ah-ink)', overflow: 'hidden' }}
-            >
-              <img
-                src={p.url}
-                alt=""
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-              {editing && (
-                <button
-                  onClick={() => handleDelete(p.id)}
-                  disabled={deleting === p.id}
-                  title="Remove photo"
-                  style={{
-                    position: 'absolute', top: '6px', right: '6px',
-                    width: '22px', height: '22px',
-                    background: deleting === p.id ? 'rgba(0,0,0,0.4)' : 'rgba(10,21,18,0.75)',
-                    border: '1px solid rgba(255,255,255,0.3)',
-                    color: '#fff', cursor: deleting === p.id ? 'not-allowed' : 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '14px', lineHeight: 1,
-                  }}
-                >
-                  {deleting === p.id ? (
-                    <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                    </svg>
-                  ) : '×'}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : (
+      {order.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0', border: '1px dashed #d4c9b0', gap: '12px' }}>
           <svg width="32" height="32" fill="none" stroke="#d4c9b0" strokeWidth="1.5" viewBox="0 0 24 24">
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
@@ -2504,15 +2522,228 @@ function PhotosTab({ photos, editing, visibilityValue, onVisibility }: {
             No photos yet — click Upload Photos to add some.
           </p>
         </div>
+      ) : editing ? (
+        // Edit mode: a vertical, drag-to-reorder list of cards, each with its own
+        // metadata panel (caption, description, controlled tags, location).
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {order.map(p => (
+            <PhotoEditCard
+              key={p.id}
+              photo={p}
+              photoTags={photoTags}
+              dragging={dragId === p.id}
+              deleting={deleting === p.id}
+              onDragStart={() => setDragId(p.id)}
+              onDragEnd={() => setDragId(null)}
+              onDropOn={() => handleDrop(p.id)}
+              onDelete={() => handleDelete(p.id)}
+            />
+          ))}
+          <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#bbb', letterSpacing: '.08em', margin: 0 }}>
+            Drag the handle to reorder. Caption, description, tags &amp; location save per photo.
+          </p>
+        </div>
+      ) : (
+        // View mode: clean grid; click a photo to open the lightbox.
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+          {order.map(p => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setLightbox(p)}
+              style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', background: 'var(--ah-ink)', overflow: 'hidden', border: 'none', cursor: 'pointer', padding: 0, display: 'block' }}
+            >
+              <img src={p.url} alt={p.caption ?? ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+              {(p.caption || p.tags.length > 0) && (
+                <span style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '14px 8px 6px', textAlign: 'left', background: 'linear-gradient(transparent, rgba(10,21,18,0.8))', fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#fff', letterSpacing: '.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {p.caption || `${p.tags.length} tag${p.tags.length === 1 ? '' : 's'}`}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       )}
 
-      {editing && photos.length > 0 && (
-        <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#bbb', letterSpacing: '.08em', margin: 0 }}>
-          × buttons appear in edit mode. Changes save immediately.
-        </p>
+      {lightbox && (
+        <PhotoLightbox photo={lightbox} tagLabel={tagLabel} onClose={() => setLightbox(null)} />
       )}
     </div>
   )
+}
+
+// One photo's editable metadata card in edit mode. Holds its own draft state and
+// saves on demand via a PATCH; reorder is driven by the parent's drag handlers.
+function PhotoEditCard({ photo, photoTags, dragging, deleting, onDragStart, onDragEnd, onDropOn, onDelete }: {
+  photo: PhotoItem
+  photoTags: PhotoTagGroup[]
+  dragging: boolean
+  deleting: boolean
+  onDragStart: () => void
+  onDragEnd: () => void
+  onDropOn: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen]           = useState(false)
+  const [caption, setCaption]     = useState(photo.caption ?? '')
+  const [description, setDesc]    = useState(photo.description ?? '')
+  const [tags, setTags]           = useState<string[]>(photo.tags ?? [])
+  const [lat, setLat]             = useState(photo.latitude != null ? String(photo.latitude) : '')
+  const [lng, setLng]             = useState(photo.longitude != null ? String(photo.longitude) : '')
+  const [locName, setLocName]     = useState(photo.location_name ?? '')
+  const [saving, setSaving]       = useState(false)
+
+  function save() {
+    setSaving(true)
+    router.patch(`/member/profile/photos/${photo.id}`, {
+      caption,
+      description,
+      tags,
+      latitude:  lat.trim() === '' ? null : lat,
+      longitude: lng.trim() === '' ? null : lng,
+      location_name: locName,
+    }, {
+      preserveScroll: true,
+      preserveState: true,
+      onFinish: () => { setSaving(false); setOpen(false) },
+    })
+  }
+
+  function useExif() {
+    if (photo.exif_latitude != null) setLat(String(photo.exif_latitude))
+    if (photo.exif_longitude != null) setLng(String(photo.exif_longitude))
+  }
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={e => e.preventDefault()}
+      onDrop={onDropOn}
+      style={{ border: '1px solid #d4c9b0', background: '#fff', opacity: dragging ? 0.5 : 1 }}
+    >
+      <div style={{ display: 'flex', alignItems: 'stretch', gap: '12px', padding: '10px' }}>
+        <span title="Drag to reorder" style={{ display: 'flex', alignItems: 'center', color: '#c4b9a0', cursor: 'grab', fontSize: '16px', userSelect: 'none' }}>⠿</span>
+        <img src={photo.url} alt={photo.caption ?? ''} style={{ width: '72px', height: '72px', objectFit: 'cover', background: 'var(--ah-ink)', flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '4px' }}>
+          <span style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: photo.caption ? 'var(--ah-ink)' : '#bbb', fontStyle: photo.caption ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {photo.caption || 'No caption'}
+          </span>
+          {photo.tags.length > 0 && (
+            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#a89874', letterSpacing: '.06em' }}>
+              {photo.tags.length} tag{photo.tags.length === 1 ? '' : 's'}{photo.location_name ? ` · ${photo.location_name}` : (photo.latitude != null ? ' · located' : '')}
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button type="button" onClick={() => setOpen(o => !o)} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '6px 10px', border: '1px solid #d4c9b0', background: 'transparent', color: 'var(--ah-ink)', cursor: 'pointer' }}>
+            {open ? 'Close' : 'Edit'}
+          </button>
+          <button type="button" onClick={onDelete} disabled={deleting} title="Remove photo" style={{ width: '28px', height: '28px', border: '1px solid rgba(200,76,33,0.4)', background: 'transparent', color: 'var(--ah-accent)', cursor: deleting ? 'not-allowed' : 'pointer', fontSize: '15px', lineHeight: 1 }}>×</button>
+        </div>
+      </div>
+
+      {open && (
+        <div style={{ borderTop: '1px solid #e5ddd0', padding: '14px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={photoFieldLabel}>Caption</label>
+            <input value={caption} maxLength={140} onChange={e => setCaption(e.target.value)} placeholder="A short title for this photo" style={photoInput} />
+          </div>
+          <div>
+            <label style={photoFieldLabel}>Description</label>
+            <textarea value={description} maxLength={2000} onChange={e => setDesc(e.target.value)} rows={3} placeholder="The story behind the shot" style={{ ...photoInput, resize: 'vertical' }} />
+          </div>
+          <div>
+            <label style={photoFieldLabel}>Tags</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {photoTags.map(group => (
+                <div key={group.key}>
+                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#bbb', marginBottom: '5px' }}>{group.label}</div>
+                  <PillToggle options={group.tags} selected={tags} onChange={setTags} />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={photoFieldLabel}>Location</label>
+            {photo.has_exif_gps && (
+              <button type="button" onClick={useExif} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '5px 9px', border: '1px solid var(--ah-accent)', background: 'transparent', color: 'var(--ah-accent)', cursor: 'pointer', marginBottom: '8px' }}>
+                Use photo&apos;s GPS location
+              </button>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <input value={lat} onChange={e => setLat(e.target.value)} placeholder="Latitude" inputMode="decimal" style={photoInput} />
+              <input value={lng} onChange={e => setLng(e.target.value)} placeholder="Longitude" inputMode="decimal" style={photoInput} />
+            </div>
+            <input value={locName} maxLength={160} onChange={e => setLocName(e.target.value)} placeholder="Place name (optional)" style={{ ...photoInput, marginTop: '8px' }} />
+          </div>
+          <div>
+            <button type="button" onClick={save} disabled={saving} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '9px 18px', border: 'none', background: 'var(--ah-ink)', color: '#F4ECDC', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+              {saving ? 'Saving…' : 'Save Details'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Full-screen enlarged view with read-only metadata. Closes on backdrop click or Escape.
+function PhotoLightbox({ photo, tagLabel, onClose }: {
+  photo: PhotoItem
+  tagLabel: (key: string) => string
+  onClose: () => void
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(10,21,18,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+    >
+      <div onClick={e => e.stopPropagation()} style={{ maxWidth: '900px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: '#F8F4EB', border: '1px solid rgba(255,255,255,0.15)' }}>
+        <div style={{ position: 'relative', background: 'var(--ah-ink)' }}>
+          <img src={photo.url} alt={photo.caption ?? ''} style={{ display: 'block', width: '100%', maxHeight: '64vh', objectFit: 'contain' }} />
+          <button type="button" onClick={onClose} title="Close" style={{ position: 'absolute', top: '10px', right: '10px', width: '30px', height: '30px', background: 'rgba(10,21,18,0.75)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', cursor: 'pointer', fontSize: '17px', lineHeight: 1 }}>×</button>
+        </div>
+        {(photo.caption || photo.description || photo.tags.length > 0 || photo.location_name || photo.latitude != null) && (
+          <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {photo.caption && (
+              <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color: 'var(--ah-ink)' }}>{photo.caption}</div>
+            )}
+            {photo.description && (
+              <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#4a4036', lineHeight: 1.5 }}>{photo.description}</div>
+            )}
+            {photo.tags.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {photo.tags.map(t => (
+                  <span key={t} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', padding: '4px 9px', border: '1px solid #d4c9b0', color: '#6b5e50' }}>{tagLabel(t)}</span>
+                ))}
+              </div>
+            )}
+            {(photo.location_name || photo.latitude != null) && (
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: '#a89874', letterSpacing: '.06em' }}>
+                ◍ {photo.location_name || `${photo.latitude}, ${photo.longitude}`}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const photoFieldLabel: React.CSSProperties = {
+  display: 'block', fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600,
+  letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874', marginBottom: '6px',
+}
+const photoInput: React.CSSProperties = {
+  width: '100%', fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: 'var(--ah-ink)',
+  background: '#fff', border: '1px solid #d4c9b0', padding: '8px 10px', outline: 'none', boxSizing: 'border-box',
 }
 
 // ── Gear tab ──────────────────────────────────────────────────────────────────
