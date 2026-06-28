@@ -135,10 +135,23 @@ The pay-lease-balance button only enables when the landowner's connected account
 - The charge attributed to the landowner via `on_behalf_of` (check the charge's
   "On behalf of" field).
 
-> **One thing to confirm against reality:** under `on_behalf_of`, verify in the
-> dashboard **which account the Stripe processing fee debits** (platform vs.
-> connected). Settle the surcharge math against what you observe — this is the open
-> item from the Phase 5.5 plan.
+> **Resolved (verified 2026-06-28, test mode):** under `on_behalf_of` with the charge
+> created on the platform, **the platform bears the Stripe processing fee** — not the
+> connected account. On a $225 charge the landowner's own balance transaction deducted
+> only the $11.25 application fee (net $213.75, matching the recorded `net_cents`); the
+> $6.83 Stripe card fee came out of the platform's balance, netting the platform $4.42.
+> The `FeeService` processing surcharge is the lever to pass that Stripe cost back to
+> the customer (it was $0 here only because no `lease_payment` fee rule is seeded for
+> the property's state).
+
+> **Two prerequisites learned the hard way (both now fixed in code):**
+> 1. The connected account must hold the **`card_payments`** capability, not just
+>    `transfers` — `on_behalf_of` makes it the settlement merchant. Accounts onboarded
+>    with transfers-only must re-onboard (card_payments needs full KYC).
+> 2. The lessee views the lease as `ah_runtime`, so the landowner's identity row,
+>    Connect account, and fee tier are all RLS-hidden from them; the pay-flow resolves
+>    those reads under `ah_system`. (The test suite runs as the table owner and bypasses
+>    RLS, so this only surfaces in a real browser request.)
 
 ---
 
