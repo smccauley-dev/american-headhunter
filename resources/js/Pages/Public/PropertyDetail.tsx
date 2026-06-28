@@ -163,10 +163,11 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                     <meta name="robots" content="noindex" />
                 </Head>
                 <PublicNav />
-                <div style={{
-                    minHeight: '60vh', display: 'flex', flexDirection: 'column',
+                <div className="topo-bg" style={{
+                    minHeight: '80vh', backgroundColor: '#EDE5D0',
+                    display: 'flex', flexDirection: 'column',
                     alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-                    gap: 20, padding: '80px 24px',
+                    gap: 20, padding: '120px 24px 80px',
                 }}>
                     <div style={{
                         fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600,
