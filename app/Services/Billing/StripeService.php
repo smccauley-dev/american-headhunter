@@ -582,6 +582,51 @@ class StripeService
     }
 
     /**
+     * Create a one-time hosted Checkout Session for a destination charge: the
+     * customer pays on the platform account, but transfer_data[destination] routes
+     * the net to the landowner's connected account, application_fee_amount is the
+     * platform's cut, and on_behalf_of attributes settlement + tax (the landowner's
+     * 1099-K) to them. The lease + party references ride in metadata (mirrored onto
+     * the PaymentIntent) so the webhook can author the row — no local write happens
+     * on the runtime path.
+     *
+     * @param array<string,string> $metadata
+     */
+    public function createConnectCheckoutSession(
+        User $payer,
+        int $grossCents,
+        int $applicationFeeCents,
+        string $destinationAccountId,
+        array $metadata,
+        string $successUrl,
+        string $cancelUrl,
+        string $productName,
+    ): Session {
+        return Session::create([
+            'mode'                => 'payment',
+            'customer'            => $this->getOrCreateCustomer($payer),
+            'client_reference_id' => $payer->id,
+            'line_items'          => [[
+                'quantity'   => 1,
+                'price_data' => [
+                    'currency'     => 'usd',
+                    'unit_amount'  => $grossCents,
+                    'product_data' => ['name' => $productName],
+                ],
+            ]],
+            'payment_intent_data' => [
+                'application_fee_amount' => $applicationFeeCents,
+                'transfer_data'          => ['destination' => $destinationAccountId],
+                'on_behalf_of'           => $destinationAccountId,
+                'metadata'               => $metadata,
+            ],
+            'metadata'            => $metadata,
+            'success_url'         => $successUrl,
+            'cancel_url'          => $cancelUrl,
+        ]);
+    }
+
+    /**
      * Retrieve a Checkout Session by id. Used by the deposit success-return path to
      * author the held row immediately rather than waiting on the webhook; the
      * returned shape (metadata, payment_intent, currency, amount_total) matches the
@@ -610,6 +655,28 @@ class StripeService
         }
 
         return Refund::create($params);
+    }
+
+    /**
+     * Refund a destination-charge PaymentIntent, reversing the transfer to the
+     * landowner and returning the platform's application fee. Without reverse_transfer
+     * the landowner keeps their net and the platform eats the refund; without
+     * refund_application_fee the platform keeps its cut on a refunded sale. A null
+     * amount refunds in full; a cents amount refunds partially (Stripe reverses the
+     * transfer and application fee proportionally). Returns the Stripe Refund.
+     */
+    public function refundDestinationCharge(string $paymentIntentId, ?int $amountCents = null): Refund
+    {
+        $params = [
+            'payment_intent'         => $paymentIntentId,
+            'reverse_transfer'       => true,
+            'refund_application_fee' => true,
+        ];
+        if ($amountCents !== null) {
+            $params['amount'] = $amountCents;
+        }
+
+        return $this->withoutStripeNotice(fn () => Refund::create($params));
     }
 
     /**
@@ -850,6 +917,38 @@ class StripeService
         }
 
         return is_string($charge) && $charge !== '' ? $charge : null;
+    }
+
+    /**
+     * The captured charge id and the destination transfer id behind a PaymentIntent.
+     * For a destination charge Stripe auto-creates the transfer to the connected
+     * account and records its id on the charge's `transfer` field. Used by the
+     * lease-payment webhook to capture both ids on the collected row. Returns nulls
+     * when the intent has no settled charge / transfer yet.
+     *
+     * @return array{charge_id:?string, transfer_id:?string}
+     */
+    public function chargeAndTransferForPaymentIntent(string $paymentIntentId): array
+    {
+        $intent = \Stripe\PaymentIntent::retrieve([
+            'id'     => $paymentIntentId,
+            'expand' => ['latest_charge'],
+        ]);
+
+        $charge = $intent->latest_charge ?? null;
+        if (! is_object($charge)) {
+            return [
+                'charge_id'   => is_string($charge) && $charge !== '' ? $charge : null,
+                'transfer_id' => null,
+            ];
+        }
+
+        $transfer   = $charge->transfer ?? null;
+        $transferId = is_object($transfer)
+            ? (string) $transfer->id
+            : (is_string($transfer) && $transfer !== '' ? $transfer : null);
+
+        return ['charge_id' => (string) $charge->id, 'transfer_id' => $transferId];
     }
 
     /**

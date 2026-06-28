@@ -165,9 +165,20 @@ interface Props {
     status: string | null
     amount: string
     paid: boolean
+    landowner_charges_enabled: boolean
     can_pay: boolean
     pay_url: string
     remaining_balance: string
+  } | null
+  lease_payment: {
+    balance: string
+    balance_due: boolean
+    landowner_charges_enabled: boolean
+    surcharge: string | null
+    total_charge: string | null
+    can_pay: boolean
+    pay_url: string
+    payments: { amount: string; status: string; paid_at: string | null }[]
   } | null
   contacts: ContactDirectory | null
   signers: Signer[]
@@ -1545,13 +1556,14 @@ function CommunicationsSection({ data, isLessor }: { data: Communications; isLes
   )
 }
 
-export default function Lease({ lease, property, access_info, deposit, booking_deposit, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
+export default function Lease({ lease, property, access_info, deposit, booking_deposit, lease_payment, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
   const allSigned   = signers.every(s => s.status === 'signed')
   const [payingDeposit, setPayingDeposit] = useState(false)
   const [payingBooking, setPayingBooking] = useState(false)
+  const [payingLease, setPayingLease] = useState(false)
 
   return (
     <>
@@ -1751,6 +1763,11 @@ export default function Lease({ lease, property, access_info, deposit, booking_d
                       ? `Non-refundable — credited toward your total. Remaining balance $${booking_deposit.remaining_balance}.`
                       : 'Non-refundable down payment, credited toward your lease total.'}
                   </div>
+                  {! booking_deposit.paid && ! booking_deposit.can_pay && ! booking_deposit.landowner_charges_enabled && (
+                    <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: TAN, marginTop: '4px', fontStyle: 'italic' }}>
+                      Awaiting landowner payout setup — you'll be able to pay once it's complete.
+                    </div>
+                  )}
                 </div>
 
                 {booking_deposit.can_pay ? (
@@ -1779,6 +1796,72 @@ export default function Lease({ lease, property, access_info, deposit, booking_d
                   </span>
                 ) : null}
               </div>
+            </Section>
+          )}
+
+          {lease_payment && (
+            <Section title="Lease Balance">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+                <div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.1em', color: TAN, marginBottom: '5px' }}>
+                    {lease_payment.balance_due ? 'Balance Due' : 'Lease Balance'}
+                  </div>
+                  <div style={{ fontFamily: 'var(--body)', fontSize: '22px', fontWeight: 700, color: INK }}>${lease_payment.balance}</div>
+                  {lease_payment.balance_due && lease_payment.can_pay && lease_payment.surcharge && Number(lease_payment.surcharge) > 0 && (
+                    <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: TAN, marginTop: '4px' }}>
+                      Plus a ${lease_payment.surcharge} processing fee — ${lease_payment.total_charge} total.
+                    </div>
+                  )}
+                  {lease_payment.balance_due && !lease_payment.landowner_charges_enabled && (
+                    <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: TAN, marginTop: '4px', fontStyle: 'italic' }}>
+                      Awaiting landowner payout setup — you'll be able to pay once it's complete.
+                    </div>
+                  )}
+                  {!lease_payment.balance_due && (
+                    <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginTop: '4px' }}>
+                      Paid in full.
+                    </div>
+                  )}
+                </div>
+
+                {lease_payment.can_pay ? (
+                  <button
+                    type="button"
+                    disabled={payingLease}
+                    onClick={() => {
+                      setPayingLease(true)
+                      router.post(lease_payment.pay_url, {}, { onFinish: () => setPayingLease(false) })
+                    }}
+                    style={{ ...btnAccent, whiteSpace: 'nowrap', opacity: payingLease ? 0.6 : 1 }}
+                  >
+                    {payingLease ? 'Redirecting…' : 'Pay Lease Balance'}
+                  </button>
+                ) : lease_payment.balance_due ? (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', padding: '10px 18px',
+                    background: 'transparent', border: `1px solid ${TAN}`,
+                    fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em',
+                    textTransform: 'uppercase', color: TAN,
+                  }}>
+                    Not Yet Payable
+                  </span>
+                ) : null}
+              </div>
+
+              {lease_payment.payments.length > 0 && (
+                <div style={{ marginTop: '16px', borderTop: `1px dotted ${FIELD_BORDER}`, paddingTop: '12px' }}>
+                  {lease_payment.payments.map((p, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+                      <span style={{ fontFamily: 'var(--body)', fontSize: '14px', color: INK }}>
+                        ${p.amount}{p.paid_at ? ` · ${p.paid_at}` : ''}
+                      </span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: p.status === 'collected' ? OLIVE : TAN }}>
+                        {p.status === 'collected' ? 'Paid' : p.status === 'partially_refunded' ? 'Partial Refund' : 'Refunded'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Section>
           )}
 

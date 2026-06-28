@@ -9,6 +9,7 @@ use App\Models\Billing\Subscription;
 use App\Models\Identity\User;
 use App\Services\Audit\AuditService;
 use App\Services\Billing\BookingDepositService;
+use App\Services\Billing\LeasePaymentService;
 use App\Services\Billing\SecurityDepositService;
 use App\Services\Billing\StripeInvoiceProjector;
 use App\Services\Billing\StripeService;
@@ -109,6 +110,15 @@ class ProcessStripeWebhook implements ShouldQueue
         if (($this->object['mode'] ?? null) === 'payment'
             && ($this->object['metadata']['purpose'] ?? null) === 'booking_deposit') {
             app(BookingDepositService::class)->recordCollectedFromCheckout($this->object);
+            return;
+        }
+
+        // A payment-mode Checkout settling a lease balance (Connect destination charge) —
+        // author the collected row; the destination transfer to the landowner is
+        // auto-created by Stripe at charge time.
+        if (($this->object['mode'] ?? null) === 'payment'
+            && ($this->object['metadata']['purpose'] ?? null) === 'lease_payment') {
+            app(LeasePaymentService::class)->recordCollectedFromCheckout($this->object);
             return;
         }
 

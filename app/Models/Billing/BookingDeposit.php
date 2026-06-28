@@ -25,25 +25,32 @@ class BookingDeposit extends BaseModel
         'payee_user_id',
         'payment_id',
         'payout_id',
+        'stripe_account_id',
         'amount_cents',
+        'application_fee_cents',
+        'net_cents',
         'currency',
         'status',
         'stripe_payment_intent_id',
+        'stripe_transfer_id',
         'collected_at',
         'disbursed_at',
     ];
 
-    // The Stripe identifier never reaches the client and must never be logged.
+    // Stripe identifiers never reach the client and must never be logged.
     protected $hidden = [
         'stripe_payment_intent_id',
+        'stripe_transfer_id',
     ];
 
     protected function casts(): array
     {
         return array_merge(parent::casts(), [
-            'amount_cents' => 'integer',
-            'collected_at' => 'datetime',
-            'disbursed_at' => 'datetime',
+            'amount_cents'          => 'integer',
+            'application_fee_cents' => 'integer',
+            'net_cents'             => 'integer',
+            'collected_at'          => 'datetime',
+            'disbursed_at'          => 'datetime',
         ]);
     }
 

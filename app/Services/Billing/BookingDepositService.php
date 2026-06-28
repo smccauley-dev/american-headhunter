@@ -22,15 +22,17 @@ use Stripe\Checkout\Session;
  * Checkout session; the webhook (ah_system) authors the collected row when the
  * one-time payment succeeds.
  *
- * Disbursement to the landowner is DEFERRED — PayoutService / Stripe Connect is not
- * on this branch, so a collected deposit stays captured on the platform (payout_id
- * NULL, status 'collected') until the Connect work lands and settles it. This is the
- * same deferral the security-deposit forfeiture path already uses.
+ * Collected via a Stripe Connect destination charge: the customer pays the deposit
+ * on the platform account, transfer_data[destination] routes the net to the
+ * landowner's connected account at charge time and application_fee_amount is the
+ * platform's cut — so the deposit settles to the landowner immediately (status
+ * 'disbursed', no separate payout) rather than sitting captured on the platform.
  */
 class BookingDepositService extends BaseService
 {
     public function __construct(
         private readonly StripeService   $stripe,
+        private readonly PayoutService   $payouts,
         private readonly PropertyService $properties,
         private readonly AuditService    $audit,
     ) {}
@@ -75,11 +77,13 @@ class BookingDepositService extends BaseService
     // ── Member-initiated capture (runtime — no local write) ──────────────────────
 
     /**
-     * Create the hosted Checkout session a lessee pays to fund their booking deposit.
-     * The row is authored later by the webhook; nothing is written here (the member
-     * runs as ah_runtime, which cannot write booking_deposits).
+     * Create the hosted Checkout session a lessee pays to fund their booking deposit
+     * as a destination charge to the landowner. The customer pays the deposit amount;
+     * the platform keeps the tier fee (application_fee) and the landowner's net is
+     * transferred at charge time. The row is authored later by the webhook; nothing is
+     * written here (the member runs as ah_runtime, which cannot write booking_deposits).
      *
-     * @throws \RuntimeException when no booking deposit is due for the lease
+     * @throws \RuntimeException when no booking deposit is due, or the landowner can't yet take charges
      */
     public function createCheckoutSession(Lease $lease, User $payer, string $successUrl, string $cancelUrl): Session
     {
@@ -88,28 +92,51 @@ class BookingDepositService extends BaseService
             throw new \RuntimeException("Lease {$lease->id} has no booking deposit due.");
         }
 
-        return $this->stripe->createDepositCheckoutSession(
+        $landowner = $lease->getLessor();
+        if (! $landowner) {
+            throw new \RuntimeException("Lease {$lease->id} has no landowner to pay.");
+        }
+
+        $account = $this->payouts->connectAccount($landowner);
+        if ($account === null || ! $account->charges_enabled) {
+            throw new \RuntimeException('The landowner has not finished payout setup, so the booking deposit cannot be paid yet.');
+        }
+
+        $tier    = $this->payouts->quote($landowner, $amountCents);
+        $feeCents = $tier['fee_cents'];
+
+        $property    = rescue(fn () => $this->properties->find($lease->property_id), null);
+        $productName = 'Booking deposit — ' . ($property?->title ?? 'hunting lease');
+
+        return $this->stripe->createConnectCheckoutSession(
             $payer,
             $amountCents,
+            $feeCents,
+            $account->stripe_account_id,
             [
-                'purpose'       => 'booking_deposit',
-                'lease_id'      => $lease->id,
-                'payer_user_id' => $lease->lessee_user_id,
-                'payee_user_id' => $lease->lessor_user_id,
-                'amount_cents'  => (string) $amountCents,
+                'purpose'               => 'booking_deposit',
+                'lease_id'              => $lease->id,
+                'payer_user_id'         => $lease->lessee_user_id,
+                'payee_user_id'         => $lease->lessor_user_id,
+                'stripe_account_id'     => $account->stripe_account_id,
+                'amount_cents'          => (string) $amountCents,
+                'application_fee_cents' => (string) $feeCents,
+                'net_cents'             => (string) $tier['net_cents'],
             ],
             $successUrl,
             $cancelUrl,
+            $productName,
         );
     }
 
     // ── System writes (webhook + admin run as ah_system) ─────────────────────────
 
     /**
-     * Author the collected booking-deposit row from a completed payment-mode
-     * Checkout. Called from the webhook. Idempotent on the captured PaymentIntent.
-     * Returns the row, or null when the session isn't a booking-deposit payment or is
-     * incomplete. The landowner payout is deferred (payout_id stays NULL).
+     * Author the booking-deposit row from a completed payment-mode Checkout. Called
+     * from the webhook. Idempotent on the captured PaymentIntent. Returns the row, or
+     * null when the session isn't a booking-deposit payment or is incomplete. The
+     * destination transfer settles the landowner's net at charge time, so the row is
+     * recorded 'disbursed' with the auto-created transfer id.
      *
      * @param array<string,mixed> $session Stripe checkout.session.completed payload
      */
@@ -134,15 +161,27 @@ class BookingDepositService extends BaseService
 
         $amountCents = (int) ($meta['amount_cents'] ?? $session['amount_total'] ?? 0);
 
+        // The destination transfer is auto-created by Stripe; capture its id best-effort
+        // — the money already moved, so never fail the webhook over the read.
+        $ids = rescue(
+            fn () => $this->stripe->chargeAndTransferForPaymentIntent($paymentIntentId),
+            ['charge_id' => null, 'transfer_id' => null],
+        );
+
         $deposit = BookingDeposit::create([
             'lease_id'                 => $leaseId,
             'payer_user_id'            => $meta['payer_user_id'] ?? null,
             'payee_user_id'            => $meta['payee_user_id'] ?? null,
+            'stripe_account_id'        => $meta['stripe_account_id'] ?? null,
             'amount_cents'             => $amountCents,
+            'application_fee_cents'    => (int) ($meta['application_fee_cents'] ?? 0),
+            'net_cents'                => (int) ($meta['net_cents'] ?? 0),
             'currency'                 => strtoupper((string) ($session['currency'] ?? 'USD')),
-            'status'                   => 'collected',
+            'status'                   => 'disbursed',
             'stripe_payment_intent_id' => $paymentIntentId,
+            'stripe_transfer_id'       => $ids['transfer_id'],
             'collected_at'             => now(),
+            'disbursed_at'             => now(),
         ]);
 
         // Mirror the paid amount onto the lease (DB 3) so the remaining balance
@@ -162,8 +201,8 @@ class BookingDepositService extends BaseService
             tableName:      'booking_deposits',
             recordId:       $deposit->id,
             userId:         $deposit->payer_user_id,
-            actionSummary:  'Booking deposit collected (landowner payout deferred to Connect)',
-            newValues:      ['amount_cents' => $amountCents, 'status' => 'collected'],
+            actionSummary:  'Booking deposit collected and disbursed to landowner via Stripe Connect destination charge',
+            newValues:      ['amount_cents' => $amountCents, 'status' => 'disbursed'],
         );
 
         $this->invalidate("lease_detail:{$leaseId}");
