@@ -803,13 +803,20 @@ class StripeService
      * transfer their lease revenue to them. The user_id rides in metadata so the
      * account.updated webhook can correlate the account back to a local record.
      * Returns the Stripe account id (the caller persists it under ah_system).
+     *
+     * Both card_payments and transfers are requested: our charges use on_behalf_of,
+     * which makes the connected account the settlement merchant, so Stripe requires
+     * it to hold card_payments (transfers alone is rejected at charge time).
      */
     public function createConnectAccount(User $landowner): string
     {
         $account = $this->withoutStripeNotice(fn () => Account::create([
             'type'         => 'express',
             'email'        => $landowner->email,
-            'capabilities' => ['transfers' => ['requested' => true]],
+            'capabilities' => [
+                'card_payments' => ['requested' => true],
+                'transfers'     => ['requested' => true],
+            ],
             'metadata'     => ['user_id' => $landowner->id],
         ]));
 
