@@ -97,14 +97,17 @@ class PropertyDetailVisibilityTest extends TestCase
         $this->get("/properties/{$this->slug}")->assertNotFound();
     }
 
-    public function test_a_paused_listing_keeps_its_page_at_200(): void
+    public function test_a_paused_listing_serves_a_noindex_stub_without_details(): void
     {
-        // PAUSE flips visibility to 'private'. The listing is pulled from home and
-        // search, but its own URL must stay a healthy 200 (badged "Not Currently
-        // Available") so an indexed page never 404s — same SEO contract as leased.
+        // PAUSE flips visibility to 'private'. The URL must stay a healthy 200 (no
+        // 404 SEO ding) but serve a minimal stub: none of the property's details
+        // leak, and crawlers are told to drop it (noindex).
         DB::connection('property')->table('property_listings')
             ->where('id', $this->listingId)->update(['visibility' => 'private']);
 
-        $this->get("/properties/{$this->slug}")->assertOk();
+        $this->get("/properties/{$this->slug}")
+            ->assertOk()
+            ->assertDontSee('Visibility Test Ranch') // title never leaks
+            ->assertDontSee('Kerr');                  // county never leaks
     }
 }

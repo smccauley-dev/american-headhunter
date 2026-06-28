@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import PublicNav from '@/Components/Public/PublicNav';
 
 interface PropertySpecies {
@@ -25,7 +25,6 @@ interface PropertyListing {
     id: string;
     listing_type: string;
     status: string;
-    is_paused: boolean;
     season_start: string | null;
     season_end: string | null;
     min_hunters: number | null;
@@ -38,6 +37,9 @@ interface PropertyListing {
 
 interface Property {
     id: string;
+    // When true, every public listing is paused: only `slug` is sent and the
+    // page renders a minimal, noindex'd "not available" stub (no details).
+    paused?: boolean;
     title: string;
     slug: string;
     boundary_map_url: string | null;
@@ -135,13 +137,8 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
     // publicListings is ordered active → pending → leased, so the first entry is
     // the one to feature: an open listing if any, otherwise the leased/pending one.
     const listing = property.listings?.[0] ?? null;
-    // A paused listing keeps its page (SEO) but is never bookable and shows a
-    // neutral "Not Currently Available" stamp — never "Available"/Apply.
-    const isPaused = listing?.is_paused ?? false;
-    const isOpen = listing?.status === 'active' && !isPaused;
-    const statusLabel = listing
-        ? (isPaused ? 'Not Currently Available' : availabilityLabel(listing.status))
-        : null;
+    const isOpen = listing?.status === 'active';
+    const statusLabel = listing ? availabilityLabel(listing.status) : null;
     const { auth } = usePage<{ auth: { authenticated: boolean } }>().props;
     const applyHref = auth?.authenticated && listing ? `/apply/${listing.id}` : '/get-started';
     const photos = property.photos ?? [];
@@ -156,6 +153,40 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [lightbox, photos.length]);
+
+    // Paused: the owner has hidden this property. Keep the URL at 200 (no 404)
+    // but show nothing about it, and noindex so it drops from search results.
+    if (property.paused) {
+        return (
+            <div className="ah-page">
+                <Head>
+                    <meta name="robots" content="noindex" />
+                </Head>
+                <PublicNav />
+                <div style={{
+                    minHeight: '60vh', display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+                    gap: 20, padding: '80px 24px',
+                }}>
+                    <div style={{
+                        fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600,
+                        letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--blaze)',
+                    }}>
+                        Not Currently Available
+                    </div>
+                    <h1 style={{ fontSize: 26, margin: 0, color: 'var(--ink)' }}>
+                        This listing isn’t currently available
+                    </h1>
+                    <p style={{ maxWidth: 460, color: 'var(--ink-soft)', lineHeight: 1.6 }}>
+                        It may return soon. In the meantime, browse our other properties.
+                    </p>
+                    <Link href="/properties" className="btn-solid" style={{ justifyContent: 'center' }}>
+                        Browse Properties
+                    </Link>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="ah-page">
