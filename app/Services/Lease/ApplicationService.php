@@ -303,6 +303,27 @@ class ApplicationService extends BaseService
             return $lease;
         });
 
+        // Exclusive (annual / seasonal) listings are committed at approval:
+        // reserve the full term so a second overlapping approval is refused
+        // (the EXCLUDE constraint is the race-proof guard) and pull the listing
+        // from search. Day-hunt listings reserve at activation instead, so this
+        // is a no-op for them. A conflict (already leased) compensates the
+        // freshly created lease and surfaces a friendly error to the reviewer.
+        try {
+            $this->propertyService->reserveExclusiveLease(
+                listingId:       $application->listing_id,
+                start:           Carbon::parse($leaseTerms['start_date']),
+                end:             Carbon::parse($leaseTerms['end_date']),
+                hunters:         $lease->hunters()->count(),
+                cost:            (float) $leaseTerms['total_price'],
+                leaseId:         $lease->id,
+                createdByUserId: $reviewerUserId,
+            );
+        } catch (\Throwable $e) {
+            $this->compensateFailedApproval($application, $lease, $reviewerUserId);
+            throw $e;
+        }
+
         // Signing request lives in the documents DB — no shared transaction
         // is possible, so compensate the lease DB if this step fails.
         try {
@@ -355,6 +376,11 @@ class ApplicationService extends BaseService
                     'reviewed_at'         => null,
                 ]);
             });
+
+            // Free any exclusive-listing reservation this approval held and
+            // re-list it. No-op when the reservation step is what failed (its
+            // own transaction rolled back, leaving no row for this lease).
+            rescue(fn () => $this->propertyService->releaseBooking($lease->id));
 
             $this->auditService->log(
                 eventType:      'lease_application.approval_compensated',
