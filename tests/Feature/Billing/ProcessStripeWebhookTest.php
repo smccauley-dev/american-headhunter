@@ -85,13 +85,18 @@ class ProcessStripeWebhookTest extends TestCase
 
     private function dispatch(string $type, array $object, ?StripeService $stripe = null): void
     {
+        // Bind a Stripe override into the container so both the job and the
+        // MembershipCheckoutService it delegates the subscription reconcile to
+        // (which now performs the period read) resolve the same mock.
+        if ($stripe) {
+            $this->app->instance(StripeService::class, $stripe);
+        }
+
         $job = new ProcessStripeWebhook('evt_' . bin2hex(random_bytes(8)), $type, $object);
         $job->handle(
             app(EntitlementService::class),
             app(AuditService::class),
-            app(SubscriptionService::class),
-            $stripe ?? app(StripeService::class),
-            app(\App\Services\Billing\PromoCodeService::class),
+            app(StripeService::class),
         );
     }
 

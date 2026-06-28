@@ -122,4 +122,53 @@ class MembershipCheckoutServiceTest extends TestCase
 
         $this->assertSame('https://checkout.stripe.test/session-123', $result['url']);
     }
+
+    public function test_record_subscription_from_checkout_authors_subscription(): void
+    {
+        $userId        = (string) Str::uuid();
+        $planVersionId = (string) Str::uuid();
+
+        $service = $this->service(
+            subs: function ($m) use ($userId, $planVersionId) {
+                $m->shouldReceive('start')->once()
+                    ->with($userId, $planVersionId, Mockery::on(fn ($opts) => $opts['stripe_subscription_id'] === 'sub_react'))
+                    ->andReturn(new Subscription());
+            },
+            stripe: function ($m) {
+                $m->shouldReceive('subscriptionPeriod')->with('sub_react')->andReturn([
+                    'interval'             => 'monthly',
+                    'current_period_start' => '2026-06-27',
+                    'current_period_end'   => '2026-07-27',
+                ]);
+            },
+        );
+
+        $created = $service->recordSubscriptionFromCheckout([
+            'mode'         => 'subscription',
+            'subscription' => 'sub_react',
+            'customer'     => 'cus_react',
+            'metadata'     => ['user_id' => $userId, 'plan_version_id' => $planVersionId],
+        ]);
+
+        $this->assertTrue($created);
+    }
+
+    public function test_record_subscription_from_checkout_ignores_non_subscription_mode(): void
+    {
+        $service = $this->service(subs: function ($m) {
+            $m->shouldReceive('start')->never();
+        });
+
+        $this->assertFalse($service->recordSubscriptionFromCheckout(['mode' => 'payment']));
+    }
+
+    public function test_record_subscription_from_checkout_requires_core_fields(): void
+    {
+        $service = $this->service(subs: function ($m) {
+            $m->shouldReceive('start')->never();
+        });
+
+        // Missing subscription id / metadata — cannot author a row.
+        $this->assertFalse($service->recordSubscriptionFromCheckout(['mode' => 'subscription']));
+    }
 }

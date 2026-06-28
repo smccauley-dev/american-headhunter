@@ -3,18 +3,15 @@
 namespace App\Jobs\Billing;
 
 use App\Models\Billing\Payment;
-use App\Models\Billing\PromoCode;
 use App\Models\Billing\StripeAccount;
 use App\Models\Billing\StripeInvoiceProjection;
 use App\Models\Billing\Subscription;
 use App\Models\Identity\User;
 use App\Services\Audit\AuditService;
 use App\Services\Billing\BookingDepositService;
-use App\Services\Billing\PromoCodeService;
 use App\Services\Billing\SecurityDepositService;
 use App\Services\Billing\StripeInvoiceProjector;
 use App\Services\Billing\StripeService;
-use App\Services\Billing\SubscriptionService;
 use App\Services\Platform\EntitlementService;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -59,7 +56,7 @@ class ProcessStripeWebhook implements ShouldQueue
         $this->onQueue('priority');
     }
 
-    public function handle(EntitlementService $entitlements, AuditService $audit, SubscriptionService $subscriptions, StripeService $stripe, PromoCodeService $promoCodes): void
+    public function handle(EntitlementService $entitlements, AuditService $audit, StripeService $stripe): void
     {
         // Stripe may deliver the same event more than once — process it once.
         if (! Cache::store('valkey')->add("stripe_webhook:{$this->eventId}", 1, now()->addDays(2))) {
@@ -67,7 +64,7 @@ class ProcessStripeWebhook implements ShouldQueue
         }
 
         match ($this->eventType) {
-            'checkout.session.completed'    => $this->checkoutCompleted($subscriptions, $stripe, $promoCodes),
+            'checkout.session.completed'    => $this->checkoutCompleted($stripe),
             'customer.subscription.updated' => $this->subscriptionUpdated($entitlements, $audit),
             'customer.subscription.deleted' => $this->subscriptionDeleted($entitlements, $audit),
             'invoice.created',
@@ -89,7 +86,7 @@ class ProcessStripeWebhook implements ShouldQueue
      * from the Stripe subscription so the renew date and price cadence are
      * authoritative rather than locally guessed.
      */
-    private function checkoutCompleted(SubscriptionService $subscriptions, StripeService $stripe, PromoCodeService $promoCodes): void
+    private function checkoutCompleted(StripeService $stripe): void
     {
         // A setup-mode Checkout means the member updated their card (dunning flow):
         // finish it by making the new method the default and retrying the open invoice.
@@ -119,72 +116,16 @@ class ProcessStripeWebhook implements ShouldQueue
             return; // one-time payments are handled elsewhere
         }
 
-        $stripeSubId   = $this->object['subscription'] ?? null;
-        $stripeCustId  = $this->object['customer'] ?? null;
-        $userId        = $this->object['metadata']['user_id'] ?? null;
-        $planVersionId = $this->object['metadata']['plan_version_id'] ?? null;
+        // Author the subscription (period read, idempotency, promo redemption) via
+        // the shared reconciler so the instant-reactivation return takes the same
+        // path. Returns true once the subscription exists for the user.
+        $exists = app(\App\Services\Billing\MembershipCheckoutService::class)
+            ->recordSubscriptionFromCheckout($this->object);
 
-        if (! $stripeSubId || ! $userId || ! $planVersionId) {
-            Log::warning('StripeWebhook: checkout.session.completed missing fields', ['stripe_subscription_id' => $stripeSubId]);
-            return;
-        }
-
-        // Idempotent: the subscription may already exist from a replay or a
-        // racing customer.subscription.* event.
-        if (Subscription::where('stripe_subscription_id', $stripeSubId)->exists()) {
-            return;
-        }
-
-        // Read the real interval + period window from Stripe so the renew date and
-        // price cadence on the membership card are authoritative rather than a
-        // local guess. A read failure must not block creating the subscription —
-        // fall back to start()'s estimate (monthly).
-        $periodOpts = [];
-        try {
-            $period = $stripe->subscriptionPeriod($stripeSubId);
-            $periodOpts = [
-                'interval'             => $period['interval'],
-                'current_period_start' => $period['current_period_start'],
-                'current_period_end'   => $period['current_period_end'],
-            ];
-        } catch (\Throwable $e) {
-            Log::warning('StripeWebhook: could not read subscription period', ['error' => $e->getMessage(), 'stripe_subscription_id' => $stripeSubId]);
-        }
-
-        $created = false;
-        try {
-            $subscriptions->start($userId, $planVersionId, array_merge([
-                'stripe_subscription_id' => $stripeSubId,
-                'stripe_customer_id'     => $stripeCustId,
-                'status'                 => 'active',
-            ], $periodOpts));
-            $created = true;
-
-            // Lift a billing pause (pause_account promo expiry) now that the member
-            // is paying again. A reactivation failure must not fail the webhook.
-            if ($user = User::find($userId)) {
-                app(\App\Services\Billing\PromotionExpirationService::class)->reactivate($user);
-            }
-        } catch (\RuntimeException $e) {
-            // start() throws if the user already holds an active subscription —
-            // treat as already-reconciled rather than failing the webhook.
-            Log::info('StripeWebhook: checkout.session.completed skipped', ['error' => $e->getMessage(), 'user_id' => $userId]);
-        }
-
-        // A promo code rode along on the checkout metadata — record the redemption
-        // (increment the code's count + author the claim) now that the paid
-        // subscription exists. A promo failure must never fail the webhook.
-        $promoCodeId = $this->object['metadata']['promo_code_id'] ?? null;
-        if ($created && $promoCodeId) {
-            try {
-                $user = User::find($userId);
-                $code = PromoCode::on('billing')->find($promoCodeId);
-                if ($user && $code) {
-                    $promoCodes->recordRedemption($user, $code);
-                }
-            } catch (\Throwable $e) {
-                Log::warning('StripeWebhook: promo redemption failed', ['error' => $e->getMessage(), 'promo_code_id' => $promoCodeId]);
-            }
+        // Lift a billing pause (pause_account promo expiry) now that the member is
+        // paying again. A reactivation failure must not fail the webhook.
+        if ($exists && ($userId = $this->object['metadata']['user_id'] ?? null) && $user = User::find($userId)) {
+            app(\App\Services\Billing\PromotionExpirationService::class)->reactivate($user);
         }
     }
 

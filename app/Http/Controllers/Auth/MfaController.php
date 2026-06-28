@@ -104,6 +104,12 @@ class MfaController extends Controller
             ipAddress:     $request->ip(),
         );
 
+        // A paused account (lapsed pause_account promo) lands in the reactivation
+        // waiting room after clearing MFA — pay to reactivate.
+        if ($user->status === 'paused') {
+            return redirect()->route('reactivate.show');
+        }
+
         return redirect()->intended(
             app(\App\Services\Platform\TenantService::class)->getSetting('nav.login_redirect', '/member/profile')
         );
