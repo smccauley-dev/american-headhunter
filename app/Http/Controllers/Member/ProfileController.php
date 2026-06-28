@@ -10,11 +10,13 @@ use App\Models\Identity\User;
 use App\Models\Identity\UserProfile;
 use App\Models\Billing\StripeInvoiceProjection;
 use App\Models\Lease\CheckIn;
+use App\Models\Platform\PlanVersion;
 use App\Models\Wildlife\HarvestLog;
 use App\Services\Documents\DocumentService;
 use App\Services\Identity\ProfilePhotoService;
 use App\Support\PhotoTagVocabulary;
 use App\Services\Billing\PayoutService;
+use App\Services\Billing\StripeService;
 use App\Services\Lease\LeaseService;
 use App\Services\Platform\EntitlementService;
 use App\Services\Platform\ProfileTemplateService;
@@ -36,7 +38,7 @@ class ProfileController extends Controller
         private readonly ProfilePhotoService $photos,
     ) {}
 
-    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, EntitlementService $entitlements, PayoutService $payouts, string $initialTab = 'about'): Response
+    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, EntitlementService $entitlements, PayoutService $payouts, StripeService $stripe, string $initialTab = 'about'): Response
     {
         $userId  = session('auth.user_id');
         $user    = User::findOrFail($userId);
@@ -107,7 +109,7 @@ class ProfileController extends Controller
             'activity'    => $this->buildActivityProps($userId),
             'security'    => $this->buildSecurityProps($userId),
             'leases'      => $leaseService->getLeaseSummariesForLessee($userId),
-            'membership'  => $entitlements->currentMembership($user),
+            'membership'  => $this->membershipWithDiscount($user, $entitlements, $stripe),
             'invoices'    => $this->buildInvoices($userId),
             'checkout'    => request()->query('checkout'),
             'billing'     => request()->query('billing'),
@@ -122,6 +124,79 @@ class ProfileController extends Controller
         }
 
         return Inertia::render('Member/Profile/Hunter', $props);
+    }
+
+    /**
+     * The membership identity (locked list price) plus the live Stripe discount,
+     * if one is actively reducing the member's charges. The list price stays the
+     * grandfathered truth; `discount` carries the net price the member is really
+     * billed so the card can show both. A consumed one-time coupon yields no
+     * discount (its discounts array is empty), so the card correctly shows the
+     * full recurring price.
+     */
+    private function membershipWithDiscount(User $user, EntitlementService $entitlements, StripeService $stripe): array
+    {
+        $membership = $entitlements->currentMembership($user);
+        $membership['discount'] = $this->membershipDiscount($user, $entitlements, $stripe);
+
+        return $membership;
+    }
+
+    /**
+     * @return array{label:string, duration_label:string, is_recurring:bool, ends_at:?string, list_price:string, net_price:string, interval:string}|null
+     */
+    private function membershipDiscount(User $user, EntitlementService $entitlements, StripeService $stripe): ?array
+    {
+        $sub = $entitlements->activeSubscriptionFor($user);
+        if (! $sub || ! $sub->stripe_subscription_id || ! $sub->plan_version_id) {
+            return null;
+        }
+
+        try {
+            $discount = $stripe->subscriptionDiscount($sub->stripe_subscription_id);
+        } catch (\Throwable $e) {
+            // A Stripe hiccup must never break the profile page — just omit the badge.
+            return null;
+        }
+        if ($discount === null) {
+            return null;
+        }
+
+        $version = PlanVersion::on('platform')->find($sub->plan_version_id);
+        if (! $version) {
+            return null;
+        }
+
+        $interval  = $sub->billing_interval === 'annual' ? 'annual' : 'monthly';
+        $listCents = $interval === 'annual'
+            ? (int) $version->annual_price_cents
+            : (int) $version->monthly_price_cents;
+
+        if ($discount['percent_off'] !== null) {
+            $netCents = (int) round($listCents * (1 - $discount['percent_off'] / 100));
+            $label    = rtrim(rtrim(number_format($discount['percent_off'], 2), '0'), '.') . '% off';
+        } elseif ($discount['amount_off'] !== null) {
+            $netCents = max(0, $listCents - $discount['amount_off']);
+            $label    = '$' . number_format($discount['amount_off'] / 100, 2) . ' off';
+        } else {
+            return null;
+        }
+
+        return [
+            'label'          => $label,
+            'duration_label' => match ($discount['duration']) {
+                'forever'   => 'every renewal',
+                'repeating' => $discount['duration_in_months']
+                    ? 'for ' . $discount['duration_in_months'] . ' month' . ($discount['duration_in_months'] === 1 ? '' : 's')
+                    : 'for a limited time',
+                default     => 'first payment only',
+            },
+            'is_recurring' => $discount['duration'] !== 'once',
+            'ends_at'      => $discount['ends_at'],
+            'list_price'   => number_format($listCents / 100, 2),
+            'net_price'    => number_format($netCents / 100, 2),
+            'interval'     => $interval,
+        ];
     }
 
     public function update(Request $request)

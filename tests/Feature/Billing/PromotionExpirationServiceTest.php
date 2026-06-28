@@ -79,6 +79,14 @@ class PromotionExpirationServiceTest extends TestCase
             'status'        => $status,
             'account_type'  => 'hunter',
         ]);
+        // Fully populate the account — a leaked fixture (interrupted run) should
+        // never show up nameless on /admin/platform-users.
+        DB::connection('identity')->table('user_profiles')->insert([
+            'id'         => (string) Str::uuid(),
+            'user_id'    => $id,
+            'first_name' => 'PromoExp',
+            'last_name'  => 'Test User',
+        ]);
         $this->userIds[] = $id;
 
         return User::on('identity')->find($id);
@@ -114,6 +122,11 @@ class PromotionExpirationServiceTest extends TestCase
             'monthly_price_cents'     => 1999,
             'annual_price_cents'      => 19999,
             'stripe_monthly_price_id' => $priceId,
+            // These rows are written to the real dev DB (no transaction) and rely on
+            // tearDown to remove them. Keep them off the public pricing page so a
+            // leaked fixture (interrupted run) can never surface as a phantom plan.
+            'is_public'               => false,
+            'is_active'               => false,
         ]);
         $this->planIds[] = $planId;
 

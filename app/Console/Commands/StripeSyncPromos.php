@@ -38,12 +38,7 @@ class StripeSyncPromos extends Command
         $rows = [];
 
         foreach ($periods as $period) {
-            $couponId = $stripe->upsertCoupon($period);
-
-            if ($couponId && $couponId !== $period->stripe_coupon_id) {
-                $period->stripe_coupon_id = $couponId;
-                $period->save();
-            }
+            $couponId = $stripe->syncPromotionCoupon($period);
 
             $rows[] = [$period->promo_key, $couponId ?? '— (no discount)'];
         }

@@ -207,15 +207,118 @@ class StripeService
             return null; // nothing monetary to mirror
         }
 
-        // A fixed-day promo repeats over whole months; no duration means once.
-        if ($promo->duration_days) {
-            $params['duration']           = 'repeating';
-            $params['duration_in_months'] = max(1, (int) round($promo->duration_days / 30));
-        } else {
-            $params['duration'] = 'once';
+        // The admin chooses the discount's lifetime explicitly: once (first
+        // invoice only), repeating for N months, or forever (every renewal).
+        $duration                = in_array($promo->discount_duration, ['once', 'repeating', 'forever'], true)
+            ? $promo->discount_duration
+            : 'once';
+        $params['duration'] = $duration;
+        if ($duration === 'repeating') {
+            $params['duration_in_months'] = max(1, (int) ($promo->discount_duration_months ?? 1));
         }
 
         return Coupon::create($params)->id;
+    }
+
+    /**
+     * Sync a period's monetary discount to a Stripe Coupon and persist the id back
+     * onto the period when it changes. Returns the coupon id (or null for a promo
+     * with no monetary discount). Shared by the stripe:sync-promos backfill command
+     * and the admin create/edit pages, so activating a promotion in Filament wires
+     * its coupon immediately rather than waiting for the command.
+     */
+    public function syncPromotionCoupon(PromotionalPeriod $promo): ?string
+    {
+        // Stripe coupons are immutable. If the period's discount terms have since
+        // diverged from the stored coupon (e.g. an admin changed the percentage or
+        // the duration), drop the reference so a fresh coupon is minted. The old
+        // coupon stays in Stripe and existing subscribers keep it — only new
+        // checkouts pick up the new terms.
+        if ($promo->stripe_coupon_id && ! $this->couponMatches($promo)) {
+            $promo->stripe_coupon_id = null;
+            $promo->save();
+        }
+
+        $couponId = $this->upsertCoupon($promo);
+
+        if ($couponId && $couponId !== $promo->stripe_coupon_id) {
+            $promo->stripe_coupon_id = $couponId;
+            $promo->save();
+        }
+
+        return $couponId;
+    }
+
+    /**
+     * Whether the period's stored Stripe Coupon still reflects its current
+     * discount terms (amount/percentage and duration). A retrieval failure or any
+     * mismatch returns false so the caller re-mints the coupon.
+     */
+    private function couponMatches(PromotionalPeriod $promo): bool
+    {
+        try {
+            $coupon = Coupon::retrieve($promo->stripe_coupon_id);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        $wantDuration = in_array($promo->discount_duration, ['once', 'repeating', 'forever'], true)
+            ? $promo->discount_duration
+            : 'once';
+        if (($coupon->duration ?? null) !== $wantDuration) {
+            return false;
+        }
+        if ($wantDuration === 'repeating'
+            && (int) ($coupon->duration_in_months ?? 0) !== max(1, (int) ($promo->discount_duration_months ?? 1))) {
+            return false;
+        }
+
+        if ($promo->discount_percentage && $promo->discount_percentage > 0) {
+            return abs((float) ($coupon->percent_off ?? 0) - (float) $promo->discount_percentage) < 0.001;
+        }
+        if ($promo->discount_amount_cents && $promo->discount_amount_cents > 0) {
+            return (int) ($coupon->amount_off ?? 0) === (int) $promo->discount_amount_cents;
+        }
+
+        return true;
+    }
+
+    /**
+     * Read a subscription's currently-active discount (if any) from Stripe — the
+     * coupon terms that will actually reduce upcoming charges. Returns null when no
+     * discount applies: no coupon, an invalid/expired one, or a `once` coupon that
+     * was already consumed on the first invoice (its discounts array is empty).
+     *
+     * @return array{percent_off:?float, amount_off:?int, duration:string, duration_in_months:?int, ends_at:?string}|null
+     */
+    public function subscriptionDiscount(string $stripeSubscriptionId): ?array
+    {
+        $sub = StripeSubscription::retrieve([
+            'id'     => $stripeSubscriptionId,
+            'expand' => ['discounts'],
+        ]);
+
+        // Newer API exposes `discounts` (array of Discount objects when expanded);
+        // fall back to the legacy singular `discount`.
+        $discount = $sub->discounts[0] ?? $sub->discount ?? null;
+        if (! $discount || is_string($discount)) {
+            return null;
+        }
+
+        $coupon = $discount->coupon ?? null;
+        if (! $coupon || ! ($coupon->valid ?? true)) {
+            return null;
+        }
+
+        return [
+            'percent_off'        => $coupon->percent_off !== null ? (float) $coupon->percent_off : null,
+            'amount_off'         => $coupon->amount_off  !== null ? (int) $coupon->amount_off : null,
+            'duration'           => (string) ($coupon->duration ?? 'once'),
+            'duration_in_months' => $coupon->duration_in_months !== null ? (int) $coupon->duration_in_months : null,
+            'ends_at'            => ! empty($discount->end)
+                ? \Carbon\Carbon::createFromTimestamp($discount->end)->format('M j, Y')
+                : null,
+        ];
     }
 
     /**
@@ -580,6 +683,8 @@ class StripeService
     {
         return Session::create([
             'mode'              => 'setup',
+            // Stripe requires a currency for setup-mode Checkout sessions.
+            'currency'          => 'usd',
             'customer'          => $this->getOrCreateCustomer($user),
             'success_url'       => $successUrl,
             'cancel_url'        => $cancelUrl,

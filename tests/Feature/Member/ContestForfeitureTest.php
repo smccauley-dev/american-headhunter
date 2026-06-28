@@ -48,6 +48,14 @@ class ContestForfeitureTest extends TestCase
                 'account_type'  => $type,
                 'trust_score'   => 80,
             ]);
+            // Fully populate the account — a leaked fixture (interrupted run) should
+            // never show up nameless on /admin/platform-users.
+            DB::connection('identity')->table('user_profiles')->insert([
+                'id'         => (string) Str::uuid(),
+                'user_id'    => $id,
+                'first_name' => 'Contest',
+                'last_name'  => 'Test ' . ucfirst($type),
+            ]);
         }
 
         DB::connection('lease')->table('lease_applications')->insert([
@@ -100,6 +108,7 @@ class ContestForfeitureTest extends TestCase
         DB::connection('documents')->table('documents')->whereIn('owner_user_id', [$this->hunterId, $this->landownerId])->delete();
         DB::connection('lease')->table('leases')->where('id', $this->leaseId)->delete();
         DB::connection('lease')->table('lease_applications')->where('id', $this->applicationId)->delete();
+        DB::connection('identity')->table('user_profiles')->whereIn('user_id', [$this->hunterId, $this->landownerId])->delete();
         DB::connection('identity')->table('users')->whereIn('id', [$this->hunterId, $this->landownerId])->delete();
 
         parent::tearDown();
@@ -130,6 +139,10 @@ class ContestForfeitureTest extends TestCase
             'id' => $strangerId, 'email' => "stranger-{$strangerId}@test.invalid",
             'password_hash' => 'test-hash', 'status' => 'active', 'account_type' => 'hunter',
         ]);
+        DB::connection('identity')->table('user_profiles')->insert([
+            'id' => (string) Str::uuid(), 'user_id' => $strangerId,
+            'first_name' => 'Stranger', 'last_name' => 'Test',
+        ]);
 
         $this->withSession(['auth.user_id' => $strangerId])
             ->post("/member/leases/{$this->leaseId}/forfeiture/contest", [
@@ -139,6 +152,7 @@ class ContestForfeitureTest extends TestCase
 
         $this->assertSame(0, LeaseDispute::where('security_deposit_id', $this->depositId)->count());
 
+        DB::connection('identity')->table('user_profiles')->where('user_id', $strangerId)->delete();
         DB::connection('identity')->table('users')->where('id', $strangerId)->delete();
     }
 }

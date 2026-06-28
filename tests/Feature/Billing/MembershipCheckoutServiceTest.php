@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Models\Billing\PromoCode;
 use App\Models\Billing\Subscription;
 use App\Models\Identity\User;
 use App\Models\Platform\PlanVersion;
+use App\Models\Platform\PromotionalPeriod;
 use App\Services\Billing\MembershipCheckoutService;
 use App\Services\Billing\PromoCodeService;
 use App\Services\Billing\StripeService;
@@ -121,6 +123,64 @@ class MembershipCheckoutServiceTest extends TestCase
         $result = $service->start($this->makeUser('hunter'), 'hunter_pro', 'monthly', null, 'https://ok', 'https://no');
 
         $this->assertSame('https://checkout.stripe.test/session-123', $result['url']);
+    }
+
+    public function test_monetary_promo_without_synced_coupon_is_refused(): void
+    {
+        // A 10% promo whose period was never synced to a Stripe Coupon. Proceeding
+        // would charge full price, so checkout must refuse rather than overcharge.
+        $promo = new PromoCode();
+        $promo->id = (string) Str::uuid();
+
+        $period = new PromotionalPeriod();
+        $period->id = (string) Str::uuid();
+        $period->discount_percentage = '10.00';
+        $period->stripe_coupon_id = null;
+
+        $service = $this->service(
+            promo: function ($m) use ($promo, $period) {
+                $m->shouldReceive('validateForPlan')->andReturn(['promo_code' => $promo, 'period' => $period]);
+            },
+            // No createSubscriptionCheckoutSession expectation — the mock throws if
+            // the guard fails to short-circuit and the session is built anyway.
+        );
+
+        $result = $service->start($this->makeUser('hunter'), 'hunter_pro', 'monthly', 'NEW10', 'https://ok', 'https://no');
+
+        $this->assertSame('promo_code', $result['field']);
+        $this->assertArrayHasKey('error', $result);
+    }
+
+    public function test_monetary_promo_with_synced_coupon_proceeds(): void
+    {
+        $promo = new PromoCode();
+        $promo->id = (string) Str::uuid();
+
+        $period = new PromotionalPeriod();
+        $period->id = (string) Str::uuid();
+        $period->discount_percentage = '10.00';
+        $period->stripe_coupon_id = 'co_synced';
+
+        $version = new PlanVersion();
+        $version->id = (string) Str::uuid();
+
+        $session = Session::constructFrom(['url' => 'https://checkout.stripe.test/with-coupon']);
+
+        $service = $this->service(
+            stripe: function ($m) use ($session) {
+                $m->shouldReceive('createSubscriptionCheckoutSession')->once()->andReturn($session);
+            },
+            subs: function ($m) use ($version) {
+                $m->shouldReceive('currentVersionForPlan')->with('hunter_pro')->andReturn($version);
+            },
+            promo: function ($m) use ($promo, $period) {
+                $m->shouldReceive('validateForPlan')->andReturn(['promo_code' => $promo, 'period' => $period]);
+            },
+        );
+
+        $result = $service->start($this->makeUser('hunter'), 'hunter_pro', 'monthly', 'NEW10', 'https://ok', 'https://no');
+
+        $this->assertSame('https://checkout.stripe.test/with-coupon', $result['url']);
     }
 
     public function test_record_subscription_from_checkout_authors_subscription(): void

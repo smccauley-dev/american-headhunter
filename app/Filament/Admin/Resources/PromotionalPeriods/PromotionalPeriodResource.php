@@ -172,6 +172,25 @@ class PromotionalPeriodResource extends Resource
                         ->minValue(0)
                         ->helperText('In cents — 1000 = $10.00.')
                         ->visible(fn (Get $get): bool => $get('promotion_type') === 'dollar_discount'),
+                    Select::make('discount_duration')
+                        ->label('Discount Duration')
+                        ->options([
+                            'once'      => 'First payment only',
+                            'repeating' => 'Repeating (N months)',
+                            'forever'   => 'Forever (every renewal)',
+                        ])
+                        ->default('once')
+                        ->live()
+                        ->required(fn (Get $get): bool => in_array($get('promotion_type'), ['percentage_discount', 'dollar_discount'], true))
+                        ->helperText('How long the discount applies to renewals. Mirrors to the Stripe coupon.')
+                        ->visible(fn (Get $get): bool => in_array($get('promotion_type'), ['percentage_discount', 'dollar_discount'], true)),
+                    TextInput::make('discount_duration_months')
+                        ->label('Repeat for (months)')
+                        ->numeric()
+                        ->minValue(1)
+                        ->maxValue(36)
+                        ->required(fn (Get $get): bool => $get('discount_duration') === 'repeating')
+                        ->visible(fn (Get $get): bool => in_array($get('promotion_type'), ['percentage_discount', 'dollar_discount'], true) && $get('discount_duration') === 'repeating'),
                     TextInput::make('referral_reward_type')
                         ->label('Referral Reward Type')
                         ->maxLength(30)
@@ -269,14 +288,10 @@ class PromotionalPeriodResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('promo_key')
-                    ->label('Key')
-                    ->searchable()
-                    ->sortable()
-                    ->fontFamily('mono'),
                 TextColumn::make('display_name')
                     ->label('Name')
-                    ->searchable(),
+                    // promo_key kept searchable so the internal key still finds a row.
+                    ->searchable(['display_name', 'promo_key']),
                 TextColumn::make('promotion_type')
                     ->label('Type')
                     ->badge()

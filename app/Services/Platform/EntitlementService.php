@@ -327,6 +327,17 @@ class EntitlementService extends BaseService
             ->first();
     }
 
+    /**
+     * Public accessor for a user's active subscription — used by callers that need
+     * the Stripe identifiers (e.g. surfacing the live discount on the membership
+     * card). currentMembership() deliberately returns only the locked list price,
+     * so the Stripe lookup lives in the controller, not here.
+     */
+    public function activeSubscriptionFor(User $user): ?Subscription
+    {
+        return $this->activeSubscription($user->id);
+    }
+
     private function activePromotionClaim(string $userId): ?PromotionClaim
     {
         return PromotionClaim::on('billing')
