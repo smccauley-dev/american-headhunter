@@ -11,7 +11,7 @@ A full-stack SaaS platform connecting landowners with hunters — discovery, bid
 If you're a developer (or Claude Code) picking this up:
 
 1. **Read `CLAUDE.md` first** — it's the project orientation: architecture, conventions, non-negotiable rules, and a task→files lookup table.
-2. **Read `docs/build_roadmap.md`** — the phased plan from local dev to production launch. We're starting at Phase 1.
+2. **Read `docs/build_roadmap.md`** — the phased plan from local dev to production launch. Phases 1–4 are complete; see **Project Status** below.
 3. **Reference `docs/` as needed** — every subsystem is documented in detail.
 
 ## Stack
@@ -43,44 +43,40 @@ Laravel 13 · PHP 8.4 · Filament 3 · Inertia.js + React · PostgreSQL 16 + Pos
 | `docs/dockerfile.md`, `docs/docker_compose_prod.md`, `docs/onprem_docker_compose.md` | Production container configs |
 | `docs/cicd_and_migration.md`, `docs/azure_migration.md` | CI/CD pipeline and Azure migration |
 
-## Current Status
+## Project Status
 
-**Phase 1 complete** — project skeleton and local Docker stack are fully operational.
+Phases 1–4 are complete; Phase 5 (billing) is built out and pending live Stripe-key verification. Active work is the member profile system and billing polish. See `docs/build_roadmap.md` for slice-by-slice detail.
 
-### What's running
-
-| Component | Detail |
+| Phase | Status |
 |---|---|
-| App | `http://localhost` — Laravel 13 / PHP 8.4, HTTP 200 |
+| 1 — Project skeleton & local Docker stack | ✅ Complete |
+| 2 — Identity (auth, MFA, RBAC, three-role RLS) | ✅ Complete |
+| 3 — Platform & property foundation + discovery | ✅ Complete |
+| 3.9 / 3.10 — Admin panel + platform user management | ✅ Complete |
+| 4 — Lease lifecycle (apply → e-sign → activate, Dropbox Sign custom contracts, member check-in & stand map) | ✅ Complete |
+| 4.9 — Member multi-template profile system | 🚧 In progress |
+| 5 — Billing & payments (Stripe Checkout, Connect, webhooks, promotions, admin pricing, invoice projection) | ✅ Built — pending live-key verification |
+| 6 — Wildlife & field operations | ⏭️ Next |
+| 7–10 — Comms & safety, commerce, analytics, launch prep | ⬜ Planned |
+
+## Running Locally
+
+| Component | Where |
+|---|---|
+| App | `http://localhost` — Laravel 13 / PHP 8.4 |
 | Mailpit | `http://localhost:8025` — local email capture |
-| PostgreSQL 16 + PostGIS | All 14 databases created, PostGIS + pgcrypto + uuid-ossp enabled |
-| Valkey (×5) | Sessions, cache, queue, auction, ratelimit — all healthy |
+| PostgreSQL 16 + PostGIS | 14 databases, PostGIS + pgcrypto + uuid-ossp enabled |
+| Valkey ×5 | sessions, cache, queue, auction, ratelimit |
 | Queue workers | 2× `queue:work valkey --queue=priority,default` via Supervisor |
 
-### Key files added in Phase 1
+```bash
+make up      # start the full stack
+make fresh   # rebuild + migrate + seed from scratch
+make down    # stop
+```
 
-| File | Purpose |
-|---|---|
-| `Dockerfile.dev` | PHP 8.4-FPM + Nginx + Supervisor + Redis ext |
-| `docker-compose.yml` | Full local dev topology |
-| `docker/postgres/init.sql` + `init-postgis.sh` | DB + extension provisioning |
-| `docker/entrypoint.sh` | Storage permission fix on Windows volumes |
-| `config/database.php` | All 14 DB connections + 5 Valkey connections |
-| `.env` / `.env.example` | Every platform variable |
-| `Makefile` | `make up/down/fresh/migrate/psql-*/valkey-*` |
-| `app/Console/Commands/MigrateAll.php` | `php artisan migrate:all [--fresh] [--seed]` |
-| `app/Console/Commands/MigrateSingle.php` | `php artisan migrate:single <db>` |
-| `database/migrations/<db>/` | 14 empty migration directories, one per database |
-| `app/Models/<Domain>/` | 13 empty model namespaces |
-| `app/Services/<Domain>/` | 11 empty service namespaces |
+Also handy: `make migrate` · `make psql-<db>` · `make valkey-<cluster>` · `make flush-cache`. Run all commands from the project root.
 
-### Notes for Windows / Docker Desktop
-
-- Valkey containers expose ports **16379–16383** on the host (not 6379–6383) to avoid WSL2 port conflicts. Internal Docker traffic still uses 6379.
-- Storage permissions are fixed automatically on every container start via `docker/entrypoint.sh`.
-
-### Next milestone — Phase 2
-
-DB 1 Identity schema migrations + base Eloquent model classes + `ImmutableModel` for audit DB.
-
-**To resume:** `make up` from `C:\Users\stewa\Projects\AmericanHeadhunter`
+**Local notes**
+- Valkey containers expose host ports **16379–16383** (not 6379–6383) to avoid WSL2 conflicts; internal Docker traffic still uses 6379.
+- Storage permissions are fixed automatically on container start via `docker/entrypoint.sh`.
