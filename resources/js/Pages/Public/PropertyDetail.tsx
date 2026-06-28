@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import PublicNav from '@/Components/Public/PublicNav';
+import GameIcon from '@/Components/GameIcon';
 
 interface PropertySpecies {
     species_code: string;
@@ -95,7 +96,9 @@ function SpeciesGroup({ label, species }: { label: string; species: PropertySpec
                         fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.12em',
                         textTransform: 'uppercase', color: 'var(--ink)',
                         border: '1px solid var(--ink)', padding: '8px 16px',
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
                     }}>
+                        <GameIcon code={s.species_code} />
                         {formatSpecies(s.species_code)}
                     </span>
                 ))}
@@ -747,6 +750,15 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                         <a href="/terms">Terms</a>
                         <a href="/">Home</a>
                     </div>
+                </div>
+                <div style={{
+                    maxWidth: 1400, margin: '12px auto 0', position: 'relative', zIndex: 1,
+                    fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.08em',
+                    opacity: 0.55,
+                }}>
+                    Game-type icons by Lorc, Delapouite &amp; Caro Asercion via{' '}
+                    <a href="https://game-icons.net" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>game-icons.net</a>
+                    {' '}(<a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>CC BY 3.0</a>).
                 </div>
             </footer>
         </div>
