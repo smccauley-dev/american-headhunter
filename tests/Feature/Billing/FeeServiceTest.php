@@ -21,17 +21,22 @@ class FeeServiceTest extends TestCase
 
     private FeeService $service;
 
+    /** @var list<string> ids of real active rows suspended for the test run. */
+    private array $suspended = [];
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->service = app(FeeService::class);
         $this->cleanup();
+        $this->suspendRealRows();
         $this->service->flushCache();
     }
 
     protected function tearDown(): void
     {
         $this->cleanup();
+        $this->restoreRealRows();
         $this->service->flushCache();
         parent::tearDown();
     }
@@ -41,12 +46,38 @@ class FeeServiceTest extends TestCase
         DB::connection('billing')->table('fee_schedules')->where('description', self::TAG)->delete();
     }
 
+    /**
+     * Deactivate any real (admin-seeded) active rows so the suite's fixtures don't
+     * collide on the partial unique index uq_fee_schedules_active_scope (active per
+     * category+state). Restored verbatim in tearDown.
+     */
+    private function suspendRealRows(): void
+    {
+        $this->suspended = DB::connection('billing')->table('fee_schedules')
+            ->where('is_active', true)
+            ->pluck('id')->map(fn ($id) => (string) $id)->all();
+
+        if ($this->suspended) {
+            DB::connection('billing')->table('fee_schedules')
+                ->whereIn('id', $this->suspended)->update(['is_active' => false]);
+        }
+    }
+
+    private function restoreRealRows(): void
+    {
+        if ($this->suspended) {
+            DB::connection('billing')->table('fee_schedules')
+                ->whereIn('id', $this->suspended)->update(['is_active' => true]);
+            $this->suspended = [];
+        }
+    }
+
     private function seedRule(array $attrs): FeeSchedule
     {
         return FeeSchedule::create(array_merge([
-            'payer'       => 'customer',
+            'payer' => 'customer',
             'description' => self::TAG,
-            'is_active'   => true,
+            'is_active' => true,
         ], $attrs));
     }
 
@@ -54,9 +85,9 @@ class FeeServiceTest extends TestCase
     {
         $this->seedRule([
             'transaction_category' => 'lease',
-            'state_code'           => null,
-            'pct'                  => 2.9,
-            'flat_cents'           => 30,
+            'state_code' => null,
+            'pct' => 2.9,
+            'flat_cents' => 30,
         ]);
         $this->service->flushCache();
 
@@ -67,6 +98,29 @@ class FeeServiceTest extends TestCase
         $this->assertSame(2.9, $fee['pct']);
         $this->assertSame(30, $fee['flat_cents']);
         $this->assertSame('customer', $fee['payer']);
+    }
+
+    public function test_gross_up_recovers_the_processor_fee_in_full(): void
+    {
+        $this->seedRule([
+            'transaction_category' => 'lease',
+            'state_code' => null,
+            'pct' => 2.9,
+            'flat_cents' => 30,
+            'gross_up' => true,
+        ]);
+        $this->service->flushCache();
+
+        $fee = $this->service->processingFee('lease', null, 10_000);
+
+        // ceil((10000*2.9% + 30) / (1 - 2.9%)) = ceil(320 / 0.971) = 330.
+        $this->assertSame(330, $fee['fee_cents']);
+        $this->assertTrue($fee['gross_up']);
+
+        // Exact recovery: Stripe's fee on the grossed-up total equals the surcharge.
+        $gross = 10_000 + $fee['fee_cents'];           // 10330
+        $stripeFee = (int) round($gross * 0.029) + 30;     // 300 + 30 = 330
+        $this->assertSame($stripeFee, $fee['fee_cents']);
     }
 
     public function test_exact_state_beats_all_states_rule(): void

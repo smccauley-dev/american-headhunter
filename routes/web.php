@@ -184,6 +184,11 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     // ah_system (booking_deposits is system-authored; ah_runtime cannot write it).
     Route::get('/leases/{lease}/booking-deposit/return', [MemberController::class, 'bookingDepositReturn'])->name('leases.booking-deposit.return')->middleware('db.system');
 
+    Route::post('/leases/{lease}/lease-payment', [MemberController::class, 'payLeaseBalance'])->name('leases.lease-payment')->middleware('throttle:10,1');
+    // Stripe lease-payment success return — reconciles the collected row as ah_system
+    // (lease_payments is system-authored; ah_runtime cannot write it).
+    Route::get('/leases/{lease}/lease-payment/return', [MemberController::class, 'leasePaymentReturn'])->name('leases.lease-payment.return')->middleware('db.system');
+
     Route::post('/checkin',  [CheckInController::class, 'store'])->name('checkin.store')->middleware('throttle:20,1');
     Route::post('/checkout', [CheckInController::class, 'destroy'])->name('checkin.destroy')->middleware('throttle:20,1');
     Route::post('/leases/{lease}/email-qr', [CheckInController::class, 'emailQr'])->name('leases.email-qr')->middleware('throttle:5,1');

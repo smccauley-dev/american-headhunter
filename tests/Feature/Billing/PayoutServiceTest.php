@@ -167,7 +167,10 @@ class PayoutServiceTest extends TestCase
 
         $this->assertInstanceOf(Payout::class, $payout);
         $this->assertSame(98_000, $payout->amount_cents);
-        $this->assertSame('in_transit', $payout->status);
+        // The Transfer is synchronous and has no settlement webhook, so the payout is
+        // recorded 'paid' at transfer time (Sub-slice C — no dangling in_transit).
+        $this->assertSame('paid', $payout->status);
+        $this->assertNotNull($payout->paid_at);
         $this->assertSame($landowner->id, $payout->payee_user_id);
         $this->assertSame('tr_test_123', $payout->getAttribute('stripe_transfer_id'));
     }

@@ -1189,14 +1189,21 @@ export default function HunterProfile({ user, profile, photos, photo_tags, activ
                       </div>
                     )}
 
-                    {payouts?.onboarded ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid #e5ddd0', background: '#F3EDD8', padding: '8px 9px' }}>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '1px 6px', background: 'var(--ah-accent)', color: '#fff' }}>
-                          Active
-                        </span>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#6b7856' }}>
-                          Lease revenue pays out to your bank.
-                        </span>
+                    {payouts?.charges_enabled ? (
+                      <div style={{ border: '1px solid #e5ddd0', background: '#F3EDD8', padding: '8px 9px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '1px 6px', background: 'var(--ah-accent)', color: '#fff' }}>
+                            Active
+                          </span>
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#6b7856' }}>
+                            Lease payments are paid directly to your account.
+                          </span>
+                        </div>
+                        {!payouts?.payouts_enabled && (
+                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', color: '#a8742c', marginTop: '6px', lineHeight: 1.4 }}>
+                            Bank payout verification is still finishing — funds will release to your bank once Stripe confirms it.
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <>

@@ -6,7 +6,7 @@
 **Server:** Dedicated PCI-scoped PostgreSQL instance — isolated network segment, access-logged, SOC 2 compliant
 **Encryption Key:** Key D — HSM-backed, rotated monthly via Azure Key Vault
 **Extensions:** `pgcrypto`, `uuid-ossp`
-**RLS Enabled:** Yes — on `invoices`, `payments`, `payment_methods`, `payouts`, `w9_records`, `security_deposits`, `stripe_invoice_projections`
+**RLS Enabled:** Yes — on `invoices`, `payments`, `payment_methods`, `payouts`, `w9_records`, `security_deposits`, `booking_deposits`, `lease_payments`, `stripe_invoice_projections`
 
 This database governs all financial transactions: invoices, payments, refunds, Stripe Connect payouts to landowners, membership subscriptions, and tax records (TaxJar calculations and 1099 filing via Tax1099).
 
@@ -551,6 +551,143 @@ CREATE POLICY security_deposits_parties_and_staff ON security_deposits
 - **Build status:** slices 1–3 built. Slice 1 = this table + `App\Models\Billing\SecurityDeposit` + RLS test. Slice 2 = `App\Services\Billing\SecurityDepositService` (capture/release/forfeit), Stripe hosted-Checkout collection, webhook authoring, and admin + member UI (see below). Slice 3 = forfeiture→landowner payout via Stripe Connect: `forfeit()` calls `PayoutService::disburse()` for the forfeited amount (withholding the landowner's tier platform fee), **best-effort** — the forfeiture state is saved first, so a Stripe failure or a not-yet-onboarded landowner never rolls it back; the cash simply stays captured until a later retry.
 - **Collection flow (slice 2):** the deposit is **not** auto-charged at lease activation. The member pays in-portal: `Member/Lease.tsx` shows a "Pay Deposit" card → `POST /member/leases/{lease}/deposit` (`ah_runtime`, throttled) → `SecurityDepositService::createCheckoutSession` opens a Stripe Checkout `mode=payment` (one-time, refundable). The runtime path writes **nothing** (SEC-045); the held row is authored by `ProcessStripeWebhook` on `checkout.session.completed` (`mode=payment` + `metadata.purpose=security_deposit`, idempotent on the PaymentIntent) running as `ah_system`. Deposit amount derives from the listing: flat `deposit_amount`, else `deposit_percent` of the lease total.
 - **Release / forfeit (slice 2):** admin-driven from the read-only Filament `SecurityDepositResource` (Billing group). Release refunds the full remaining balance and sets `released`. Forfeit records `forfeited_amount_cents` + `forfeit_reason`, refunds any un-forfeited remainder to the lessee (`partially_released`) or sets `forfeited` for a full forfeit, then disburses the forfeited amount to the landowner via Connect (slice 3, best-effort). Both audit via `AuditService` (`security_deposit.held|released|forfeited`; the forfeited event records the resulting `payout_id` or notes the payout is pending Connect onboarding).
+- **Forfeiture payout status (Phase 5.5 Sub-slice C):** `PayoutService::disburse` (the forfeiture path's sole caller) now records the `payouts` row `paid`/`paid_at=now()` at transfer time. A Stripe **Transfer** (platform balance → connected account) is synchronous and has no settlement webhook, so the prior `in_transit` was a dangling status that never advanced.
+
+---
+
+### `booking_deposits` ✅ *(BUILT 2026-06-26; Connect 2026-06-27)*
+
+Non-refundable lease down payment the hunter pays at signing (distinct from the refundable `security_deposits` collateral). Earned on booking, credited toward the lease total. Collected via a **Stripe Connect destination charge** (Phase 5.5 Sub-slice B): the net is transferred to the landowner at charge time, so a collected deposit is recorded `disbursed` rather than sitting captured on the platform.
+
+```sql
+CREATE TABLE booking_deposits (
+    id                       UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    lease_id                 UUID         NOT NULL,  -- References DB 3 (Lease) leases.id
+    payer_user_id            UUID         NOT NULL,  -- References DB 1 (Identity) users.id (lessee)
+    payee_user_id            UUID         NOT NULL,  -- References DB 1 (Identity) users.id (landowner)
+    payment_id               UUID         NULL REFERENCES payments (id),
+    payout_id                UUID         NULL REFERENCES payouts (id),
+    stripe_account_id        VARCHAR(100) NULL,  -- the landowner's Connect account (transfer destination)
+    amount_cents             BIGINT       NOT NULL,  -- the deposit (credited toward the lease total)
+    application_fee_cents     BIGINT       NULL,  -- platform revenue (tier fee)
+    net_cents                BIGINT       NULL,  -- auto-transferred to the landowner
+    currency                 CHAR(3)      NOT NULL DEFAULT 'USD',
+    status                   VARCHAR(20)  NOT NULL DEFAULT 'collected'
+                                 CHECK (status IN ('pending','collected','disbursed')),
+    stripe_payment_intent_id VARCHAR(100) NULL,  -- the charge
+    stripe_transfer_id       VARCHAR(100) NULL,  -- the destination transfer Stripe auto-creates
+    collected_at             TIMESTAMPTZ  NULL,
+    disbursed_at             TIMESTAMPTZ  NULL,
+    created_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_booking_deposits_amount CHECK (amount_cents >= 0)
+);
+```
+
+**Notes:**
+- No `deleted_at` — financial record, resolves via `status`. **System-authored, runtime-read-only (SEC-045):** one `FOR SELECT TO ah_runtime` policy (the two parties + staff), no write policy. Only `ah_system` (booking-deposit webhook, Filament admin) authors rows.
+- **Connect columns (Sub-slice B, migration `2026_06_27_000002`):** `stripe_account_id`/`application_fee_cents`/`net_cents`/`stripe_transfer_id` are nullable — pre-Connect collected deposits keep NULLs and remain platform-held (manual reconciliation). The customer still pays the same `amount_cents`; the platform keeps the tier fee (`application_fee_cents`) and the landowner's `net_cents` transfers at charge time. Gated on the landowner's `charges_enabled`.
+
+---
+
+### `lease_payments` ✅ *(BUILT 2026-06-27)*
+
+Lease-rent collection via **Stripe Connect destination charge + `on_behalf_of`** (Phase 5.5 Sub-slice A). One row is the single source of truth for one charge: the customer pays `gross` on the platform account; `transfer_data[destination]` routes `net` to the landowner's connected account, `application_fee_amount` is the platform's cut, and `on_behalf_of` attributes settlement + the landowner's 1099-K to them. The platform stays merchant of record (owns refunds/disputes); there is no separate disbursement step.
+
+**Money model:** `gross = rent_balance + surcharge` (customer pays); `application_fee = round(rent_balance × tier platform_fee_pct) + surcharge`; `net = gross − application_fee = rent_balance − tier_fee` (auto-transferred). Gate is **`charges_enabled`**, not `payouts_enabled`.
+
+```sql
+CREATE TABLE lease_payments (
+    id                       UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    lease_id                 UUID         NOT NULL,  -- References DB 3 (Lease) leases.id
+    payer_user_id            UUID         NOT NULL,  -- References DB 1 (Identity) users.id (lessee)
+    payee_user_id            UUID         NOT NULL,  -- References DB 1 (Identity) users.id (landowner)
+    stripe_account_id        VARCHAR(100) NOT NULL,  -- the landowner's Connect account (transfer destination)
+    gross_cents              BIGINT       NOT NULL,  -- rent_balance + surcharge — what the customer paid
+    surcharge_cents          BIGINT       NOT NULL DEFAULT 0,  -- processing-fee recovery (kept by platform)
+    application_fee_cents     BIGINT       NOT NULL,  -- platform revenue (tier fee + surcharge)
+    net_cents                BIGINT       NOT NULL,  -- auto-transferred to the landowner
+    currency                 CHAR(3)      NOT NULL DEFAULT 'USD',
+    status                   VARCHAR(18)  NOT NULL DEFAULT 'collected'
+                                 CHECK (status IN ('collected','refunded','partially_refunded')),
+    stripe_payment_intent_id VARCHAR(100) NOT NULL,
+    stripe_charge_id         VARCHAR(100) NULL,
+    stripe_transfer_id       VARCHAR(100) NULL,  -- the destination transfer Stripe auto-creates
+    paid_at                  TIMESTAMPTZ  NULL,
+    created_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_lease_payments_amounts
+        CHECK (gross_cents >= 0 AND surcharge_cents >= 0
+               AND application_fee_cents >= 0 AND net_cents >= 0)
+);
+
+CREATE UNIQUE INDEX uq_lease_payments_payment_intent ON lease_payments (stripe_payment_intent_id);
+```
+
+**RLS Policy (as built):**
+```sql
+ALTER TABLE lease_payments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY lease_payments_parties_and_staff ON lease_payments
+    FOR SELECT TO ah_runtime
+    USING (
+        payer_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID
+        OR payee_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID
+        OR current_setting('app.user_role', true) IN ('staff', 'super_admin')
+    );
+```
+
+**Notes:**
+- No `deleted_at` — financial record, resolves via `status`. **System-authored, runtime-read-only (SEC-045):** one `FOR SELECT TO ah_runtime` policy (the two parties + staff), no write policy. Only `ah_system` authors rows — the member runtime path creates only a hosted Checkout session; the row is written by `ProcessStripeWebhook` (`mode=payment` + `metadata.purpose=lease_payment`, idempotent on the PaymentIntent) or the `db.system` success-return. `stripe_*` ids are `$hidden` and never logged.
+- **Refund:** `LeasePaymentService::refund` → `StripeService::refundDestinationCharge` (`reverse_transfer` + `refund_application_fee`) claws the net back from the landowner and returns the platform fee. Admin-only (Filament `LeasePaymentResource` View → Refund). `status` → `refunded` (full) or `partially_refunded`.
+- **1099:** under `on_behalf_of`, Stripe is the PSE and issues the landowner's 1099-K via Stripe Connect Tax Forms (config-only, deferred to Slice 3). No application code; Tax1099 is off the critical path.
+
+---
+
+### `fee_schedules` ✅ *(BUILT 2026-06-27 · `887381d`)*
+
+Admin-configurable **processing-fee surcharge** schedule (Phase 5.5 Slice 1.5). American Headhunter is merchant of record, so it pays Stripe's processing fee on every charge; a row recovers that cost as a customer-facing surcharge, keyed by transaction category and (optionally) state. Resolved by `FeeService::processingFee(category, state, baseCents)` — the most-specific active, in-window row wins (an exact `state_code` beats the all-states `NULL` row). Distinct from the tier `platform_fee_pct` (which deducts from the landowner's net).
+
+```sql
+CREATE TABLE fee_schedules (
+    id                   UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    transaction_category VARCHAR(24)  NOT NULL
+                             CHECK (transaction_category IN
+                                 ('lease','auction','outfitter_booking',
+                                  'security_deposit','marketplace')),
+    state_code           CHAR(2)      NULL,   -- NULL = applies to all states
+    pct                  NUMERIC(6,4) NULL,   -- percent, e.g. 2.9000
+    flat_cents           BIGINT       NULL,   -- fixed surcharge in cents
+    payer                VARCHAR(12)  NOT NULL DEFAULT 'customer'
+                             CHECK (payer IN ('customer','landowner')),
+    gross_up             BOOLEAN      NOT NULL DEFAULT false,  -- full processor recovery (see below)
+    description          VARCHAR(200) NULL,
+    is_active            BOOLEAN      NOT NULL DEFAULT true,
+    effective_from       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    effective_to         TIMESTAMPTZ  NULL,
+    created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at           TIMESTAMPTZ  NULL,
+
+    CONSTRAINT chk_fee_schedules_has_amount CHECK (pct IS NOT NULL OR flat_cents IS NOT NULL),
+    CONSTRAINT chk_fee_schedules_nonneg
+        CHECK ((pct IS NULL OR pct >= 0) AND (flat_cents IS NULL OR flat_cents >= 0))
+);
+
+-- One active fee per (category, state) at a time; COALESCE folds the all-states row in.
+CREATE UNIQUE INDEX uq_fee_schedules_active_scope
+    ON fee_schedules (transaction_category, COALESCE(state_code, '00'))
+    WHERE is_active AND deleted_at IS NULL;
+```
+
+**`gross_up` — exact processor-fee recovery (migration `2026_06_28_000001`):**
+A naive surcharge of `pct × base` under-recovers, because the platform is merchant of record and Stripe charges its fee on the **gross** the customer pays (`base + surcharge`), not on the base. When `gross_up = true`, `FeeService` returns `ceil((pct × base + flat) / (1 − pct))` instead of `round(pct × base) + flat`. That surcharge `S`, added to `base`, exactly covers Stripe's fee on the gross `G = base + S`: `pct × G + flat = (pct × base + flat)/(1 − pct) = S` (the `ceil` only ever over-recovers by a rounding cent, never under). `false` (default) keeps a row a plain flat % markup on the base — every pre-existing row is unaffected.
+
+**Notes:**
+- **System-authored, runtime-read-only (SEC-045):** RLS on, one `FOR SELECT TO ah_runtime USING (true)` policy (the surcharge is computed on the member checkout path), **no write policy** — rows are authored only by `ah_system` (the Filament `FeeScheduleResource`, nav "Processing Fees" under Billing).
+- Resolutions are cached in **Valkey Cluster 2** per `(category, state)`; `FeeService::flushCache()` (called on any admin mutation) clears them.
 
 ---
 

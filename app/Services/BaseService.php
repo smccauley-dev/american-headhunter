@@ -25,13 +25,20 @@ abstract class BaseService
 
     protected function invalidatePattern(string $pattern): void
     {
-        $valkey = Cache::store('valkey')->getRedis();
-        $cursor = 0;
-        do {
-            [$cursor, $keys] = $valkey->scan($cursor, ['match' => $pattern, 'count' => 100]);
+        // Use the raw phpredis client, not the Laravel manager/connection wrapper:
+        // RedisManager::scan() drops the [cursor, keys] contract and PhpRedisConnection
+        // mishandles the iterator, so the wrapped loop silently matches nothing. The
+        // raw client with SCAN_RETRY iterates reliably (and never returns empty batches
+        // mid-scan). Keys come back fully prefixed; del() takes them as-is. SCAN keeps
+        // this non-blocking on large keyspaces (e.g. user_entitlements:*).
+        $client = Cache::store('valkey')->getRedis()->connection()->client();
+        $client->setOption(\Redis::OPT_SCAN, \Redis::SCAN_RETRY);
+
+        $iterator = null;
+        while (($keys = $client->scan($iterator, $pattern, 100)) !== false) {
             if (! empty($keys)) {
-                $valkey->del($keys);
+                $client->del($keys);
             }
-        } while ($cursor != 0);
+        }
     }
 }

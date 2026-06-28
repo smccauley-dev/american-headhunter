@@ -19,29 +19,42 @@ use App\Services\BaseService;
 class FeeService extends BaseService
 {
     /**
-     * The processing-fee surcharge for a transaction. `fee_cents` is
-     * round(base × pct%) + flat. Returns a zero fee when no rule applies.
+     * The processing-fee surcharge for a transaction. By default `fee_cents` is
+     * round(base × pct%) + flat. When the matched rule is grossed up, it is instead
+     * ceil((base × pct% + flat) / (1 − pct%)) — the surcharge that, added to the
+     * base, makes the customer fully cover the processor fee charged on that *gross*
+     * (the platform is merchant of record, so Stripe bills pct on base + surcharge).
+     * Returns a zero fee when no rule applies.
      *
-     * @return array{schedule_id:?string, pct:float, flat_cents:int, fee_cents:int, payer:string}
+     * @return array{schedule_id:?string, pct:float, flat_cents:int, fee_cents:int, payer:string, gross_up:bool}
      */
     public function processingFee(string $category, ?string $stateCode, int $baseCents): array
     {
         $rule = $this->resolveRule($category, $stateCode);
 
         if ($rule === null) {
-            return ['schedule_id' => null, 'pct' => 0.0, 'flat_cents' => 0, 'fee_cents' => 0, 'payer' => 'customer'];
+            return ['schedule_id' => null, 'pct' => 0.0, 'flat_cents' => 0, 'fee_cents' => 0, 'payer' => 'customer', 'gross_up' => false];
         }
 
-        $pct      = (float) ($rule['pct'] ?? 0.0);
-        $flat     = (int) ($rule['flat_cents'] ?? 0);
-        $feeCents = (int) round(max(0, $baseCents) * $pct / 100) + $flat;
+        $pct = (float) ($rule['pct'] ?? 0.0);
+        $flat = (int) ($rule['flat_cents'] ?? 0);
+        $base = max(0, $baseCents);
+        $grossUp = (bool) ($rule['gross_up'] ?? false);
+        $p = $pct / 100;
+
+        // Gross up only when it is well-defined (0 ≤ pct < 100); ceil so the platform
+        // never under-recovers by a rounding cent. Otherwise the flat markup applies.
+        $feeCents = ($grossUp && $p > 0 && $p < 1)
+            ? (int) ceil(($base * $p + $flat) / (1 - $p))
+            : (int) round($base * $p) + $flat;
 
         return [
             'schedule_id' => $rule['id'],
-            'pct'         => $pct,
-            'flat_cents'  => $flat,
-            'fee_cents'   => $feeCents,
-            'payer'       => $rule['payer'],
+            'pct' => $pct,
+            'flat_cents' => $flat,
+            'fee_cents' => $feeCents,
+            'payer' => $rule['payer'],
+            'gross_up' => $grossUp,
         ];
     }
 
@@ -50,12 +63,12 @@ class FeeService extends BaseService
      * with an exact state_code beats an all-states (NULL state) row. Cached per
      * (category, state); a "no rule" result is not cached (cheap indexed lookup).
      *
-     * @return array{id:string, pct:?float, flat_cents:?int, payer:string}|null
+     * @return array{id:string, pct:?float, flat_cents:?int, payer:string, gross_up:bool}|null
      */
     private function resolveRule(string $category, ?string $stateCode): ?array
     {
         $state = $stateCode ? strtoupper($stateCode) : null;
-        $key   = "fee_schedule:{$category}:" . ($state ?? 'all');
+        $key = "fee_schedule:{$category}:".($state ?? 'all');
 
         return $this->cache($key, function () use ($category, $state) {
             // Bind with microsecond precision: TIMESTAMPTZ columns store microseconds,
@@ -80,10 +93,11 @@ class FeeService extends BaseService
                 ->first();
 
             return $best === null ? null : [
-                'id'         => $best->id,
-                'pct'        => $best->pct,
+                'id' => $best->id,
+                'pct' => $best->pct,
                 'flat_cents' => $best->flat_cents,
-                'payer'      => $best->payer,
+                'payer' => $best->payer,
+                'gross_up' => (bool) $best->gross_up,
             ];
         }, 30);
     }
@@ -116,14 +130,14 @@ class FeeService extends BaseService
 
         // The fixed portion is recovered in full on any refund (capped at the fee
         // actually charged); the remainder is the percentage portion, pro-rated.
-        $fixed      = min($fixedFeeCents, $stripeFeeCents);
+        $fixed = min($fixedFeeCents, $stripeFeeCents);
         $pctPortion = max(0, $stripeFeeCents - $fixed);
-        $pct        = (int) round($pctPortion * $fraction);
+        $pct = (int) round($pctPortion * $fraction);
 
         return [
-            'refund_fraction'    => $fraction,
-            'fixed_cents'        => $fixed,
-            'pct_cents'          => $pct,
+            'refund_fraction' => $fraction,
+            'fixed_cents' => $fixed,
+            'pct_cents' => $pct,
             'fee_clawback_cents' => $fixed + $pct,
         ];
     }

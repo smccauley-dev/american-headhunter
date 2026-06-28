@@ -29,6 +29,7 @@ class ProcessStripeWebhookTest extends TestCase
     /** @var array<int,string> */ private array $invoiceIds = [];
     /** @var array<int,string> */ private array $depositPaymentIntentIds = [];
     /** @var array<int,string> */ private array $bookingPaymentIntentIds = [];
+    /** @var array<int,string> */ private array $leasePaymentIntentIds = [];
     /** @var array<int,string> */ private array $persistedUserIds = [];
     /** @var array<int,string> */ private array $promoCodeIds = [];
     /** @var array<int,string> */ private array $promoPeriodIds = [];
@@ -58,6 +59,9 @@ class ProcessStripeWebhookTest extends TestCase
         }
         if ($this->bookingPaymentIntentIds) {
             $billing->table('booking_deposits')->whereIn('stripe_payment_intent_id', $this->bookingPaymentIntentIds)->delete();
+        }
+        if ($this->leasePaymentIntentIds) {
+            $billing->table('lease_payments')->whereIn('stripe_payment_intent_id', $this->leasePaymentIntentIds)->delete();
         }
         if ($this->claimIds)      { $billing->table('promotion_claims')->whereIn('id', $this->claimIds)->delete(); }
         if ($this->promoCodeIds)  { $billing->table('promo_codes')->whereIn('id', $this->promoCodeIds)->delete(); }
@@ -476,26 +480,75 @@ class ProcessStripeWebhookTest extends TestCase
         $pi      = 'pi_book_' . Str::random(12);
         $this->bookingPaymentIntentIds[] = $pi;
 
+        $stripe = \Mockery::mock(StripeService::class);
+        $stripe->shouldReceive('chargeAndTransferForPaymentIntent')
+            ->andReturn(['charge_id' => 'ch_book_wh', 'transfer_id' => 'tr_book_wh']);
+
         $this->dispatch('checkout.session.completed', [
             'mode'           => 'payment',
             'payment_intent' => $pi,
             'currency'       => 'usd',
             'amount_total'   => 30000,
             'metadata'       => [
-                'purpose'       => 'booking_deposit',
-                'lease_id'      => $leaseId,
-                'payer_user_id' => $payerId,
-                'payee_user_id' => $payeeId,
-                'amount_cents'  => '30000',
+                'purpose'               => 'booking_deposit',
+                'lease_id'              => $leaseId,
+                'payer_user_id'         => $payerId,
+                'payee_user_id'         => $payeeId,
+                'stripe_account_id'     => 'acct_book_wh',
+                'amount_cents'          => '30000',
+                'application_fee_cents' => '1500',
+                'net_cents'             => '28500',
             ],
-        ]);
+        ], $stripe);
 
         $deposit = \App\Models\Billing\BookingDeposit::where('stripe_payment_intent_id', $pi)->first();
-        $this->assertNotNull($deposit, 'a collected booking deposit is authored by the webhook (ah_system)');
-        $this->assertSame('collected', $deposit->status);
+        $this->assertNotNull($deposit, 'a disbursed booking deposit is authored by the webhook (ah_system)');
+        // Booking deposits are now Connect destination charges — the net is transferred
+        // to the landowner at charge time, so the row records 'disbursed'.
+        $this->assertSame('disbursed', $deposit->status);
         $this->assertSame(30000, (int) $deposit->amount_cents);
         $this->assertSame($leaseId, $deposit->lease_id);
-        $this->assertNull($deposit->payout_id, 'landowner payout is deferred — payout_id stays null');
+        $this->assertNotNull($deposit->disbursed_at, 'the destination transfer settles at charge time');
+    }
+
+    public function test_checkout_completed_payment_mode_records_collected_lease_payment(): void
+    {
+        $payerId = $this->newUserId();
+        $payeeId = $this->newUserId();
+        $leaseId = (string) Str::uuid();
+        $pi      = 'pi_lease_' . Str::random(12);
+        $this->leasePaymentIntentIds[] = $pi;
+
+        $stripe = \Mockery::mock(StripeService::class);
+        $stripe->shouldReceive('chargeAndTransferForPaymentIntent')
+            ->andReturn(['charge_id' => 'ch_wh_1', 'transfer_id' => 'tr_wh_1']);
+
+        $this->dispatch('checkout.session.completed', [
+            'mode'           => 'payment',
+            'payment_intent' => $pi,
+            'currency'       => 'usd',
+            'amount_total'   => 100300,
+            'metadata'       => [
+                'purpose'               => 'lease_payment',
+                'lease_id'              => $leaseId,
+                'payer_user_id'         => $payerId,
+                'payee_user_id'         => $payeeId,
+                'stripe_account_id'     => 'acct_wh_1',
+                'gross_cents'           => '100300',
+                'surcharge_cents'       => '300',
+                'application_fee_cents' => '5300',
+                'net_cents'             => '95000',
+            ],
+        ], $stripe);
+
+        $payment = \App\Models\Billing\LeasePayment::where('stripe_payment_intent_id', $pi)->first();
+        $this->assertNotNull($payment, 'a collected lease payment is authored by the webhook (ah_system)');
+        $this->assertSame('collected', $payment->status);
+        $this->assertSame(100300, (int) $payment->gross_cents);
+        $this->assertSame(5300, (int) $payment->application_fee_cents);
+        $this->assertSame(95000, (int) $payment->net_cents);
+        $this->assertSame($leaseId, $payment->lease_id);
+        $this->assertSame('tr_wh_1', $payment->getAttribute('stripe_transfer_id'));
     }
 
     public function test_checkout_completed_payment_mode_ignores_non_deposit(): void

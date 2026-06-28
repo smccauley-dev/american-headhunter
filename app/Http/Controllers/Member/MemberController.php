@@ -15,6 +15,8 @@ use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Billing\BookingDepositService;
+use App\Services\Billing\LeasePaymentService;
+use App\Services\Billing\PayoutService;
 use App\Services\Billing\SecurityDepositService;
 use App\Services\Billing\StripeService;
 use App\Services\Lease\LeaseDocumentService;
@@ -46,7 +48,7 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, DisputeService $disputeService, DamageClaimService $damageClaimService, IncidentService $incidentService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, LeasePaymentService $leasePaymentService, PayoutService $payoutService, DisputeService $disputeService, DamageClaimService $damageClaimService, IncidentService $incidentService): Response
     {
         $userId = session('auth.user_id');
 
@@ -230,6 +232,21 @@ class MemberController extends Controller
             }
         }
 
+        // Both lessee money flows (booking deposit + lease balance) now collect via a
+        // Stripe Connect destination charge to the landowner, so both are gated on the
+        // landowner being able to take charges. Resolve that once.
+        // Under ah_runtime the lessee cannot read the landowner as themselves: RLS hides
+        // both the landowner's identity row (getLessor) and their Connect account
+        // (SEC-045/055), so the gate would always read false. A lessee party is
+        // legitimately allowed to pay this landowner, so resolve the landowner and the
+        // single can-take-charges boolean under ah_system (never broadens row access).
+        $landowner      = ! $isLessor
+            ? rescue(fn () => ConnectionRole::asSystem(fn () => $leaseRecord->getLessor()), null)
+            : null;
+        $chargesEnabled = $landowner
+            ? rescue(fn () => ConnectionRole::asSystem(fn () => $payoutService->onboardingState($landowner)['charges_enabled']), false)
+            : false;
+
         // Non-refundable booking deposit (lessee-facing). Credited toward the lease
         // total; the page shows the remaining balance (total − booking deposit paid).
         $bookingDeposit = null;
@@ -242,12 +259,44 @@ class MemberController extends Controller
                 $paid         = $existingBooking !== null && in_array($existingBooking->status, ['collected', 'disbursed'], true);
                 $remaining    = (float) $leaseRecord->total_price - ($paid ? $bookingCents / 100 : 0);
                 $bookingDeposit = [
-                    'status'            => $existingBooking?->status,
-                    'amount'            => number_format($bookingCents / 100, 2),
-                    'paid'              => $paid,
-                    'can_pay'           => ! $existingBooking && $bookingDueCents > 0,
-                    'pay_url'           => route('member.leases.booking-deposit', $lease),
-                    'remaining_balance' => number_format(max(0, $remaining), 2),
+                    'status'                    => $existingBooking?->status,
+                    'amount'                    => number_format($bookingCents / 100, 2),
+                    'paid'                      => $paid,
+                    'landowner_charges_enabled' => $chargesEnabled,
+                    'can_pay'                   => ! $existingBooking && $bookingDueCents > 0 && $chargesEnabled,
+                    'pay_url'                   => route('member.leases.booking-deposit', $lease),
+                    'remaining_balance'         => number_format(max(0, $remaining), 2),
+                ];
+            }
+        }
+
+        // Lease balance (lessee-facing). Settled via a Stripe Connect destination
+        // charge to the landowner; only payable once the landowner can take charges.
+        // The lease_payments row is system-authored — written via the webhook /
+        // db.system return, never on this read request.
+        $leasePayment = null;
+        if (! $isLessor) {
+            $balanceCents   = rescue(fn () => $leasePaymentService->balanceDueCents($leaseRecord), 0) ?: 0;
+            $history        = rescue(fn () => $leasePaymentService->forLease($lease), collect()) ?: collect();
+
+            if ($balanceCents > 0 || $history->isNotEmpty()) {
+                $quote = ($balanceCents > 0 && $landowner)
+                    ? rescue(fn () => $leasePaymentService->quote($leaseRecord, $landowner), null)
+                    : null;
+
+                $leasePayment = [
+                    'balance'                   => number_format($balanceCents / 100, 2),
+                    'balance_due'               => $balanceCents > 0,
+                    'landowner_charges_enabled' => $chargesEnabled,
+                    'surcharge'                 => $quote ? number_format($quote['surcharge_cents'] / 100, 2) : null,
+                    'total_charge'              => $quote ? number_format($quote['gross_cents'] / 100, 2) : null,
+                    'can_pay'                   => $balanceCents > 0 && $chargesEnabled,
+                    'pay_url'                   => route('member.leases.lease-payment', $lease),
+                    'payments'                  => $history->map(fn ($p) => [
+                        'amount'  => number_format((int) $p->gross_cents / 100, 2),
+                        'status'  => $p->status,
+                        'paid_at' => $p->paid_at?->format('F j, Y'),
+                    ])->values()->all(),
                 ];
             }
         }
@@ -351,6 +400,7 @@ class MemberController extends Controller
             'access_info'    => $accessInfo,
             'deposit'        => $deposit,
             'booking_deposit' => $bookingDeposit,
+            'lease_payment'  => $leasePayment,
             'damage_claims'  => $damageClaims,
             'incidents'      => $incidents,
             'contacts'       => $contacts,
@@ -509,6 +559,59 @@ class MemberController extends Controller
         }
 
         return redirect()->route('member.leases.show', ['lease' => $lease, 'deposit' => 'paid']);
+    }
+
+    /**
+     * Start the hosted Checkout that settles a lease's outstanding balance as a
+     * Stripe Connect destination charge to the landowner. Only the lessee pays. The
+     * collected lease_payment row is authored by the webhook / success-return (the
+     * table is system-authored).
+     */
+    public function payLeaseBalance(Request $request, string $lease, LeasePaymentService $leasePayments): \Symfony\Component\HttpFoundation\Response
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessee_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $cancelUrl  = route('member.leases.show', $lease) . '?payment=cancel';
+        $successUrl = route('member.leases.lease-payment.return', $lease) . '?session_id={CHECKOUT_SESSION_ID}';
+
+        $payer = User::findOrFail($userId);
+
+        try {
+            $session = $leasePayments->createCheckoutSession($leaseRecord, $payer, $successUrl, $cancelUrl);
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['lease_payment' => $e->getMessage()]);
+        }
+
+        return Inertia::location($session->url);
+    }
+
+    /**
+     * Stripe lease-payment success return. Reconciles the collected row from the
+     * completed Checkout Session up front so the lessee sees it paid without waiting
+     * on the webhook (which remains the backstop). Runs under `db.system` because
+     * lease_payments is system-authored. recordCollectedFromCheckout is idempotent on
+     * the captured PaymentIntent, so racing the webhook is harmless.
+     */
+    public function leasePaymentReturn(Request $request, string $lease, LeasePaymentService $leasePayments, StripeService $stripe): RedirectResponse
+    {
+        $sessionId = (string) $request->query('session_id', '');
+
+        if ($sessionId !== '') {
+            rescue(function () use ($stripe, $leasePayments, $sessionId, $lease) {
+                $session = $stripe->retrieveCheckoutSession($sessionId)->toArray();
+
+                if (($session['metadata']['lease_id'] ?? null) === $lease) {
+                    $leasePayments->recordCollectedFromCheckout($session);
+                }
+            });
+        }
+
+        return redirect()->route('member.leases.show', ['lease' => $lease, 'payment' => 'paid']);
     }
 
     public function message(Request $request, string $lease, ApplicationMessageService $messageService): RedirectResponse

@@ -6,6 +6,7 @@ use App\Filament\Admin\Resources\FeeSchedules\Pages\CreateFeeSchedule;
 use App\Filament\Admin\Resources\FeeSchedules\Pages\EditFeeSchedule;
 use App\Filament\Admin\Resources\FeeSchedules\Pages\ListFeeSchedules;
 use App\Models\Billing\FeeSchedule;
+use App\Services\Billing\FeeService;
 use App\Support\AdminAuth;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
@@ -50,11 +51,11 @@ class FeeScheduleResource extends Resource
 
     /** Category options — must match the table's CHECK constraint. */
     public const CATEGORIES = [
-        'lease'             => 'Lease',
-        'auction'           => 'Auction',
+        'lease' => 'Lease',
+        'auction' => 'Auction',
         'outfitter_booking' => 'Outfitter Booking',
-        'security_deposit'  => 'Security Deposit',
-        'marketplace'       => 'Marketplace',
+        'security_deposit' => 'Security Deposit',
+        'marketplace' => 'Marketplace',
     ];
 
     public static function getNavigationGroup(): ?string
@@ -121,6 +122,11 @@ class FeeScheduleResource extends Resource
                         ->suffix('¢')
                         ->requiredWithout('pct')
                         ->helperText('In cents — e.g. 30 = $0.30.'),
+                    Toggle::make('gross_up')
+                        ->label('Gross up (full processor recovery)')
+                        ->default(false)
+                        ->columnSpanFull()
+                        ->helperText('For card-processor pass-through: surcharge the customer so the fee is fully recovered on the total charge (we pay Stripe its % on base + surcharge). Off = a flat % markup on the base only.'),
                 ]),
 
             Section::make('Window')
@@ -167,11 +173,11 @@ class FeeScheduleResource extends Resource
                     ->sortable(),
                 TextColumn::make('pct')
                     ->label('Percent')
-                    ->formatStateUsing(fn (?float $state): string => $state === null ? '—' : rtrim(rtrim(number_format($state, 4), '0'), '.') . '%')
+                    ->formatStateUsing(fn (?float $state): string => $state === null ? '—' : rtrim(rtrim(number_format($state, 4), '0'), '.').'%')
                     ->alignEnd(),
                 TextColumn::make('flat_cents')
                     ->label('Flat')
-                    ->formatStateUsing(fn (?int $state): string => $state === null ? '—' : '$' . number_format($state / 100, 2))
+                    ->formatStateUsing(fn (?int $state): string => $state === null ? '—' : '$'.number_format($state / 100, 2))
                     ->alignEnd(),
                 TextColumn::make('payer')
                     ->label('Paid by')
@@ -192,7 +198,7 @@ class FeeScheduleResource extends Resource
                 DeleteAction::make()
                     ->requiresConfirmation()
                     ->modalHeading('Delete Fee Rule')
-                    ->after(fn () => app(\App\Services\Billing\FeeService::class)->flushCache()),
+                    ->after(fn () => app(FeeService::class)->flushCache()),
             ])
             ->toolbarActions([
                 CreateAction::make()
@@ -204,9 +210,9 @@ class FeeScheduleResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => ListFeeSchedules::route('/'),
+            'index' => ListFeeSchedules::route('/'),
             'create' => CreateFeeSchedule::route('/create'),
-            'edit'   => EditFeeSchedule::route('/{record}/edit'),
+            'edit' => EditFeeSchedule::route('/{record}/edit'),
         ];
     }
 }

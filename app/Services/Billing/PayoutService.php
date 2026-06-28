@@ -155,9 +155,12 @@ class PayoutService extends BaseService
 
     /**
      * Transfer a landowner's net lease revenue to their Connect account and record
-     * the payout. The platform fee for their tier is withheld; the remainder is
-     * transferred and a payout row is written in the in_transit state (the bank
-     * settlement that flips it to paid lands later via a Connect payout webhook).
+     * the payout. The platform fee for their tier is withheld; the remainder is moved
+     * with a synchronous Stripe Transfer (platform balance → the connected account's
+     * balance), so the payout is recorded 'paid' the moment the transfer succeeds.
+     * There is no in_transit → paid lifecycle to await: a Transfer has no settlement
+     * webhook (only the connected account's own bank payout does, on Stripe's
+     * schedule). The sole caller is security-deposit forfeiture.
      *
      * @param array<string,string> $metadata extra correlation keys for the transfer
      * @throws \InvalidArgumentException when the gross amount is not positive
@@ -187,9 +190,10 @@ class PayoutService extends BaseService
             'stripe_account_id'  => $account->stripe_account_id,
             'amount_cents'       => $quote['net_cents'],
             'currency'           => 'USD',
-            'status'             => 'in_transit',
+            'status'             => 'paid',
             'stripe_transfer_id' => $transfer->id,
             'scheduled_for'      => $scheduledFor,
+            'paid_at'            => now(),
         ]);
 
         $this->audit->log(
@@ -198,13 +202,13 @@ class PayoutService extends BaseService
             tableName:      'payouts',
             recordId:       $payout->id,
             userId:         $landowner->id,
-            actionSummary:  'Landowner payout transfer created via Stripe Connect',
+            actionSummary:  'Landowner payout transfer completed via Stripe Connect',
             newValues:      [
                 'gross_cents' => $quote['gross_cents'],
                 'fee_pct'     => $quote['fee_pct'],
                 'fee_cents'   => $quote['fee_cents'],
                 'net_cents'   => $quote['net_cents'],
-                'status'      => 'in_transit',
+                'status'      => 'paid',
             ],
         );
 
