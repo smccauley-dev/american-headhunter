@@ -952,6 +952,20 @@ class PropertyService extends BaseService
     }
 
     /**
+     * Set a listing's visibility — used to PAUSE (visibility 'private', hidden
+     * from every public surface) or RESUME (back to 'public') a listing without
+     * deleting it. Returns the fresh listing.
+     */
+    public function setListingVisibility(string $listingId, string $visibility): PropertyListing
+    {
+        $listing = PropertyListing::on('property')->findOrFail($listingId);
+        $listing->update(['visibility' => $visibility]);
+        $this->invalidate("listing:{$listingId}", "property:{$listing->property_id}");
+
+        return $listing->fresh();
+    }
+
+    /**
      * All non-deleted listings for a property, newest first. Read replica.
      */
     public function getListingsForProperty(string $propertyId): \Illuminate\Database\Eloquent\Collection

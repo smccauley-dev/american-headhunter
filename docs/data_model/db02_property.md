@@ -88,7 +88,9 @@ CREATE TABLE property_listings (
     deposit_percent  SMALLINT     NULL CHECK (deposit_percent BETWEEN 0 AND 100),
     auto_renew       BOOLEAN      NOT NULL DEFAULT false,
     visibility       VARCHAR(20)  NOT NULL DEFAULT 'public'
-                         CHECK (visibility IN ('public', 'members_only', 'invite_only')),
+                         -- 'private' = PAUSED: hidden from home, search, and the
+                         -- public detail page (404) without deleting the listing.
+                         CHECK (visibility IN ('public', 'members_only', 'invite_only', 'private')),
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     deleted_at       TIMESTAMPTZ  NULL

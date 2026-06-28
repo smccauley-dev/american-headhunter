@@ -159,8 +159,9 @@ class PropertyInfolistV2
                                                     default    => 'gray',
                                                 }),
                                             TextEntry::make('visibility')
-                                                ->formatStateUsing(fn (string $state): string =>
-                                                    ucwords(str_replace('_', ' ', $state))
+                                                ->formatStateUsing(fn (string $state): string => $state === 'private'
+                                                    ? 'Private / Hidden'
+                                                    : ucwords(str_replace('_', ' ', $state))
                                                 ),
                                             IconEntry::make('auto_renew')
                                                 ->label('Auto Renew')

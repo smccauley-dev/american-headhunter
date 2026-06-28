@@ -61,12 +61,14 @@ class Property extends BaseModelWithSoftDeletes
      * (leased). A leased/pending listing stays reachable at its public URL —
      * shown with a "Leased Out"/"Under Contract" badge rather than 404'd — so an
      * indexed page never goes dead. Drafts, expired, and archived listings are
-     * excluded. Ordered so an applyable (active) listing is always surfaced first.
+     * excluded, as are paused (private) listings — a pause pulls the page
+     * entirely. Ordered so an applyable (active) listing is always surfaced first.
      */
     public function publicListings(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(PropertyListing::class, 'property_id')
                     ->whereIn('status', ['active', 'pending', 'leased'])
+                    ->where('visibility', '!=', 'private')
                     ->whereNull('deleted_at')
                     ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END");
     }

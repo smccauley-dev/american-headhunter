@@ -597,6 +597,65 @@ class PropertyFormV2
      *
      * @return array<Action>
      */
+    /**
+     * Pause / Resume action shown beside Delete on every saved listing. Pausing
+     * sets visibility to 'private', which pulls the listing from the home page,
+     * search, and its own public detail page (it 404s) without deleting it.
+     * Resuming restores it to 'public'. The flip is persisted immediately and
+     * mirrored into the live form state so a later Save does not revert it.
+     */
+    private static function listingVisibilityActions(): array
+    {
+        $isSaved = fn (array $arguments, Repeater $component): bool =>
+            ! empty($component->getRawItemState($arguments['item'])['id']);
+
+        $isPaused = fn (array $arguments, Repeater $component): bool =>
+            ($component->getRawItemState($arguments['item'])['visibility'] ?? 'public') === 'private';
+
+        return [
+            Action::make('toggleListingPause')
+                ->label(fn (array $arguments, Repeater $component): string =>
+                    $isPaused($arguments, $component) ? 'Resume Listing' : 'Pause Listing')
+                ->icon(fn (array $arguments, Repeater $component): string =>
+                    $isPaused($arguments, $component) ? 'heroicon-o-play' : 'heroicon-o-pause')
+                ->button()
+                ->color(fn (array $arguments, Repeater $component): string =>
+                    $isPaused($arguments, $component) ? 'success' : 'warning')
+                ->visible($isSaved)
+                ->requiresConfirmation()
+                ->modalHeading(fn (array $arguments, Repeater $component): string =>
+                    $isPaused($arguments, $component) ? 'Resume this listing?' : 'Pause this listing?')
+                ->modalDescription(fn (array $arguments, Repeater $component): string =>
+                    $isPaused($arguments, $component)
+                        ? 'It will become public again and reappear on the home page and in search.'
+                        : 'It will be hidden from the home page, search, and its public page without being deleted. You can resume it any time.')
+                ->action(function (array $arguments, Repeater $component) use ($isPaused): void {
+                    $itemKey       = $arguments['item'];
+                    $item          = $component->getRawItemState($itemKey);
+                    $paused        = $isPaused($arguments, $component);
+                    $newVisibility = $paused ? 'public' : 'private';
+
+                    app(PropertyService::class)->setListingVisibility($item['id'], $newVisibility);
+
+                    // Mirror into the live form so the Visibility select reflects
+                    // it and a subsequent Save writes the same value.
+                    data_set(
+                        $component->getLivewire(),
+                        "{$component->getStatePath()}.{$itemKey}.visibility",
+                        $newVisibility,
+                    );
+
+                    Notification::make()
+                        ->title($paused ? 'Listing resumed' : 'Listing paused')
+                        ->body($paused
+                            ? 'It is public again and will reappear in listings and search.'
+                            : 'It is hidden from all listings and search. It has not been deleted.')
+                        ->success()
+                        ->send();
+                }),
+        ];
+    }
+
     private static function dayHuntListingActions(): array
     {
         $isSavedDayHunt = function (array $arguments, Repeater $component): bool {
@@ -1308,7 +1367,10 @@ class PropertyFormV2
                                                 ? 'ID · ' . strtoupper(substr($state['id'], 0, 8))
                                                 : 'New Listing'
                                             )
-                                            ->extraItemActions(self::dayHuntListingActions())
+                                            ->extraItemActions([
+                                                ...self::dayHuntListingActions(),
+                                                ...self::listingVisibilityActions(),
+                                            ])
                                             ->deleteAction(fn(Action $action) => $action
                                                 ->label('Delete')
                                                 ->icon('heroicon-o-trash')
@@ -1348,6 +1410,7 @@ class PropertyFormV2
                                                         'public'       => 'Public',
                                                         'members_only' => 'Members Only',
                                                         'invite_only'  => 'Invite Only',
+                                                        'private'      => 'Private / Hidden (Paused)',
                                                     ])
                                                     ->default('public'),
                                                 Toggle::make('auto_renew')

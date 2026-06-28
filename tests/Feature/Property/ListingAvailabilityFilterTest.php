@@ -22,6 +22,7 @@ class ListingAvailabilityFilterTest extends TestCase
     private string $pendingId;
     private string $leasedId;
     private string $draftId;
+    private string $pausedId;
 
     protected function setUp(): void
     {
@@ -31,11 +32,13 @@ class ListingAvailabilityFilterTest extends TestCase
         $this->pendingId = $this->makeListing('pending');
         $this->leasedId  = $this->makeListing('leased');
         $this->draftId   = $this->makeListing('draft');
+        // On-market status, but paused (private) — must never surface publicly.
+        $this->pausedId  = $this->makeListing('active', 'private');
     }
 
     protected function tearDown(): void
     {
-        foreach ([$this->activeId, $this->pendingId, $this->leasedId, $this->draftId] as $propertyId) {
+        foreach ([$this->activeId, $this->pendingId, $this->leasedId, $this->draftId, $this->pausedId] as $propertyId) {
             DB::connection('property')->table('property_listings')->where('property_id', $propertyId)->delete();
             DB::connection('property')->table('properties')->where('id', $propertyId)->delete();
         }
@@ -47,8 +50,8 @@ class ListingAvailabilityFilterTest extends TestCase
         parent::tearDown();
     }
 
-    /** Insert a public property + listing in the given status; returns the property id. */
-    private function makeListing(string $status): string
+    /** Insert a property + listing in the given status/visibility; returns the property id. */
+    private function makeListing(string $status, string $visibility = 'public'): string
     {
         $propertyId = (string) Str::uuid();
 
@@ -74,7 +77,7 @@ class ListingAvailabilityFilterTest extends TestCase
             'price_per_hunter' => '500.00',
             'deposit_percent'  => 25,
             'auto_renew'       => false,
-            'visibility'       => 'public',
+            'visibility'       => $visibility,
             'is_featured'      => false,
         ]);
 
@@ -126,5 +129,18 @@ class ListingAvailabilityFilterTest extends TestCase
         $this->assertContains($this->pendingId, $ids);
         $this->assertContains($this->leasedId, $ids);
         $this->assertNotContains($this->draftId, $ids, 'Drafts are never public.');
+        $this->assertNotContains($this->pausedId, $ids, 'Paused (private) listings are never public.');
+    }
+
+    public function test_paused_listings_are_excluded_from_every_filter(): void
+    {
+        foreach (['active', 'pending', 'leased', 'all'] as $availability) {
+            $ids = $this->searchPropertyIds(['availability' => $availability]);
+            $this->assertNotContains(
+                $this->pausedId,
+                $ids,
+                "A paused listing must not appear under the '{$availability}' filter.",
+            );
+        }
     }
 }

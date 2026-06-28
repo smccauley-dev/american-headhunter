@@ -42,6 +42,7 @@ class PropertyListingController extends Controller
         'public'       => 'Public',
         'members_only' => 'Members Only',
         'invite_only'  => 'Invite Only',
+        'private'      => 'Private / Hidden (Paused)',
     ];
 
     public function index(string $property): Response

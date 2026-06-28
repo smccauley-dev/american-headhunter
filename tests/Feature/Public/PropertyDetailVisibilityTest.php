@@ -96,4 +96,14 @@ class PropertyDetailVisibilityTest extends TestCase
 
         $this->get("/properties/{$this->slug}")->assertNotFound();
     }
+
+    public function test_a_paused_listing_is_not_viewable(): void
+    {
+        // PAUSE flips visibility to 'private' while the status stays on-market.
+        // The page must 404 — a pause pulls the listing from every public surface.
+        DB::connection('property')->table('property_listings')
+            ->where('id', $this->listingId)->update(['visibility' => 'private']);
+
+        $this->get("/properties/{$this->slug}")->assertNotFound();
+    }
 }

@@ -54,6 +54,7 @@ class ListingsRelationManager extends RelationManager
                                 'public'       => 'Public',
                                 'members_only' => 'Members Only',
                                 'invite_only'  => 'Invite Only',
+                                'private'      => 'Private / Hidden (Paused)',
                             ])
                             ->default('public'),
                         Toggle::make('auto_renew')
@@ -175,10 +176,14 @@ class ListingsRelationManager extends RelationManager
                     }),
                 TextColumn::make('visibility')
                     ->badge()
+                    ->formatStateUsing(fn (string $state): string => $state === 'private'
+                        ? 'Private / Hidden'
+                        : ucwords(str_replace('_', ' ', $state)))
                     ->color(fn (string $state): string => match ($state) {
                         'public'       => 'success',
                         'members_only' => 'info',
                         'invite_only'  => 'warning',
+                        'private'      => 'gray',
                         default        => 'gray',
                     }),
                 TextColumn::make('price_per_hunter')
