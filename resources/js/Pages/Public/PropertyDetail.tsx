@@ -95,11 +95,27 @@ function formatPricePer(listing: PropertyListing): string {
 }
 
 // A listing keeps its public page in every non-draft state; only `active` is
-// open for application. pending = a lease is being signed; leased = executed.
+// open for application. pending = a lease is being signed; leased = executed;
+// unavailable = landowner-marked "not currently available" (still posted).
 function availabilityLabel(status: string): string {
     if (status === 'leased') return 'Leased Out';
     if (status === 'pending') return 'Under Contract';
+    if (status === 'unavailable') return 'Not Currently Available';
     return 'Available';
+}
+
+// The longer "why you can't apply" line shown on the pricing card footer.
+function unavailableFooterText(status: string): string {
+    if (status === 'pending') return 'Under Contract — Not Accepting Applications';
+    if (status === 'unavailable') return 'Not Currently Available';
+    return 'Leased Out — Not Currently Available';
+}
+
+// The italic explanatory note on the sticky sidebar status card.
+function unavailableNote(status: string): string {
+    if (status === 'pending') return 'This lease is under contract and not currently accepting applications.';
+    if (status === 'unavailable') return 'This property isn’t currently available. Check back for future availability.';
+    return 'This property is leased for the current season. Check back for future availability.';
 }
 
 function formatSeason(listing: PropertyListing): string {
@@ -305,7 +321,7 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                                 </Link>
                             ) : (
                                 <div style={{ width: '100%', textAlign: 'center', marginTop: 16, padding: '12px 16px', boxSizing: 'border-box', border: '1px solid var(--brass-dim)', background: 'var(--bone-dim, rgba(0,0,0,0.03))', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-soft)' }}>
-                                    {listing.status === 'pending' ? 'Under Contract — Not Accepting Applications' : 'Leased Out — Not Currently Available'}
+                                    {unavailableFooterText(listing.status)}
                                 </div>
                             )}
                         </div>
@@ -607,12 +623,10 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                                     ) : (
                                         <>
                                             <div style={{ textAlign: 'center', padding: '12px 16px', border: '1px solid var(--parch-deep)', background: 'var(--parch)', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-soft)' }}>
-                                                {listing.status === 'pending' ? 'Under Contract' : 'Leased Out'}
+                                                {statusLabel}
                                             </div>
                                             <p style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--sage-dim)', fontStyle: 'italic', textAlign: 'center', margin: 0 }}>
-                                                {listing.status === 'pending'
-                                                    ? 'This lease is under contract and not currently accepting applications.'
-                                                    : 'This property is leased for the current season. Check back for future availability.'}
+                                                {unavailableNote(listing.status)}
                                             </p>
                                             <Link href="/get-started" className="btn-outline" style={{ textAlign: 'center', justifyContent: 'center' }}>
                                                 Browse Available Leases →

@@ -34,7 +34,7 @@ class PropertyController extends Controller
             'state_code'   => ['nullable', 'string', 'size:2'],
             'county'       => ['nullable', 'string', 'max:100'],
             'listing_type' => ['nullable', 'in:annual_lease,seasonal_lease,day_hunt,auction'],
-            'availability' => ['nullable', 'in:active,pending,leased,all'],
+            'availability' => ['nullable', 'in:active,pending,leased,unavailable,all'],
             'min_price'    => ['nullable', 'numeric', 'min:0'],
             'max_price'    => ['nullable', 'numeric', 'min:0'],
             'min_acres'    => ['nullable', 'numeric', 'min:0'],

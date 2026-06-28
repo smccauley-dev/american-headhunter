@@ -97,6 +97,19 @@ class PropertyDetailVisibilityTest extends TestCase
         $this->get("/properties/{$this->slug}")->assertNotFound();
     }
 
+    public function test_an_unavailable_listing_keeps_its_full_detail_page(): void
+    {
+        // Unlike a paused (private) listing, an `unavailable` listing stays posted:
+        // its detail page is a healthy 200 and still shows the property's details —
+        // the front-end renders it with a "Not Currently Available" badge and no Apply.
+        DB::connection('property')->table('property_listings')
+            ->where('id', $this->listingId)->update(['status' => 'unavailable']);
+
+        $this->get("/properties/{$this->slug}")
+            ->assertOk()
+            ->assertSee('Visibility Test Ranch'); // details are still shown
+    }
+
     public function test_a_paused_listing_serves_a_noindex_stub_without_details(): void
     {
         // PAUSE flips visibility to 'private'. The URL must stay a healthy 200 (no

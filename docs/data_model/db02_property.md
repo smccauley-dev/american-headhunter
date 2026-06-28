@@ -76,7 +76,10 @@ CREATE TABLE property_listings (
     listing_type     VARCHAR(20)  NOT NULL
                          CHECK (listing_type IN ('annual_lease', 'seasonal_lease', 'day_hunt', 'auction')),
     status           VARCHAR(20)  NOT NULL DEFAULT 'draft'
-                         CHECK (status IN ('draft', 'active', 'pending', 'leased', 'expired', 'archived')),
+                         -- 'unavailable' = landowner-marked "not currently available":
+                         -- still posted (shows in browse/search and at its detail URL
+                         -- with a "Not Currently Available" badge) but not open to apply.
+                         CHECK (status IN ('draft', 'active', 'pending', 'leased', 'unavailable', 'expired', 'archived')),
     season_start     DATE         NULL,
     season_end       DATE         NULL,
     min_hunters      SMALLINT     NULL,

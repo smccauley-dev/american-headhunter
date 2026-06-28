@@ -63,15 +63,17 @@ class Property extends BaseModelWithSoftDeletes
      * indexed page never goes dead. Drafts, expired, and archived listings are
      * excluded. A paused (visibility='private') listing keeps its page too — it
      * renders "Not currently available" and is pulled from home + search, but the
-     * indexed URL stays a healthy 200 rather than 404'ing. Ordered so an applyable
-     * (active) listing is always surfaced first.
+     * indexed URL stays a healthy 200 rather than 404'ing. An `unavailable`
+     * listing is the landowner-marked "not currently available" state — it keeps
+     * its page too, shown with a "Not Currently Available" badge. Ordered so an
+     * applyable (active) listing is always surfaced first.
      */
     public function publicListings(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(PropertyListing::class, 'property_id')
-                    ->whereIn('status', ['active', 'pending', 'leased'])
+                    ->whereIn('status', ['active', 'pending', 'leased', 'unavailable'])
                     ->whereNull('deleted_at')
-                    ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END");
+                    ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'unavailable' THEN 2 ELSE 3 END");
     }
 
     public function photos(): \Illuminate\Database\Eloquent\Relations\HasMany

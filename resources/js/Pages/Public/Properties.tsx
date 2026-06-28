@@ -117,8 +117,9 @@ const TYPE_COLORS: Record<string, string> = {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-    pending: 'Under Contract',
-    leased:  'Leased Out',
+    pending:     'Under Contract',
+    leased:      'Leased Out',
+    unavailable: 'Not Currently Available',
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -244,6 +245,7 @@ export default function Properties({ listings, filters, config }: Props) {
                                 <option value="active">Active</option>
                                 <option value="pending">Pending</option>
                                 <option value="leased">Leased Out</option>
+                                <option value="unavailable">Not Currently Available</option>
                                 <option value="all">All</option>
                             </select>
                         </FilterBlock>

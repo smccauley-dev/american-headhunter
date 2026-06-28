@@ -1400,12 +1400,13 @@ class PropertyFormV2
                                                 Select::make('status')
                                                     ->required()
                                                     ->options([
-                                                        'draft'    => 'Draft',
-                                                        'active'   => 'Active',
-                                                        'pending'  => 'Pending',
-                                                        'leased'   => 'Leased Out',
-                                                        'expired'  => 'Expired',
-                                                        'archived' => 'Archived',
+                                                        'draft'       => 'Draft',
+                                                        'active'      => 'Active',
+                                                        'pending'     => 'Pending',
+                                                        'leased'      => 'Leased Out',
+                                                        'unavailable' => 'Not Currently Available',
+                                                        'expired'     => 'Expired',
+                                                        'archived'    => 'Archived',
                                                     ])
                                                     ->default('draft'),
                                                 Select::make('visibility')

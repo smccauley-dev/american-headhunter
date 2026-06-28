@@ -134,7 +134,7 @@ html {
 .field-card-header { display: flex; justify-content: space-between; align-items: start; padding-bottom: 16px; border-bottom: 1px solid var(--parch-deep); margin-bottom: 20px; }
 .field-card-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; color: var(--sage-dim); text-transform: uppercase; margin-bottom: 4px; }
 .field-card-id { font-family: var(--mono); font-size: 11px; color: var(--ink); font-weight: 500; }
-.field-stamp { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blaze); border: 1.5px solid var(--blaze); padding: 3px 10px; transform: rotate(-6deg); }
+.field-stamp { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blaze); border: 1.5px solid var(--blaze); padding: 3px 10px; transform: rotate(-6deg); text-align: center; line-height: 1.3; }
 .field-title { font-family: var(--display); font-size: 26px; font-weight: 500; line-height: 1.15; color: var(--ink); margin-bottom: 6px; }
 .field-title em { font-style: italic; color: var(--blaze-dim); }
 .field-sub { font-family: var(--body); font-size: 15px; font-style: italic; color: var(--sage-dim); margin-bottom: 20px; }
