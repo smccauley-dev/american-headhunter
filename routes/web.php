@@ -199,6 +199,10 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::get('/myleases', [ProfileController::class, 'show'])->defaults('initialTab', 'leases')->name('myleases');
     Route::get('/membership', [ProfileController::class, 'show'])->defaults('initialTab', 'membership')->name('membership');
     Route::post('/membership/checkout', [CheckoutController::class, 'create'])->name('membership.checkout')->middleware('throttle:10,1');
+    // Stripe membership-checkout success return — reconciles the subscription as
+    // ah_system (subscriptions is system-authored; ah_runtime cannot write it) so
+    // the membership tab shows the new plan immediately, not after the async webhook.
+    Route::get('/membership/checkout/return', [CheckoutController::class, 'return'])->name('membership.checkout.return')->middleware('db.system');
     Route::post('/membership/cancel', [MembershipController::class, 'cancel'])->name('membership.cancel')->middleware('throttle:10,1');
     Route::post('/membership/resume', [MembershipController::class, 'resume'])->name('membership.resume')->middleware('throttle:10,1');
     Route::post('/membership/change', [MembershipController::class, 'changePlan'])->name('membership.change')->middleware('throttle:10,1');
