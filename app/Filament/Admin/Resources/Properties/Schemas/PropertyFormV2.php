@@ -1336,7 +1336,8 @@ class PropertyFormV2
                                                     ->options([
                                                         'draft'    => 'Draft',
                                                         'active'   => 'Active',
-                                                        'sold_out' => 'Sold Out',
+                                                        'pending'  => 'Pending',
+                                                        'leased'   => 'Leased Out',
                                                         'expired'  => 'Expired',
                                                         'archived' => 'Archived',
                                                     ])

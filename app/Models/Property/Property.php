@@ -55,6 +55,22 @@ class Property extends BaseModelWithSoftDeletes
                     ->whereNull('deleted_at');
     }
 
+    /**
+     * Listings that keep a property publicly viewable: open for application
+     * (active), reserved while a lease is signed (pending), or already leased
+     * (leased). A leased/pending listing stays reachable at its public URL —
+     * shown with a "Leased Out"/"Under Contract" badge rather than 404'd — so an
+     * indexed page never goes dead. Drafts, expired, and archived listings are
+     * excluded. Ordered so an applyable (active) listing is always surfaced first.
+     */
+    public function publicListings(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PropertyListing::class, 'property_id')
+                    ->whereIn('status', ['active', 'pending', 'leased'])
+                    ->whereNull('deleted_at')
+                    ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END");
+    }
+
     public function photos(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(PropertyPhoto::class, 'property_id')

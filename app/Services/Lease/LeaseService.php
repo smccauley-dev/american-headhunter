@@ -258,6 +258,11 @@ class LeaseService extends BaseService
             leaseId:         $lease->id,
             createdByUserId: $actorUserId,
         ));
+
+        // An exclusive listing was set `pending` at approval; now that the lease
+        // is executed, promote it to `leased`. No-op for day-hunt listings.
+        rescue(fn () => app(\App\Services\Property\PropertyService::class)
+            ->markExclusiveLeased($lease->listing_id));
     }
 
     /**

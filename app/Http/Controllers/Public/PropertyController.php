@@ -27,13 +27,14 @@ class PropertyController extends Controller
         // Empty-string filters (cleared UI inputs) are treated as absent.
         $request->merge(array_map(
             fn ($v) => $v === '' ? null : $v,
-            $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price', 'min_acres', 'max_acres', 'min_hunters', 'max_hunters'])
+            $request->only(['state_code', 'county', 'listing_type', 'availability', 'min_price', 'max_price', 'min_acres', 'max_acres', 'min_hunters', 'max_hunters'])
         ));
 
         $request->validate([
             'state_code'   => ['nullable', 'string', 'size:2'],
             'county'       => ['nullable', 'string', 'max:100'],
             'listing_type' => ['nullable', 'in:annual_lease,seasonal_lease,day_hunt,auction'],
+            'availability' => ['nullable', 'in:active,pending,leased,all'],
             'min_price'    => ['nullable', 'numeric', 'min:0'],
             'max_price'    => ['nullable', 'numeric', 'min:0'],
             'min_acres'    => ['nullable', 'numeric', 'min:0'],
@@ -45,7 +46,7 @@ class PropertyController extends Controller
             'page'         => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $filters = $request->only(['state_code', 'county', 'listing_type', 'min_price', 'max_price', 'min_acres', 'max_acres', 'min_hunters', 'max_hunters']);
+        $filters = $request->only(['state_code', 'county', 'listing_type', 'availability', 'min_price', 'max_price', 'min_acres', 'max_acres', 'min_hunters', 'max_hunters']);
 
         if ($request->has('species')) {
             $filters['species'] = (array) $request->input('species');
@@ -64,6 +65,7 @@ class PropertyController extends Controller
         $listings = $paginator->through(fn ($listing) => [
             'id'               => $listing->id,
             'listing_type'     => $listing->listing_type,
+            'status'           => $listing->status,
             'season_start'     => $listing->season_start,
             'season_end'       => $listing->season_end,
             'price_per_hunter' => $listing->price_per_hunter,
@@ -157,21 +159,21 @@ class PropertyController extends Controller
             abort(404);
         }
 
-        $property->load(['activeListings', 'photos', 'species', 'rules']);
+        $property->load(['publicListings', 'photos', 'species', 'rules']);
 
-        // A property is publicly viewable only while it has at least one active
-        // listing. Once every listing is leased (sold_out), expired, or still a
-        // draft, the property is pulled from the public frontend entirely — not
-        // just from search — so a direct URL can't reach a property that has
-        // nothing left to lease.
-        if ($property->activeListings->isEmpty()) {
+        // A property stays publicly viewable while it has any listing that is
+        // open (active), reserved (pending), or leased — a leased listing keeps
+        // its page (badged "Leased Out") rather than 404'ing, so an indexed URL
+        // never goes dead. Only when nothing public remains (drafts, expired, or
+        // archived only) is the property pulled from the frontend.
+        if ($property->publicListings->isEmpty()) {
             abort(404);
         }
 
         // Detail pages are members-only EXCEPT for featured (advertising)
         // listings, which guests may view. A guest hitting a non-featured
         // property's URL is redirected to sign-up.
-        if (! auth()->check() && ! $property->activeListings->contains(fn ($l) => $l->is_featured)) {
+        if (! auth()->check() && ! $property->publicListings->contains(fn ($l) => $l->is_featured)) {
             return redirect('/get-started');
         }
 
@@ -217,7 +219,7 @@ class PropertyController extends Controller
                     'rule_text'  => $r->rule_text,
                     'sort_order' => $r->sort_order,
                 ])->values(),
-                'active_listings' => $property->activeListings->map(fn ($l) => [
+                'listings' => $property->publicListings->map(fn ($l) => [
                     'id'              => $l->id,
                     'listing_type'    => $l->listing_type,
                     'status'          => $l->status,

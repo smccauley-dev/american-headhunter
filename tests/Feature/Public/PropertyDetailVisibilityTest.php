@@ -9,10 +9,11 @@ use Tests\TestCase;
 
 /**
  * Public property-detail visibility. A property is reachable at
- * /properties/{slug} only while it has at least one ACTIVE listing. Once every
- * listing is leased (sold_out), expired, or still a draft, the property is
- * pulled from the public frontend entirely — a direct URL must 404, not just
- * drop out of search — so a leased exclusive listing can't still look available.
+ * /properties/{slug} while it has at least one PUBLIC listing — active,
+ * pending (under contract), or leased. A leased listing keeps its page (badged
+ * "Leased Out") so an indexed URL never 404s and SEO equity is preserved. Only
+ * when every listing is a draft, expired, or archived is the property pulled
+ * from the public frontend entirely — then a direct URL must 404.
  *
  * Postgres-only fixtures via owner connections (testing runs as the owner role).
  */
@@ -69,10 +70,29 @@ class PropertyDetailVisibilityTest extends TestCase
         $this->get("/properties/{$this->slug}")->assertOk();
     }
 
-    public function test_a_property_whose_only_listing_is_sold_out_is_not_viewable(): void
+    public function test_a_property_whose_only_listing_is_leased_is_still_viewable(): void
     {
         DB::connection('property')->table('property_listings')
-            ->where('id', $this->listingId)->update(['status' => 'sold_out']);
+            ->where('id', $this->listingId)->update(['status' => 'leased']);
+
+        // SEO: a leased listing keeps its page (200) — it renders "Leased Out"
+        // rather than going dead — so the indexed URL never 404s.
+        $this->get("/properties/{$this->slug}")->assertOk();
+    }
+
+    public function test_a_property_whose_only_listing_is_pending_is_still_viewable(): void
+    {
+        DB::connection('property')->table('property_listings')
+            ->where('id', $this->listingId)->update(['status' => 'pending']);
+
+        $this->get("/properties/{$this->slug}")->assertOk();
+    }
+
+    public function test_a_property_with_no_public_listing_is_not_viewable(): void
+    {
+        // Draft/expired/archived are not public — nothing remains to show.
+        DB::connection('property')->table('property_listings')
+            ->where('id', $this->listingId)->update(['status' => 'archived']);
 
         $this->get("/properties/{$this->slug}")->assertNotFound();
     }

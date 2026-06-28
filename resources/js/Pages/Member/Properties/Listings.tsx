@@ -69,7 +69,8 @@ const hintStyle: React.CSSProperties = {
 const STATUS_COLOR: Record<string, string> = {
   active: ACCENT,
   draft: '#6b7856',
-  sold_out: '#8a6d3b',
+  pending: '#4a6b8a',
+  leased: '#8a6d3b',
   expired: '#9c9388',
   archived: '#9c9388',
 }

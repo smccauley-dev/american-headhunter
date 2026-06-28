@@ -9,6 +9,7 @@ import { US_STATES } from '@/lib/usStates'
 interface Listing {
     id: string
     listing_type: string
+    status: string
     season_start: string | null
     season_end: string | null
     price_per_hunter: string | null
@@ -37,6 +38,7 @@ interface Paginator {
 }
 
 interface Filters {
+    availability?: string
     state_code?: string
     listing_type?: string
     species?: string[]
@@ -114,6 +116,11 @@ const TYPE_COLORS: Record<string, string> = {
     auction:        '#b8934a',
 }
 
+const STATUS_LABELS: Record<string, string> = {
+    pending: 'Under Contract',
+    leased:  'Leased Out',
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatPrice(listing: Listing): string {
@@ -132,6 +139,7 @@ function formatAcres(listing: Listing): string {
 export default function Properties({ listings, filters, config }: Props) {
     const { auth } = usePage<{ auth?: { authenticated: boolean } }>().props
 
+    const [availability, setAvailability] = useState(filters.availability ?? 'active')
     const [state,       setState]       = useState(filters.state_code   ?? '')
     const [listingType, setListingType] = useState(filters.listing_type ?? '')
     const [species,     setSpecies]     = useState<string[]>(filters.species ?? [])
@@ -144,6 +152,7 @@ export default function Properties({ listings, filters, config }: Props) {
 
     function buildParams(overrides: Record<string, unknown> = {}) {
         const params: Record<string, unknown> = {}
+        if (availability !== 'active') params.availability = availability
         if (state)                 params.state_code    = state
         if (listingType)           params.listing_type  = listingType
         if (species.length > 0)    params.species       = species
@@ -175,7 +184,7 @@ export default function Properties({ listings, filters, config }: Props) {
         router.get('/properties', { ...buildParams(), page } as Record<string, string>)
     }
 
-    const hasFilters = !!(state || listingType || species.length || minPrice || maxPrice || minAcres || maxAcres || minHunters || maxHunters)
+    const hasFilters = !!(availability !== 'active' || state || listingType || species.length || minPrice || maxPrice || minAcres || maxAcres || minHunters || maxHunters)
 
     return (
         <>
@@ -213,6 +222,7 @@ export default function Properties({ listings, filters, config }: Props) {
                             {hasFilters && (
                                 <button
                                     onClick={() => {
+                                        setAvailability('active')
                                         setState(''); setListingType(''); setSpecies([]); setMinPrice(''); setMaxPrice('')
                                         setMinAcres(''); setMaxAcres(''); setMinHunters(''); setMaxHunters('')
                                         router.get('/properties')
@@ -223,6 +233,20 @@ export default function Properties({ listings, filters, config }: Props) {
                                 </button>
                             )}
                         </div>
+
+                        {/* Availability */}
+                        <FilterBlock label="Availability">
+                            <select
+                                value={availability}
+                                onChange={e => { setAvailability(e.target.value); applyFilters({ availability: e.target.value === 'active' ? undefined : e.target.value }) }}
+                                style={selectStyle}
+                            >
+                                <option value="active">Active</option>
+                                <option value="pending">Pending</option>
+                                <option value="leased">Leased Out</option>
+                                <option value="all">All</option>
+                            </select>
+                        </FilterBlock>
 
                         {/* State */}
                         {config.filter_state_enabled && (
@@ -372,7 +396,7 @@ export default function Properties({ listings, filters, config }: Props) {
                                     No listings match your current filters.
                                 </p>
                                 <button
-                                    onClick={() => { setState(''); setListingType(''); setSpecies([]); setMinPrice(''); setMaxPrice(''); setMinAcres(''); setMaxAcres(''); setMinHunters(''); setMaxHunters(''); router.get('/properties') }}
+                                    onClick={() => { setAvailability('active'); setState(''); setListingType(''); setSpecies([]); setMinPrice(''); setMaxPrice(''); setMinAcres(''); setMaxAcres(''); setMinHunters(''); setMaxHunters(''); router.get('/properties') }}
                                     style={{ fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--blaze)', background: 'none', border: '1px solid var(--blaze)', padding: '10px 20px', cursor: 'pointer' }}
                                 >
                                     Clear Filters
@@ -444,14 +468,26 @@ function ListingCard({ listing, authenticated, config }: { listing: Listing; aut
             {/* Card header */}
             <div style={{ background: 'var(--ink)', padding: '16px 18px', position: 'relative' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{
-                        fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
-                        letterSpacing: '.12em', textTransform: 'uppercase',
-                        color: TYPE_BADGE_COLOR[listing.listing_type] ?? 'var(--blaze)',
-                        background: 'rgba(255,255,255,0.06)',
-                        padding: '3px 8px', border: '1px solid rgba(255,255,255,0.1)',
-                    }}>
-                        {TYPE_LABELS[listing.listing_type] ?? listing.listing_type}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{
+                            fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
+                            letterSpacing: '.12em', textTransform: 'uppercase',
+                            color: TYPE_BADGE_COLOR[listing.listing_type] ?? 'var(--blaze)',
+                            background: 'rgba(255,255,255,0.06)',
+                            padding: '3px 8px', border: '1px solid rgba(255,255,255,0.1)',
+                        }}>
+                            {TYPE_LABELS[listing.listing_type] ?? listing.listing_type}
+                        </span>
+                        {STATUS_LABELS[listing.status] && (
+                            <span style={{
+                                fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
+                                letterSpacing: '.12em', textTransform: 'uppercase',
+                                color: 'var(--bone)', background: 'var(--blaze)',
+                                padding: '3px 8px',
+                            }}>
+                                {STATUS_LABELS[listing.status]}
+                            </span>
+                        )}
                     </span>
                     {config.card_show_acres && (
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--parch-deep)', letterSpacing: '.06em' }}>
@@ -514,12 +550,14 @@ function ListingCard({ listing, authenticated, config }: { listing: Listing; aut
                                 >
                                     {config.cta_details_label}
                                 </Link>
-                                <Link
-                                    href={`/apply/${listing.id}`}
-                                    style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--ink)' }}
-                                >
-                                    {config.cta_apply_label} →
-                                </Link>
+                                {listing.status === 'active' && (
+                                    <Link
+                                        href={`/apply/${listing.id}`}
+                                        style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--bone)', textDecoration: 'none', padding: '8px 14px', background: 'var(--ink)' }}
+                                    >
+                                        {config.cta_apply_label} →
+                                    </Link>
+                                )}
                             </>
                         ) : (
                             <>

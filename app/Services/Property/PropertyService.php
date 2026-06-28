@@ -365,8 +365,10 @@ class PropertyService extends BaseService
      *
      * Inserts a `booked` range covering the lease term (the EXCLUDE constraint
      * is the race-proof guard — a concurrent overlapping approval raises 23P01)
-     * and flips the listing to `sold_out` so it drops out of search and the
-     * apply page. No-op for day-hunt listings, which reserve at activation.
+     * and flips the listing to `pending` so it drops out of search and the apply
+     * page while the lease is signed. Activation later promotes it to `leased`
+     * (see markExclusiveLeased). No-op for day-hunt listings, which reserve at
+     * activation.
      *
      * @throws \RuntimeException when the dates overlap an existing reservation —
      *         the listing is already leased for those dates.
@@ -399,9 +401,9 @@ class PropertyService extends BaseService
                     'created_by_user_id' => $createdByUserId,
                 ]);
 
-                // Pull the listing from search/apply — it's now leased.
+                // Pull the listing from search/apply — a lease is being signed.
                 if ($listing->status === 'active') {
-                    $listing->update(['status' => 'sold_out']);
+                    $listing->update(['status' => 'pending']);
                 }
 
                 return $booking;
@@ -421,11 +423,35 @@ class PropertyService extends BaseService
     }
 
     /**
+     * Promote an exclusive listing from `pending` to `leased` once its lease is
+     * executed (activation). Only acts on a pending exclusive listing — a no-op
+     * for day-hunt listings and for any listing not currently pending — so it is
+     * safe to call best-effort from lease activation. The booked range stays put;
+     * only the listing's market state changes (pending → leased).
+     */
+    public function markExclusiveLeased(string $listingId): void
+    {
+        $listing = PropertyListing::on('property')->find($listingId);
+
+        if (! $listing
+            || $listing->listing_type === 'day_hunt'
+            || $listing->status !== 'pending'
+        ) {
+            return;
+        }
+
+        $listing->update(['status' => 'leased']);
+
+        $this->invalidate("listing:{$listingId}", "property:{$listing->property_id}");
+    }
+
+    /**
      * Free any booked date ranges tied to a lease — used when a lease is cancelled
      * or terminated so the dates become bookable again. Hard delete: the table has
      * no soft-delete column and a freed date must immediately drop off the calendar.
-     * An exclusive listing whose last booking is freed is re-listed (sold_out →
-     * active) so it returns to the market; day-hunt listings are never sold_out.
+     * An exclusive listing whose last booking is freed is re-listed (pending /
+     * leased → active) so it returns to the market; day-hunt listings never carry
+     * a pending/leased status.
      */
     public function releaseBooking(string $leaseId): void
     {
@@ -446,7 +472,7 @@ class PropertyService extends BaseService
 
             if ($listing
                 && $listing->listing_type !== 'day_hunt'
-                && $listing->status === 'sold_out'
+                && in_array($listing->status, ['pending', 'leased'], true)
                 && ! PropertyAvailability::on('property')
                     ->where('listing_id', $listingId)
                     ->where('reason', 'booked')
@@ -678,6 +704,7 @@ class PropertyService extends BaseService
      *   max_acres?: float,
      *   min_price?: float,
      *   max_price?: float,
+     *   availability?: string,
      *   restricted_state?: ?string,
      *   page?: int,
      *   per_page?: int,
@@ -689,12 +716,23 @@ class PropertyService extends BaseService
         // model graphs across requests is fragile and each page/filter combo is unique.
         $query = PropertyListing::on('property_read')
             ->with(['property', 'property.species'])
-            ->where('property_listings.status', 'active')
             ->whereNull('property_listings.deleted_at')
             ->join('properties', 'properties.id', '=', 'property_listings.property_id')
             ->where('properties.status', 'active')
             ->whereNull('properties.deleted_at')
             ->where('property_listings.visibility', 'public');
+
+        // Availability gate. Default to open-for-application listings only; the
+        // public search may also surface reserved (pending) or leased listings so
+        // a previously-indexed listing keeps a result, never a dead end. 'all'
+        // spans every publicly-visible state but never draft/expired/archived.
+        $availability = $filters['availability'] ?? 'active';
+        match ($availability) {
+            'pending' => $query->where('property_listings.status', 'pending'),
+            'leased'  => $query->where('property_listings.status', 'leased'),
+            'all'     => $query->whereIn('property_listings.status', ['active', 'pending', 'leased']),
+            default   => $query->where('property_listings.status', 'active'),
+        };
 
         // Home-state gate: a single-state-restricted member sees only listings in
         // their locked state, plus featured listings anywhere (advertising). Applied

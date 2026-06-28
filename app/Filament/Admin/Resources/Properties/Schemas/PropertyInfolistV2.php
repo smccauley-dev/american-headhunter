@@ -145,10 +145,15 @@ class PropertyInfolistV2
                                                 ),
                                             TextEntry::make('status')
                                                 ->badge()
+                                                ->formatStateUsing(fn (string $state): string => match ($state) {
+                                                    'leased' => 'Leased Out',
+                                                    default  => ucwords(str_replace('_', ' ', $state)),
+                                                })
                                                 ->color(fn (string $state): string => match ($state) {
                                                     'active'   => 'success',
                                                     'draft'    => 'gray',
-                                                    'sold_out' => 'warning',
+                                                    'pending'  => 'info',
+                                                    'leased'   => 'warning',
                                                     'expired'  => 'danger',
                                                     'archived' => 'gray',
                                                     default    => 'gray',
