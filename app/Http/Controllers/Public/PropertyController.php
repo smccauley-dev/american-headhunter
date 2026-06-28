@@ -223,6 +223,7 @@ class PropertyController extends Controller
                     'id'              => $l->id,
                     'listing_type'    => $l->listing_type,
                     'status'          => $l->status,
+                    'is_paused'       => $l->visibility === 'private',
                     'season_start'    => $l->season_start,
                     'season_end'      => $l->season_end,
                     'min_hunters'     => $l->min_hunters,

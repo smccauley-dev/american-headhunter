@@ -25,6 +25,7 @@ interface PropertyListing {
     id: string;
     listing_type: string;
     status: string;
+    is_paused: boolean;
     season_start: string | null;
     season_end: string | null;
     min_hunters: number | null;
@@ -134,8 +135,13 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
     // publicListings is ordered active → pending → leased, so the first entry is
     // the one to feature: an open listing if any, otherwise the leased/pending one.
     const listing = property.listings?.[0] ?? null;
-    const isOpen = listing?.status === 'active';
-    const statusLabel = listing ? availabilityLabel(listing.status) : null;
+    // A paused listing keeps its page (SEO) but is never bookable and shows a
+    // neutral "Not Currently Available" stamp — never "Available"/Apply.
+    const isPaused = listing?.is_paused ?? false;
+    const isOpen = listing?.status === 'active' && !isPaused;
+    const statusLabel = listing
+        ? (isPaused ? 'Not Currently Available' : availabilityLabel(listing.status))
+        : null;
     const { auth } = usePage<{ auth: { authenticated: boolean } }>().props;
     const applyHref = auth?.authenticated && listing ? `/apply/${listing.id}` : '/get-started';
     const photos = property.photos ?? [];
