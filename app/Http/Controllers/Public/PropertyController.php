@@ -159,6 +159,15 @@ class PropertyController extends Controller
 
         $property->load(['activeListings', 'photos', 'species', 'rules']);
 
+        // A property is publicly viewable only while it has at least one active
+        // listing. Once every listing is leased (sold_out), expired, or still a
+        // draft, the property is pulled from the public frontend entirely — not
+        // just from search — so a direct URL can't reach a property that has
+        // nothing left to lease.
+        if ($property->activeListings->isEmpty()) {
+            abort(404);
+        }
+
         // Detail pages are members-only EXCEPT for featured (advertising)
         // listings, which guests may view. A guest hitting a non-featured
         // property's URL is redirected to sign-up.
