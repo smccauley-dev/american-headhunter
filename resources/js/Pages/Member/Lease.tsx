@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { formatPhone, telHref } from '@/lib/phone'
 import FilePondUploader from '@/Components/FilePondUploader'
+import LandownerFinance, { type LandownerFinanceData } from '@/Components/Member/LandownerFinance'
 
 interface Signer {
   name: string
@@ -180,6 +181,7 @@ interface Props {
     pay_url: string
     payments: { amount: string; status: string; paid_at: string | null }[]
   } | null
+  landowner_finance: LandownerFinanceData | null
   contacts: ContactDirectory | null
   signers: Signer[]
   sign_url: string | null
@@ -1556,7 +1558,7 @@ function CommunicationsSection({ data, isLessor }: { data: Communications; isLes
   )
 }
 
-export default function Lease({ lease, property, access_info, deposit, booking_deposit, lease_payment, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
+export default function Lease({ lease, property, access_info, deposit, booking_deposit, lease_payment, landowner_finance, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -1862,6 +1864,13 @@ export default function Lease({ lease, property, access_info, deposit, booking_d
                   ))}
                 </div>
               )}
+            </Section>
+          )}
+
+          {/* Payment Status — lessor's read-only view of what the hunter has paid */}
+          {is_lessor && landowner_finance && (
+            <Section title="Payment Status">
+              <LandownerFinance data={landowner_finance} />
             </Section>
           )}
 

@@ -15,6 +15,7 @@ use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Billing\BookingDepositService;
+use App\Services\Billing\LeaseFinanceSummaryService;
 use App\Services\Billing\LeasePaymentService;
 use App\Services\Billing\PayoutService;
 use App\Services\Billing\SecurityDepositService;
@@ -48,7 +49,7 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, LeasePaymentService $leasePaymentService, PayoutService $payoutService, DisputeService $disputeService, DamageClaimService $damageClaimService, IncidentService $incidentService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, LeasePaymentService $leasePaymentService, LeaseFinanceSummaryService $leaseFinanceService, PayoutService $payoutService, DisputeService $disputeService, DamageClaimService $damageClaimService, IncidentService $incidentService): Response
     {
         $userId = session('auth.user_id');
 
@@ -321,6 +322,15 @@ class MemberController extends Controller
             ];
         }
 
+        // Lease finances (lessor-facing). The landowner previously saw the lease total
+        // but no indication of what the hunter had actually paid. This read-only summary
+        // surfaces the booking deposit, lease-rent payments (gross / platform fee / net),
+        // the outstanding balance and the security deposit's standing. The landowner is
+        // the payee on every billing record, so these reads succeed under ah_runtime.
+        $landownerFinance = $isLessor
+            ? rescue(fn () => $leaseFinanceService->landownerSummary($leaseRecord), null)
+            : null;
+
         // Safety incidents (both parties). Either party files an incident on the
         // lease/property with optional photo evidence; the safety team triages it.
         // System-authored — rows are written only via the db.system report route.
@@ -401,6 +411,7 @@ class MemberController extends Controller
             'deposit'        => $deposit,
             'booking_deposit' => $bookingDeposit,
             'lease_payment'  => $leasePayment,
+            'landowner_finance' => $landownerFinance,
             'damage_claims'  => $damageClaims,
             'incidents'      => $incidents,
             'contacts'       => $contacts,

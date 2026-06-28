@@ -14,6 +14,7 @@ use App\Models\Lease\LeaseApplicationMessage;
 use App\Models\Lease\LeaseApplicationReviewHistory;
 use App\Models\Property\PropertyListing;
 use App\Services\Billing\BookingDepositService;
+use App\Services\Billing\LeaseFinanceSummaryService;
 use App\Services\Billing\SecurityDepositService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\ApplicationService;
@@ -168,6 +169,19 @@ class ViewLeaseApplication extends ViewRecord
                         TextEntry::make('signing_status')
                             ->label('')
                             ->state(fn (LeaseApplication $record): HtmlString => $this->buildSigningStatusHtml($record))
+                            ->html()
+                            ->columnSpanFull(),
+                    ]),
+
+                // ── Payment Status — full width (only when lease exists) ──────
+                Section::make('Payment Status')
+                    ->columnSpan(3)
+                    ->description('What the hunter has paid and the landowner\'s net after fees.')
+                    ->visible(fn (LeaseApplication $record): bool => $record->lease()->exists())
+                    ->schema([
+                        TextEntry::make('payment_status')
+                            ->label('')
+                            ->state(fn (LeaseApplication $record): HtmlString => $this->buildPaymentStatusHtml($record))
                             ->html()
                             ->columnSpanFull(),
                     ]),
@@ -796,6 +810,27 @@ class ViewLeaseApplication extends ViewRecord
             'signingUrl'     => route('member.leases.sign', $lease->id),
             'deposit'        => $deposit,
             'bookingDeposit' => $bookingDeposit,
+        ])->render());
+    }
+
+    private function buildPaymentStatusHtml(LeaseApplication $record): HtmlString
+    {
+        $lease = $record->lease;
+        if (! $lease) {
+            return new HtmlString('<p style="color:#888;font-style:italic;font-size:13px">No lease record created yet.</p>');
+        }
+
+        $summary = rescue(
+            fn () => app(LeaseFinanceSummaryService::class)->landownerSummary($lease),
+            null,
+        );
+
+        if ($summary === null) {
+            return new HtmlString('<p style="color:#888;font-style:italic;font-size:13px">Payment summary unavailable.</p>');
+        }
+
+        return new HtmlString(view('filament.admin.applications.payment-status', [
+            's' => $summary,
         ])->render());
     }
 

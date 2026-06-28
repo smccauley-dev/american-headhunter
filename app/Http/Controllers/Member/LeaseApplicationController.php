@@ -10,6 +10,7 @@ use App\Models\Identity\User;
 use App\Models\Lease\Lease;
 use App\Models\Lease\LeaseApplication;
 use App\Models\Lease\LeaseApplicationHunter;
+use App\Services\Billing\LeaseFinanceSummaryService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\ApplicationService;
 use App\Services\Lease\EsignatureService;
@@ -43,6 +44,7 @@ class LeaseApplicationController extends Controller
         private readonly ApplicationMessageService $messages,
         private readonly EsignatureService         $esignatures,
         private readonly LeaseDocumentService      $leaseDocuments,
+        private readonly LeaseFinanceSummaryService $leaseFinance,
     ) {}
 
     private const STATUS_LABELS = [
@@ -283,6 +285,7 @@ class LeaseApplicationController extends Controller
                     'end_date'   => $lease->end_date?->format('M j, Y'),
                     'total_price' => $lease->total_price !== null ? (float) $lease->total_price : null,
                 ] : null,
+                'payment_summary' => $lease ? $this->leaseFinance->landownerSummary($lease) : null,
                 'signers' => $signers?->map(fn ($s) => [
                     'name'      => $s->name,
                     'role'      => $s->user_id === $lease?->lessor_user_id ? 'Lessor (Landowner)' : 'Lessee (Hunter)',
