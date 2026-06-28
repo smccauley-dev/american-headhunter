@@ -5,6 +5,7 @@ namespace App\Services\Property;
 use App\Database\ConnectionRole;
 use App\Jobs\Property\SendOwnershipStatusEmail;
 use App\Models\Identity\User;
+use App\Models\Property\GameType;
 use App\Models\Property\Property;
 use App\Models\Property\PropertyListing;
 use App\Models\Property\PropertyManager;
@@ -31,30 +32,98 @@ use Illuminate\Support\Str;
 
 class PropertyService extends BaseService
 {
-    private const VALID_SPECIES_CODES = [
-        'whitetail_deer', 'mule_deer', 'turkey', 'waterfowl', 'dove', 'hog',
-        'elk', 'bear', 'antelope', 'pheasant', 'quail', 'rabbit', 'squirrel',
-        'coyote', 'other',
+    /** A game type is either huntable in a regulated season or year-round. */
+    public const AVAILABILITY_OPTIONS = [
+        'seasonal'   => 'Seasonal',
+        'year_round' => 'Year-Round',
     ];
 
-    /** Game-type species codes → display labels (mirrors PropertyFormV2). */
-    public const SPECIES_LABELS = [
-        'whitetail_deer' => 'Whitetail Deer',
-        'mule_deer'      => 'Mule Deer',
-        'turkey'         => 'Turkey',
-        'waterfowl'      => 'Waterfowl',
-        'dove'           => 'Dove',
-        'hog'            => 'Hog',
-        'elk'            => 'Elk',
-        'bear'           => 'Bear',
-        'antelope'       => 'Antelope',
-        'pheasant'       => 'Pheasant',
-        'quail'          => 'Quail',
-        'rabbit'         => 'Rabbit',
-        'squirrel'       => 'Squirrel',
-        'coyote'         => 'Coyote',
-        'other'          => 'Other',
-    ];
+    /** Valkey (Cluster 2) cache key for the admin-managed game-type registry. */
+    private const GAME_TYPES_CACHE_KEY = 'cfg:property:game_types';
+
+    /**
+     * The game-type registry as plain rows, cached in Valkey. Ordered by
+     * sort_order. Pass $activeOnly = false to include deactivated types — needed
+     * to label/display species already attached to a property.
+     *
+     * @return array<int, array{code:string,label:string,icon_svg:?string,icon_viewbox:string,default_availability:string,is_active:bool,sort_order:int}>
+     */
+    public function gameTypes(bool $activeOnly = true): array
+    {
+        $all = $this->cache(self::GAME_TYPES_CACHE_KEY, fn () =>
+            GameType::on('property_read')
+                ->orderBy('sort_order')
+                ->orderBy('label')
+                ->get(['code', 'label', 'icon_svg', 'icon_viewbox', 'default_availability', 'is_active', 'sort_order'])
+                ->map(fn (GameType $g) => [
+                    'code'                 => $g->code,
+                    'label'                => $g->label,
+                    'icon_svg'             => $g->icon_svg,
+                    'icon_viewbox'         => $g->icon_viewbox,
+                    'default_availability' => $g->default_availability,
+                    'is_active'            => (bool) $g->is_active,
+                    'sort_order'           => (int) $g->sort_order,
+                ])
+                ->all(),
+            ttlMinutes: 60,
+        );
+
+        return $activeOnly
+            ? array_values(array_filter($all, fn ($g) => $g['is_active']))
+            : $all;
+    }
+
+    /** Game-type code → display label. Active types only by default. */
+    public function speciesLabels(bool $activeOnly = true): array
+    {
+        return array_column($this->gameTypes($activeOnly), 'label', 'code');
+    }
+
+    /** All known game-type codes (active + inactive) — for input validation. */
+    public function validSpeciesCodes(): array
+    {
+        return array_column($this->gameTypes(false), 'code');
+    }
+
+    /** Code → ['icon_svg', 'icon_viewbox'] for rendering icons on public pages. */
+    public function gameIconMap(): array
+    {
+        $map = [];
+        foreach ($this->gameTypes(false) as $g) {
+            $map[$g['code']] = ['icon_svg' => $g['icon_svg'], 'icon_viewbox' => $g['icon_viewbox']];
+        }
+        return $map;
+    }
+
+    /** Default availability for a game type, from the registry (fallback seasonal). */
+    public function defaultAvailability(string $speciesCode): string
+    {
+        foreach ($this->gameTypes(false) as $g) {
+            if ($g['code'] === $speciesCode) {
+                return $g['default_availability'];
+            }
+        }
+
+        return 'seasonal';
+    }
+
+    /** Invalidate the cached game-type registry — call after any admin edit. */
+    public function forgetGameTypesCache(): void
+    {
+        $this->invalidate(self::GAME_TYPES_CACHE_KEY);
+    }
+
+    /**
+     * Whether any property still references this game-type code. A type in use
+     * cannot be deleted (the FK is ON DELETE RESTRICT) — deactivate it instead.
+     */
+    public function gameTypeInUse(string $code): bool
+    {
+        return DB::connection('property')
+            ->table('property_species')
+            ->where('species_code', $code)
+            ->exists();
+    }
 
     public function __construct(
         private readonly GeospatialService $geospatialService,
@@ -793,7 +862,7 @@ class PropertyService extends BaseService
         if (! empty($filters['species'])) {
             $species = array_values(array_intersect(
                 (array) $filters['species'],
-                self::VALID_SPECIES_CODES
+                $this->validSpeciesCodes()
             ));
             if (! empty($species)) {
                 $query->whereIn('properties.id', function ($sub) use ($species) {
@@ -1003,10 +1072,11 @@ class PropertyService extends BaseService
             ->where('property_id', $propertyId)
             ->orderByDesc('is_primary')
             ->orderBy('species_code')
-            ->get(['species_code', 'is_primary'])
+            ->get(['species_code', 'is_primary', 'availability'])
             ->map(fn (PropertySpecies $s) => [
                 'species_code' => $s->species_code,
                 'is_primary'   => (bool) $s->is_primary,
+                'availability' => $s->availability,
             ])
             ->all();
     }
@@ -1055,7 +1125,7 @@ class PropertyService extends BaseService
      * (hard delete + reinsert — both are non-soft-delete child tables); rule
      * order follows array position. Inputs are validated by the controller.
      *
-     * @param  array<int, array{species_code: string, is_primary?: bool}>  $species
+     * @param  array<int, array{species_code: string, is_primary?: bool, availability?: string}>  $species
      * @param  array<int, array{rule_text: string}>                        $rules
      * @param  array<int, string>                                          $amenityIds
      */
@@ -1064,10 +1134,12 @@ class PropertyService extends BaseService
         DB::connection('property')->transaction(function () use ($propertyId, $species, $rules, $amenityIds) {
             PropertySpecies::on('property')->where('property_id', $propertyId)->delete();
             foreach ($species as $s) {
+                $availability = ($s['availability'] ?? null) === 'year_round' ? 'year_round' : 'seasonal';
                 PropertySpecies::on('property')->create([
                     'property_id'  => $propertyId,
                     'species_code' => $s['species_code'],
                     'is_primary'   => (bool) ($s['is_primary'] ?? false),
+                    'availability' => $availability,
                 ]);
             }
 

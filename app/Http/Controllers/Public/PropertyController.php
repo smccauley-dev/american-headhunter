@@ -197,7 +197,23 @@ class PropertyController extends Controller
         // Base boundary image only — marker overlays are never exposed publicly
         $boundaryMap = app(PropertyMapService::class)->getBoundaryImage($property->id);
 
+        // Game-type icons + their artist credit are globally toggleable and the
+        // credit is fully editable (so a different artist/licence can be named).
+        // When icons are disabled we simply omit the SVG from each species.
+        $iconsEnabled = (bool) (int) $this->tenantService->getSetting('game_icons.enabled', '1');
+        $iconMap      = $iconsEnabled ? $this->propertyService->gameIconMap() : [];
+        $speciesLabels = $this->propertyService->speciesLabels(false);
+        $gameIcons = [
+            'enabled'              => $iconsEnabled,
+            'credit_enabled'       => (bool) (int) $this->tenantService->getSetting('game_icons.credit_enabled', '1'),
+            'credit_text'          => $this->tenantService->getSetting('game_icons.credit_text', 'Game-type icons by Lorc, Delapouite & Caro Asercion'),
+            'credit_url'           => $this->tenantService->getSetting('game_icons.credit_url', 'https://game-icons.net'),
+            'credit_license_label' => $this->tenantService->getSetting('game_icons.credit_license_label', 'CC BY 3.0'),
+            'credit_license_url'   => $this->tenantService->getSetting('game_icons.credit_license_url', 'https://creativecommons.org/licenses/by/3.0/'),
+        ];
+
         return inertia('Public/PropertyDetail', [
+            'gameIcons' => $gameIcons,
             'property' => [
                 'id'             => $property->id,
                 'boundary_map_url' => $boundaryMap
@@ -230,7 +246,12 @@ class PropertyController extends Controller
                     ])->values(),
                 'species'        => $property->species->map(fn ($s) => [
                     'species_code' => $s->species_code,
+                    'availability' => $s->availability,
+                    'label'        => $speciesLabels[$s->species_code] ?? null,
+                    'icon_svg'     => $iconMap[$s->species_code]['icon_svg'] ?? null,
+                    'icon_viewbox' => $iconMap[$s->species_code]['icon_viewbox'] ?? '0 0 512 512',
                 ])->values(),
+                'wildlife_agency' => \App\Support\WildlifeAgencies::forState($property->state_code),
                 'rules'          => $property->rules->map(fn ($r) => [
                     'id'         => $r->id,
                     'rule_text'  => $r->rule_text,

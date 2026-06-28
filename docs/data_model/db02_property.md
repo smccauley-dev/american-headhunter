@@ -275,21 +275,49 @@ CREATE INDEX idx_property_amenity_listings_amenity ON property_amenity_listings 
 
 ---
 
+### `game_types`
+
+The admin-managed registry of huntable game types — formerly a hardcoded `CHECK` list, now a table so staff can add a new game type, rename its display label, reorder it, deactivate it, set its default availability, and assign a per-type icon without a code change. `code` is the slug referenced by `property_species.species_code` (FK below), so it is immutable once a type is in use; deactivate (`is_active = false`) rather than delete a type that still labels a property. `icon_svg` holds **inner** SVG markup (paths/groups — no outer `<svg>` wrapper) sanitized via `App\Support\SvgSanitizer` on save; `icon_viewbox` is the matching viewBox. The public detail page renders these via the `GameIcon` React component, which supplies its own `<svg>` wrapper and `fill="currentColor"` so monochrome glyphs inherit the chip's ink color. Global on/off and the artist-credit line are admin-editable (see `tenant_settings` keys below). Seeded with the original 15 species + their game-icons.net glyphs (CC BY 3.0).
+
+Same-database FK (`property_species` → `game_types`) is permitted — both live in DB 2 — and is **not** a cross-database reference.
+
+```sql
+CREATE TABLE game_types (
+    id                   UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    code                 VARCHAR(50) NOT NULL UNIQUE,   -- slug; referenced by property_species.species_code
+    label                VARCHAR(60) NOT NULL,          -- display label shown to members / public
+    icon_svg             TEXT,                          -- sanitized inner SVG markup (no <svg> wrapper); null = no icon
+    icon_viewbox         VARCHAR(40) NOT NULL DEFAULT '0 0 512 512',
+    default_availability VARCHAR(20) NOT NULL DEFAULT 'seasonal'
+                             CHECK (default_availability IN ('seasonal', 'year_round')),
+    sort_order           INTEGER     NOT NULL DEFAULT 0,
+    is_active            BOOLEAN     NOT NULL DEFAULT true,  -- false = hidden from picker, still labels existing rows
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()  -- maintained by trigger_set_updated_at()
+);
+
+CREATE INDEX idx_game_types_active_sort ON game_types (is_active, sort_order);
+```
+
+The registry is read through `PropertyService` (`gameTypes`, `speciesLabels`, `validSpeciesCodes`, `gameIconMap`, `defaultAvailability`), cached in Valkey Cluster 2 under `cfg:property:game_types` and invalidated via `forgetGameTypesCache()` on any admin edit/reorder. Related `tenant_settings` (DB 12) keys, edited on the **Game Icon Settings** admin page: `game_icons.enabled`, `game_icons.credit_enabled`, `game_icons.credit_text`, `game_icons.credit_url`, `game_icons.credit_license_label`, `game_icons.credit_license_url`.
+
+---
+
 ### `property_species`
 
-Wildlife species available on a property. Used for search filtering ("Show me properties with whitetail deer and turkey").
+Wildlife species available on a property. Used for search filtering ("Show me properties with whitetail deer and turkey"). Each species is flagged `seasonal` (huntable only in a regulated season — deer, turkey, …) or `year_round` (no closed season — hogs, coyotes); the public detail page groups them into "In-Season Game" / "Year-Round Game" and shows the state wildlife-agency disclaimer. Default availability comes from the chosen game type (`game_types.default_availability` — `seasonal` except hog/coyote).
+
+`species_code` is a **foreign key** to `game_types (code)` (`ON UPDATE CASCADE ON DELETE RESTRICT`) — it replaced the old inline `CHECK` list so the set of valid game types is data-driven. Same-DB FK; not a cross-database reference.
 
 ```sql
 CREATE TABLE property_species (
     id           UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
     property_id  UUID        NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
     species_code VARCHAR(50) NOT NULL
-                     CHECK (species_code IN (
-                         'whitetail_deer', 'mule_deer', 'turkey', 'waterfowl', 'dove',
-                         'hog', 'elk', 'bear', 'antelope', 'pheasant', 'quail',
-                         'rabbit', 'squirrel', 'coyote', 'other'
-                     )),
+                     REFERENCES game_types (code) ON UPDATE CASCADE ON DELETE RESTRICT,
     is_primary   BOOLEAN     NOT NULL DEFAULT false,
+    availability VARCHAR(20)  NOT NULL DEFAULT 'seasonal'
+                     CHECK (availability IN ('seasonal', 'year_round')),
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

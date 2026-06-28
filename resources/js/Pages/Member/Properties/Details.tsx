@@ -18,7 +18,15 @@ const TABS = [
 
 const DETAIL_TABS = ['game_type', 'rules', 'amenities']
 
-interface SpeciesRow { species_code: string; is_primary: boolean }
+type Availability = 'seasonal' | 'year_round'
+interface SpeciesRow { species_code: string; is_primary: boolean; availability: Availability }
+
+// Year-round in the common case (no closed season) — used as the default for a
+// newly added game type; mirrors PropertyService::defaultAvailability.
+const YEAR_ROUND_SPECIES = ['hog', 'coyote']
+function defaultAvailability(code: string): Availability {
+  return YEAR_ROUND_SPECIES.includes(code) ? 'year_round' : 'seasonal'
+}
 interface RuleRow { rule_text: string }
 interface AmenityItem { id: string; name: string }
 interface AmenityGroup { category: string; label: string; items: AmenityItem[] }
@@ -33,6 +41,7 @@ interface Props {
   rules: RuleRow[]
   amenityIds: string[]
   speciesOptions: Record<string, string>
+  availabilityOptions: Record<string, string>
   amenityCatalog: AmenityGroup[]
   photos: Photo[]
   mapImages: MapImage[]
@@ -89,7 +98,7 @@ const addBtn: React.CSSProperties = {
 
 export default function PropertyDetails(props: Props) {
   const {
-    property, species, rules, amenityIds, speciesOptions, amenityCatalog,
+    property, species, rules, amenityIds, speciesOptions, availabilityOptions, amenityCatalog,
     photos, mapImages, deletedMapImages, markerTypes, markerColors, checkIns, managers, roles,
     contactDirectory, eligibleManagers, editableContacts, contactTypes,
   } = props
@@ -102,6 +111,7 @@ export default function PropertyDetails(props: Props) {
 
   const [tab, setTab] = useTabQuery('game_type')
   const speciesCodes = Object.keys(speciesOptions)
+  const availabilityCodes = Object.keys(availabilityOptions)
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -110,7 +120,7 @@ export default function PropertyDetails(props: Props) {
 
   // ── Species helpers ──────────────────────────────────────────────────────
   function addSpecies() {
-    setData('species', [...data.species, { species_code: speciesCodes[0], is_primary: false }])
+    setData('species', [...data.species, { species_code: speciesCodes[0], is_primary: false, availability: defaultAvailability(speciesCodes[0]) }])
   }
   function setSpecies(i: number, patch: Partial<SpeciesRow>) {
     setData('species', data.species.map((s, idx) => idx === i ? { ...s, ...patch } : s))
@@ -157,7 +167,7 @@ export default function PropertyDetails(props: Props) {
 
         {/* Game Type */}
         {tab === 'game_type' && (
-        <Section title="Game Type" icon={<TrophyIcon />} description="The huntable species offered on this property.">
+        <Section title="Game Type" icon={<TrophyIcon />} description="The huntable species offered on this property. Mark each as huntable in a regulated season or year-round.">
           {data.species.length === 0 && (
             <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50', margin: '0 0 14px' }}>
               No game types added yet.
@@ -169,6 +179,9 @@ export default function PropertyDetails(props: Props) {
                 <select value={s.species_code} onChange={e => setSpecies(i, { species_code: e.target.value })} style={{ ...input, flex: 1 }}>
                   {speciesCodes.map(code => <option key={code} value={code}>{speciesOptions[code]}</option>)}
                 </select>
+                <select value={s.availability} onChange={e => setSpecies(i, { availability: e.target.value as Availability })} style={{ ...input, flex: '0 0 150px' }}>
+                  {availabilityCodes.map(code => <option key={code} value={code}>{availabilityOptions[code]}</option>)}
+                </select>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.06em', textTransform: 'uppercase', color: '#6b5e50', whiteSpace: 'nowrap' }}>
                   <input type="checkbox" checked={s.is_primary} onChange={e => setSpecies(i, { is_primary: e.target.checked })} />
                   Primary
@@ -178,6 +191,9 @@ export default function PropertyDetails(props: Props) {
             ))}
           </div>
           <button type="button" onClick={addSpecies} style={addBtn}>+ Add Game Type</button>
+          <p style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '13px', fontStyle: 'italic', color: '#6b5e50', margin: '14px 0 0' }}>
+            Not all game is permitted year-round — open seasons and bag limits are set by your state wildlife agency. Hunters are responsible for verifying current regulations.
+          </p>
         </Section>
         )}
 

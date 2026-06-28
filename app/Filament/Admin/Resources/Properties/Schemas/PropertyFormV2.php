@@ -34,23 +34,11 @@ use Illuminate\Support\HtmlString;
 
 class PropertyFormV2
 {
-    private static array $speciesOptions = [
-        'whitetail_deer' => 'Whitetail Deer',
-        'mule_deer'      => 'Mule Deer',
-        'turkey'         => 'Turkey',
-        'waterfowl'      => 'Waterfowl',
-        'dove'           => 'Dove',
-        'hog'            => 'Hog',
-        'elk'            => 'Elk',
-        'bear'           => 'Bear',
-        'antelope'       => 'Antelope',
-        'pheasant'       => 'Pheasant',
-        'quail'          => 'Quail',
-        'rabbit'         => 'Rabbit',
-        'squirrel'       => 'Squirrel',
-        'coyote'         => 'Coyote',
-        'other'          => 'Other',
-    ];
+    /** Active game-type code → label, from the admin-managed registry (DB 2). */
+    private static function speciesOptions(): array
+    {
+        return app(\App\Services\Property\PropertyService::class)->speciesLabels();
+    }
 
     /** Suggested photo tags — free-form entry is also allowed. */
     public static function photoTagSuggestions(): array
@@ -1270,7 +1258,13 @@ class PropertyFormV2
                                                 Select::make('species_code')
                                                     ->label('Species')
                                                     ->required()
-                                                    ->options(self::$speciesOptions),
+                                                    ->options(fn () => self::speciesOptions()),
+                                                Select::make('availability')
+                                                    ->label('Availability')
+                                                    ->required()
+                                                    ->default('seasonal')
+                                                    ->options(\App\Services\Property\PropertyService::AVAILABILITY_OPTIONS)
+                                                    ->helperText('Huntable in a regulated season, or year-round (e.g. hogs, coyotes).'),
                                                 Toggle::make('is_primary')
                                                     ->label('Primary Species')
                                                     ->helperText('Main huntable species for this property.')

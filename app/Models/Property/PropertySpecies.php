@@ -13,6 +13,7 @@ class PropertySpecies extends BaseModel
         'property_id',
         'species_code',
         'is_primary',
+        'availability',
     ];
 
     protected function casts(): array
