@@ -276,6 +276,8 @@ class LeasePaymentService extends BaseService
     {
         $stateCode = rescue(fn () => $this->properties->find($lease->property_id)?->state_code, null);
 
-        return $this->fees->processingFee('lease_payment', $stateCode, $rentCents)['fee_cents'];
+        // Category 'lease' — the value the fee_schedules CHECK + the Processing Fees
+        // admin editor support (there is no 'lease_payment' category).
+        return $this->fees->processingFee('lease', $stateCode, $rentCents)['fee_cents'];
     }
 }
