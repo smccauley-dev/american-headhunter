@@ -145,6 +145,49 @@ CREATE TRIGGER trg_user_profiles_updated_at
 
 ---
 
+### `profile_photos`
+
+Metadata for a hunter's profile-gallery photos. The image bytes and base file record live in DB 11 (`documents`, `document_type = 'profile_photo'`); this table holds the user-facing extras — caption, controlled tags, opt-in location, display order — keyed by `document_id`. Separating the metadata from the document keeps the documents table generic while letting the gallery carry profile-specific fields.
+
+```sql
+CREATE TABLE profile_photos (
+    id             UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id        UUID         NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    document_id    UUID         NOT NULL,                 -- References DB 11 (Documents) documents.id
+    caption        VARCHAR(140) NULL,
+    description    TEXT         NULL,
+    tags           JSONB        NOT NULL DEFAULT '[]',
+    latitude       NUMERIC(9,6) NULL,
+    longitude      NUMERIC(9,6) NULL,
+    location_name  VARCHAR(160) NULL,
+    exif_latitude  NUMERIC(9,6) NULL,                     -- GPS detected in image, NOT applied
+    exif_longitude NUMERIC(9,6) NULL,                     -- GPS detected in image, NOT applied
+    sort_order     INT          NOT NULL DEFAULT 0,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at     TIMESTAMPTZ  NULL
+);
+
+CREATE UNIQUE INDEX uq_profile_photos_document
+    ON profile_photos (document_id) WHERE deleted_at IS NULL;
+CREATE        INDEX idx_profile_photos_user_order
+    ON profile_photos (user_id, sort_order) WHERE deleted_at IS NULL;
+
+CREATE TRIGGER set_updated_at
+    BEFORE UPDATE ON profile_photos
+    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+```
+
+**Notes:**
+- **No RLS.** Ownership is enforced in the service/controller layer (`ProfilePhotoService` + `Member\ProfileController`) by matching `user_id` / the document's `owner_user_id`, exactly like `user_profiles` and `documents` themselves. New tables on this connection inherit DML for `ah_runtime` via the identity `ALTER DEFAULT PRIVILEGES` grant, so no extra grant migration is needed.
+- `document_id` is a cross-DB reference to DB 11. The serve URL is built from it via `route('member.profile.photos.serve', $documentId)`; the partial unique index guarantees one live metadata row per document.
+- **GPS is plain `NUMERIC`, not PostGIS** (a documented deviation from the "all geometry lives in DB 13" rule). A photo geotag is display metadata, not a spatially-queried entity, so it is not duplicated into DB 13.
+- **EXIF opt-in.** `exif_latitude` / `exif_longitude` hold GPS read from the uploaded image (via `exif_read_data` at upload time) but are **never applied** to `latitude` / `longitude` and never surfaced as the photo's location until the hunter explicitly copies them in. `latitude` / `longitude` are written both-or-nothing (a single coordinate clears both).
+- `tags` is a flat JSON array of keys from the controlled vocabulary in `App\Support\PhotoTagVocabulary` (species / terrain / season); submitted tags are sanitized against `allowedKeys()` and de-duplicated.
+- `sort_order` drives gallery display order (`ProfilePhotoService::reorder`). Soft-deleting a photo soft-deletes both this row and the underlying DB 11 document.
+
+---
+
 ### `roles`
 
 System-defined roles. The 8 canonical roles are seeded at installation and are not user-creatable.
@@ -780,6 +823,33 @@ protected function casts(): array
 }
 ```
 
+### `App\Models\Identity\ProfilePhoto`
+
+Extends `BaseModelWithSoftDeletes`. Written and read through `App\Services\Identity\ProfilePhotoService` — never apply EXIF coordinates or persist tags from outside that service.
+
+```php
+protected $connection = 'identity';
+protected $table      = 'profile_photos';
+
+protected $fillable = [
+    'user_id', 'document_id', 'caption', 'description', 'tags',
+    'latitude', 'longitude', 'location_name',
+    'exif_latitude', 'exif_longitude', 'sort_order',
+];
+
+protected function casts(): array
+{
+    return array_merge(parent::casts(), [
+        'tags'           => 'array',
+        'latitude'       => 'float',
+        'longitude'      => 'float',
+        'exif_latitude'  => 'float',
+        'exif_longitude' => 'float',
+        'sort_order'     => 'integer',
+    ]);
+}
+```
+
 ### `App\Models\Identity\Role`
 
 ```php
@@ -883,5 +953,6 @@ protected function casts(): array
 - **`VerificationService`** — email and phone verification flows. Lives at `App\Services\Identity\VerificationService`.
 - **`OfacService`** — triggers OFAC screening, stores results, triggers suspension on match. Lives at `App\Services\Identity\OfacService`.
 - **`TrustScoreService`** — records trust score events and atomically updates `users.trust_score`. Lives at `App\Services\Identity\TrustScoreService`.
+- **`ProfilePhotoService`** — owns the `profile_photos` metadata layer over DB 11 documents: create-on-upload (reading EXIF GPS into `exif_*` only), shaped gallery listing, metadata updates (caption/description/controlled tags/opt-in location), reorder, and soft-delete of both rows. Enforces ownership in PHP (no RLS). Lives at `App\Services\Identity\ProfilePhotoService`; the controlled tag vocabulary is `App\Support\PhotoTagVocabulary`.
 
 User lookups by other services (e.g., `LeaseService` needing to display lessee info) go through `UserService::find(uuid)`, which caches results in Valkey Cluster 2 with key `user:{uuid}`.
