@@ -805,6 +805,25 @@ The goal: a locally-queryable, denormalized read model of Stripe **subscription*
 - [ ] `ah_runtime` cannot forge a projection row (RLS write-defense test green); reads still scoped to parties + staff
 - [ ] Read-path cutover is reversible (one-line source swap back to `listInvoices()`)
 
+### 5.8 Dynamic, entitlement-driven Stripe invoice presentation — **DEFERRED**
+
+The goal: per-member invoice **footer** + **custom_fields** sourced from `EntitlementService`, so each subscriber's
+Stripe invoice reflects what their plan/tier actually includes (e.g. a "Your plan includes:" services blurb, support
+SLA, tier name) instead of one static template for everyone. Set on the customer's (and/or subscription's)
+`invoice_settings` (`footer`, `rendering`, `custom_fields`) at subscription **create** and on plan-change **sync**, so
+the next invoice Stripe generates picks them up.
+
+- [ ] **Deferred — not built.** When implemented: build the descriptor in a service (reuse `EntitlementService` for the
+  per-user feature set + the locked `plan_version` for the tier name), then push it onto Stripe via
+  `Customer::update($customerId, ['invoice_settings' => ['footer' => …, 'custom_fields' => […up to 4…]]])` (and/or the
+  subscription) at subscription create + on plan-version migration / promo activation. Invalidate/re-push on the same
+  triggers that bust the entitlement cache (subscription change, plan-version update, promo claim activate/expire).
+- **Static parts are handled outside code and are NOT part of this item:** the Dashboard invoice **template**
+  (default footer/memo, branding, up to 4 default `custom_fields`) and the **Product** name/description (which drives the
+  line-item label) cover the one-size-fits-all content today. This deferred item is only the *dynamic, per-member* layer.
+- **Constraints when built:** `custom_fields` is capped at **4** entries; never place any payment-instrument data in
+  footer/custom_fields; values are display-only strings (no PII beyond what the member already sees on their own invoice).
+
 ### Phase 5 Milestone
 
 - [ ] A hunter can select a plan and pay via Stripe Checkout
