@@ -56,6 +56,21 @@ class PropertyService extends BaseService
         'other'          => 'Other',
     ];
 
+    /** A game type is either huntable in a regulated season or year-round. */
+    public const AVAILABILITY_OPTIONS = [
+        'seasonal'   => 'Seasonal',
+        'year_round' => 'Year-Round',
+    ];
+
+    /** Species with no closed season in the common case — used as the default. */
+    private const YEAR_ROUND_SPECIES = ['hog', 'coyote'];
+
+    /** Default availability for a species code (year-round for hog/coyote). */
+    public static function defaultAvailability(string $speciesCode): string
+    {
+        return in_array($speciesCode, self::YEAR_ROUND_SPECIES, true) ? 'year_round' : 'seasonal';
+    }
+
     public function __construct(
         private readonly GeospatialService $geospatialService,
         private readonly DocumentService   $documentService,
@@ -1003,10 +1018,11 @@ class PropertyService extends BaseService
             ->where('property_id', $propertyId)
             ->orderByDesc('is_primary')
             ->orderBy('species_code')
-            ->get(['species_code', 'is_primary'])
+            ->get(['species_code', 'is_primary', 'availability'])
             ->map(fn (PropertySpecies $s) => [
                 'species_code' => $s->species_code,
                 'is_primary'   => (bool) $s->is_primary,
+                'availability' => $s->availability,
             ])
             ->all();
     }
@@ -1055,7 +1071,7 @@ class PropertyService extends BaseService
      * (hard delete + reinsert — both are non-soft-delete child tables); rule
      * order follows array position. Inputs are validated by the controller.
      *
-     * @param  array<int, array{species_code: string, is_primary?: bool}>  $species
+     * @param  array<int, array{species_code: string, is_primary?: bool, availability?: string}>  $species
      * @param  array<int, array{rule_text: string}>                        $rules
      * @param  array<int, string>                                          $amenityIds
      */
@@ -1064,10 +1080,12 @@ class PropertyService extends BaseService
         DB::connection('property')->transaction(function () use ($propertyId, $species, $rules, $amenityIds) {
             PropertySpecies::on('property')->where('property_id', $propertyId)->delete();
             foreach ($species as $s) {
+                $availability = ($s['availability'] ?? null) === 'year_round' ? 'year_round' : 'seasonal';
                 PropertySpecies::on('property')->create([
                     'property_id'  => $propertyId,
                     'species_code' => $s['species_code'],
                     'is_primary'   => (bool) ($s['is_primary'] ?? false),
+                    'availability' => $availability,
                 ]);
             }
 

@@ -1271,6 +1271,12 @@ class PropertyFormV2
                                                     ->label('Species')
                                                     ->required()
                                                     ->options(self::$speciesOptions),
+                                                Select::make('availability')
+                                                    ->label('Availability')
+                                                    ->required()
+                                                    ->default('seasonal')
+                                                    ->options(\App\Services\Property\PropertyService::AVAILABILITY_OPTIONS)
+                                                    ->helperText('Huntable in a regulated season, or year-round (e.g. hogs, coyotes).'),
                                                 Toggle::make('is_primary')
                                                     ->label('Primary Species')
                                                     ->helperText('Main huntable species for this property.')

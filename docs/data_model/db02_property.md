@@ -277,7 +277,7 @@ CREATE INDEX idx_property_amenity_listings_amenity ON property_amenity_listings 
 
 ### `property_species`
 
-Wildlife species available on a property. Used for search filtering ("Show me properties with whitetail deer and turkey").
+Wildlife species available on a property. Used for search filtering ("Show me properties with whitetail deer and turkey"). Each species is flagged `seasonal` (huntable only in a regulated season — deer, turkey, …) or `year_round` (no closed season — hogs, coyotes); the public detail page groups them into "In-Season Game" / "Year-Round Game" and shows the state wildlife-agency disclaimer. Default is `seasonal` except hog/coyote.
 
 ```sql
 CREATE TABLE property_species (
@@ -290,6 +290,8 @@ CREATE TABLE property_species (
                          'rabbit', 'squirrel', 'coyote', 'other'
                      )),
     is_primary   BOOLEAN     NOT NULL DEFAULT false,
+    availability VARCHAR(20)  NOT NULL DEFAULT 'seasonal'
+                     CHECK (availability IN ('seasonal', 'year_round')),
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

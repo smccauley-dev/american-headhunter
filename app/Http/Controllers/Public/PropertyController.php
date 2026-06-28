@@ -230,7 +230,9 @@ class PropertyController extends Controller
                     ])->values(),
                 'species'        => $property->species->map(fn ($s) => [
                     'species_code' => $s->species_code,
+                    'availability' => $s->availability,
                 ])->values(),
+                'wildlife_agency' => \App\Support\WildlifeAgencies::forState($property->state_code),
                 'rules'          => $property->rules->map(fn ($r) => [
                     'id'         => $r->id,
                     'rule_text'  => $r->rule_text,

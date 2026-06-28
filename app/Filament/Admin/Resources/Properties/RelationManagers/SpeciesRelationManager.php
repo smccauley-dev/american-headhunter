@@ -46,6 +46,12 @@ class SpeciesRelationManager extends RelationManager
                     ->required()
                     ->options(self::$speciesLabels)
                     ->helperText('Each species can only be added once per property.'),
+                Select::make('availability')
+                    ->label('Availability')
+                    ->required()
+                    ->default('seasonal')
+                    ->options(\App\Services\Property\PropertyService::AVAILABILITY_OPTIONS)
+                    ->helperText('Huntable in a regulated season, or year-round (e.g. hogs, coyotes).'),
                 Toggle::make('is_primary')
                     ->label('Primary Species')
                     ->helperText('Mark as the main huntable species for this property.')
@@ -60,6 +66,11 @@ class SpeciesRelationManager extends RelationManager
                 TextColumn::make('species_code')
                     ->label('Species')
                     ->formatStateUsing(fn (string $state): string => self::$speciesLabels[$state] ?? $state),
+                TextColumn::make('availability')
+                    ->label('Availability')
+                    ->badge()
+                    ->formatStateUsing(fn (string $state): string => \App\Services\Property\PropertyService::AVAILABILITY_OPTIONS[$state] ?? $state)
+                    ->color(fn (string $state): string => $state === 'year_round' ? 'success' : 'gray'),
                 IconColumn::make('is_primary')
                     ->label('Primary')
                     ->boolean(),

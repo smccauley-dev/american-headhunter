@@ -54,6 +54,7 @@ class PropertyDetailController extends Controller
             'rules'          => $this->properties->getRulesFor($property),
             'amenityIds'     => $this->properties->getAmenityIdsFor($property),
             'speciesOptions' => PropertyService::SPECIES_LABELS,
+            'availabilityOptions' => PropertyService::AVAILABILITY_OPTIONS,
             'amenityCatalog' => $this->properties->getAmenityCatalog(),
             // Photos
             'photos'         => $this->properties->getPhotosForDisplay($property),
@@ -83,6 +84,7 @@ class PropertyDetailController extends Controller
             'species'                => 'array',
             'species.*.species_code' => ['required', Rule::in(array_keys(PropertyService::SPECIES_LABELS))],
             'species.*.is_primary'   => 'boolean',
+            'species.*.availability' => ['nullable', Rule::in(array_keys(PropertyService::AVAILABILITY_OPTIONS))],
             'rules'                  => 'array',
             'rules.*.rule_text'      => 'required|string|max:500',
             'amenity_ids'            => 'array',

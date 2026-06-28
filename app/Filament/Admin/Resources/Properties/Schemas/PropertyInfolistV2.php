@@ -81,13 +81,20 @@ class PropertyInfolistV2
                                 ->description('The huntable species offered on this property.')
                                 ->schema([
                                     RepeatableEntry::make('species')
-                                        ->columns(2)
+                                        ->columns(3)
                                         ->schema([
                                             TextEntry::make('species_code')
                                                 ->label('Species')
                                                 ->formatStateUsing(fn (string $state): string =>
                                                     ucwords(str_replace('_', ' ', $state))
                                                 ),
+                                            TextEntry::make('availability')
+                                                ->label('Availability')
+                                                ->badge()
+                                                ->formatStateUsing(fn (?string $state): string =>
+                                                    \App\Services\Property\PropertyService::AVAILABILITY_OPTIONS[$state] ?? 'Seasonal'
+                                                )
+                                                ->color(fn (?string $state): string => $state === 'year_round' ? 'success' : 'gray'),
                                             IconEntry::make('is_primary')
                                                 ->label('Primary Species')
                                                 ->boolean(),

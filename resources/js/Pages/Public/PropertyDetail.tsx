@@ -4,6 +4,7 @@ import PublicNav from '@/Components/Public/PublicNav';
 
 interface PropertySpecies {
     species_code: string;
+    availability: 'seasonal' | 'year_round';
 }
 
 interface PropertyRule {
@@ -51,6 +52,7 @@ interface Property {
     total_acres: string;
     huntable_acres: string | null;
     species: PropertySpecies[];
+    wildlife_agency: string | null;
     rules: PropertyRule[];
     photos: PropertyPhoto[];
     listings: PropertyListing[];
@@ -70,6 +72,36 @@ const SPECIES_NAMES: Record<string, string> = {
 
 function formatSpecies(code: string): string {
     return SPECIES_NAMES[code] ?? code.replace(/_/g, ' ');
+}
+
+// One labelled group of game-type chips (In-Season vs Year-Round). Renders
+// nothing when the group is empty so a property with only one kind shows one
+// heading rather than an empty section.
+function SpeciesGroup({ label, species }: { label: string; species: PropertySpecies[] }) {
+    if (species.length === 0) return null;
+    return (
+        <div style={{ marginBottom: 28 }}>
+            <div style={{
+                fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.2em',
+                color: 'var(--blaze)', textTransform: 'uppercase', marginBottom: 16,
+                display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+                <span style={{ display: 'block', width: 20, height: 1, background: 'var(--blaze)' }} />
+                {label}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {species.map(s => (
+                    <span key={s.species_code} style={{
+                        fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.12em',
+                        textTransform: 'uppercase', color: 'var(--ink)',
+                        border: '1px solid var(--ink)', padding: '8px 16px',
+                    }}>
+                        {formatSpecies(s.species_code)}
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
 }
 
 function formatType(type: string): string {
@@ -512,28 +544,26 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                         </div>
                     )}
 
-                    {/* Species */}
+                    {/* Species — split into in-season vs year-round game */}
                     {property.species?.length > 0 && (
                         <div style={{ marginBottom: 56 }}>
-                            <div style={{
-                                fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.2em',
-                                color: 'var(--blaze)', textTransform: 'uppercase', marginBottom: 24,
-                                display: 'flex', alignItems: 'center', gap: 12,
+                            <SpeciesGroup
+                                label="In-Season Game"
+                                species={property.species.filter(s => s.availability !== 'year_round')}
+                            />
+                            <SpeciesGroup
+                                label="Year-Round Game"
+                                species={property.species.filter(s => s.availability === 'year_round')}
+                            />
+                            <p style={{
+                                fontFamily: 'var(--body)', fontSize: 14, fontStyle: 'italic',
+                                lineHeight: 1.6, color: 'var(--ink-soft)', marginTop: 20,
+                                paddingTop: 16, borderTop: '1px dotted var(--parch-deep)',
                             }}>
-                                <span style={{ display: 'block', width: 20, height: 1, background: 'var(--blaze)' }} />
-                                Species Present
-                            </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                {property.species.map(s => (
-                                    <span key={s.species_code} style={{
-                                        fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.12em',
-                                        textTransform: 'uppercase', color: 'var(--ink)',
-                                        border: '1px solid var(--ink)', padding: '8px 16px',
-                                    }}>
-                                        {formatSpecies(s.species_code)}
-                                    </span>
-                                ))}
-                            </div>
+                                Not all game is permitted year-round. Open seasons and bag limits are set by{' '}
+                                {property.wildlife_agency ?? 'your state wildlife agency'} — verify current
+                                regulations before hunting.
+                            </p>
                         </div>
                     )}
 

@@ -73,7 +73,10 @@ class PropertyDetailsTest extends TestCase
     {
         $this->service()->saveDetails(
             $this->propertyId,
-            [['species_code' => 'whitetail_deer', 'is_primary' => true], ['species_code' => 'turkey', 'is_primary' => false]],
+            [
+                ['species_code' => 'whitetail_deer', 'is_primary' => true, 'availability' => 'seasonal'],
+                ['species_code' => 'hog', 'is_primary' => false, 'availability' => 'year_round'],
+            ],
             [['rule_text' => 'Sign the gate log'], ['rule_text' => 'No ATVs after dark']],
             [$this->amenityA, $this->amenityB],
         );
@@ -81,6 +84,8 @@ class PropertyDetailsTest extends TestCase
         $species = collect($this->service()->getSpeciesFor($this->propertyId));
         $this->assertCount(2, $species);
         $this->assertTrue($species->firstWhere('species_code', 'whitetail_deer')['is_primary']);
+        $this->assertSame('seasonal', $species->firstWhere('species_code', 'whitetail_deer')['availability']);
+        $this->assertSame('year_round', $species->firstWhere('species_code', 'hog')['availability']);
 
         $rules = $this->service()->getRulesFor($this->propertyId);
         $this->assertSame(['Sign the gate log', 'No ATVs after dark'], array_column($rules, 'rule_text'));
@@ -111,6 +116,21 @@ class PropertyDetailsTest extends TestCase
         $this->assertCount(0, $this->service()->getSpeciesFor($this->propertyId));
         $this->assertSame(['Only rule'], array_column($this->service()->getRulesFor($this->propertyId), 'rule_text'));
         $this->assertSame([], $this->service()->getAmenityIdsFor($this->propertyId));
+    }
+
+    public function test_species_availability_defaults_to_seasonal_when_omitted(): void
+    {
+        // An omitted/invalid availability is normalised to 'seasonal' (only
+        // 'year_round' opts a species out of season-gating).
+        $this->service()->saveDetails(
+            $this->propertyId,
+            [['species_code' => 'turkey', 'is_primary' => false]],
+            [],
+            [],
+        );
+
+        $species = collect($this->service()->getSpeciesFor($this->propertyId));
+        $this->assertSame('seasonal', $species->firstWhere('species_code', 'turkey')['availability']);
     }
 
     public function test_amenity_catalog_groups_by_category(): void
