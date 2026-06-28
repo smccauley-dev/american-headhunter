@@ -1,6 +1,7 @@
 import { useForm, usePage } from '@inertiajs/react'
 import { useState } from 'react'
-import { PortalChrome, TitleHead, Section, BackLink, Modal, ScaleIcon, DocumentTextIcon, UserIcon, PencilSquareIcon, PaperClipIcon, UserGroupIcon, ChatEllipsisIcon, ChatLeftRightIcon, ClockIcon, INK, ACCENT, TAN, type PropertySummary } from '@/Components/Member/PropertyChrome'
+import { PortalChrome, TitleHead, Section, BackLink, Modal, ScaleIcon, DocumentTextIcon, UserIcon, PencilSquareIcon, PaperClipIcon, UserGroupIcon, ChatEllipsisIcon, ChatLeftRightIcon, ClockIcon, BanknotesIcon, INK, ACCENT, TAN, type PropertySummary } from '@/Components/Member/PropertyChrome'
+import LandownerFinance, { type LandownerFinanceData } from '@/Components/Member/LandownerFinance'
 
 interface Application {
   id: string
@@ -31,6 +32,7 @@ interface Props {
   applicant: { name: string; email: string; ref: string }
   hunters: Hunter[]
   lease: { ref: string; status: string; start_date: string | null; end_date: string | null; total_price: number | null } | null
+  payment_summary: LandownerFinanceData | null
   signers: Signer[]
   signing_url: string | null
   documents: LeaseDoc[]
@@ -76,7 +78,7 @@ function money(v: number | null): string {
 
 const ROLE_LABEL: Record<string, string> = { admin: 'Staff', landowner: 'Landowner', applicant: 'Applicant' }
 
-export default function ApplicationShow({ property, application, listing, applicant, hunters, lease, signers, signing_url, documents, messages, history, defaults }: Props) {
+export default function ApplicationShow({ property, application, listing, applicant, hunters, lease, payment_summary, signers, signing_url, documents, messages, history, defaults }: Props) {
   const flash = (usePage().props as { flash?: { success?: string; error?: string } }).flash ?? {}
   const [modal, setModal] = useState<null | 'approve' | 'reject'>(null)
   const base = `/member/properties/${property.id}/applications/${application.id}`
@@ -182,6 +184,13 @@ export default function ApplicationShow({ property, application, listing, applic
               })}
             </div>
           )}
+        </Section>
+      )}
+
+      {/* Payment status */}
+      {payment_summary && (
+        <Section title="Payment Status" icon={<BanknotesIcon />}>
+          <LandownerFinance data={payment_summary} />
         </Section>
       )}
 
