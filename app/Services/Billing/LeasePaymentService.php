@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Database\ConnectionRole;
 use App\Models\Billing\BookingDeposit;
 use App\Models\Billing\LeasePayment;
 use App\Models\Identity\User;
@@ -81,7 +82,11 @@ class LeasePaymentService extends BaseService
     public function quote(Lease $lease, User $landowner): array
     {
         $balance   = $this->balanceDueCents($lease);
-        $tier      = $this->payouts->quote($landowner, $balance);
+        // The landowner's fee tier reads their subscription/promo rows, which RLS
+        // scopes to the landowner — invisible to a paying lessee under ah_runtime.
+        // Resolve it under ah_system so the lessee sees the correct (grandfathered)
+        // fee instead of silently falling back to the higher free-tier rate.
+        $tier      = ConnectionRole::asSystem(fn () => $this->payouts->quote($landowner, $balance));
         $surcharge = $this->surchargeFor($lease, $balance);
 
         return [
@@ -106,12 +111,17 @@ class LeasePaymentService extends BaseService
      */
     public function createCheckoutSession(Lease $lease, User $payer, string $successUrl, string $cancelUrl): Session
     {
-        $landowner = $lease->getLessor();
+        // Under ah_runtime the paying lessee cannot read the landowner as themselves:
+        // RLS hides the landowner's identity row (getLessor) and their Connect account
+        // (SEC-045/055), and their fee tier reads the landowner's subscription/promo
+        // rows. A lessee party is legitimately allowed to pay this landowner, so resolve
+        // all three under ah_system without broadening their general read access.
+        $landowner = ConnectionRole::asSystem(fn () => $lease->getLessor());
         if (! $landowner) {
             throw new \RuntimeException("Lease {$lease->id} has no landowner to pay.");
         }
 
-        $account = $this->payouts->connectAccount($landowner);
+        $account = ConnectionRole::asSystem(fn () => $this->payouts->connectAccount($landowner));
         if ($account === null || ! $account->charges_enabled) {
             throw new \RuntimeException('The landowner has not finished payout setup, so the lease balance cannot be paid yet.');
         }
@@ -121,7 +131,7 @@ class LeasePaymentService extends BaseService
             throw new \RuntimeException("Lease {$lease->id} has no balance due.");
         }
 
-        $tier        = $this->payouts->quote($landowner, $balance);
+        $tier        = ConnectionRole::asSystem(fn () => $this->payouts->quote($landowner, $balance));
         $surcharge   = $this->surchargeFor($lease, $balance);
         $grossCents  = $balance + $surcharge;
         $appFeeCents = $tier['fee_cents'] + $surcharge;

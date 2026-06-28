@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Database\ConnectionRole;
 use App\Models\Billing\BookingDeposit;
 use App\Models\Identity\User;
 use App\Models\Lease\Lease;
@@ -92,17 +93,22 @@ class BookingDepositService extends BaseService
             throw new \RuntimeException("Lease {$lease->id} has no booking deposit due.");
         }
 
-        $landowner = $lease->getLessor();
+        // Under ah_runtime the paying lessee cannot read the landowner as themselves:
+        // RLS hides the landowner's identity row (getLessor) and their Connect account
+        // (SEC-045/055), and their fee tier reads the landowner's subscription/promo
+        // rows. A lessee party is legitimately allowed to pay this landowner, so resolve
+        // all three under ah_system without broadening their general read access.
+        $landowner = ConnectionRole::asSystem(fn () => $lease->getLessor());
         if (! $landowner) {
             throw new \RuntimeException("Lease {$lease->id} has no landowner to pay.");
         }
 
-        $account = $this->payouts->connectAccount($landowner);
+        $account = ConnectionRole::asSystem(fn () => $this->payouts->connectAccount($landowner));
         if ($account === null || ! $account->charges_enabled) {
             throw new \RuntimeException('The landowner has not finished payout setup, so the booking deposit cannot be paid yet.');
         }
 
-        $tier    = $this->payouts->quote($landowner, $amountCents);
+        $tier    = ConnectionRole::asSystem(fn () => $this->payouts->quote($landowner, $amountCents));
         $feeCents = $tier['fee_cents'];
 
         $property    = rescue(fn () => $this->properties->find($lease->property_id), null);

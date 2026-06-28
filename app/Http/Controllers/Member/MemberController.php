@@ -235,8 +235,17 @@ class MemberController extends Controller
         // Both lessee money flows (booking deposit + lease balance) now collect via a
         // Stripe Connect destination charge to the landowner, so both are gated on the
         // landowner being able to take charges. Resolve that once.
-        $landowner      = ! $isLessor ? rescue(fn () => $leaseRecord->getLessor(), null) : null;
-        $chargesEnabled = $landowner ? rescue(fn () => $payoutService->onboardingState($landowner)['charges_enabled'], false) : false;
+        // Under ah_runtime the lessee cannot read the landowner as themselves: RLS hides
+        // both the landowner's identity row (getLessor) and their Connect account
+        // (SEC-045/055), so the gate would always read false. A lessee party is
+        // legitimately allowed to pay this landowner, so resolve the landowner and the
+        // single can-take-charges boolean under ah_system (never broadens row access).
+        $landowner      = ! $isLessor
+            ? rescue(fn () => ConnectionRole::asSystem(fn () => $leaseRecord->getLessor()), null)
+            : null;
+        $chargesEnabled = $landowner
+            ? rescue(fn () => ConnectionRole::asSystem(fn () => $payoutService->onboardingState($landowner)['charges_enabled']), false)
+            : false;
 
         // Non-refundable booking deposit (lessee-facing). Credited toward the lease
         // total; the page shows the remaining balance (total − booking deposit paid).
