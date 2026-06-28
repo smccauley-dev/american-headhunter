@@ -19,23 +19,11 @@ class SpeciesRelationManager extends RelationManager
 
     protected static ?string $title = 'Species';
 
-    private static array $speciesLabels = [
-        'whitetail_deer' => 'Whitetail Deer',
-        'mule_deer'      => 'Mule Deer',
-        'turkey'         => 'Turkey',
-        'waterfowl'      => 'Waterfowl',
-        'dove'           => 'Dove',
-        'hog'            => 'Hog',
-        'elk'            => 'Elk',
-        'bear'           => 'Bear',
-        'antelope'       => 'Antelope',
-        'pheasant'       => 'Pheasant',
-        'quail'          => 'Quail',
-        'rabbit'         => 'Rabbit',
-        'squirrel'       => 'Squirrel',
-        'coyote'         => 'Coyote',
-        'other'          => 'Other',
-    ];
+    /** Active types for the picker; all types (incl. deactivated) for display. */
+    private static function speciesLabels(bool $activeOnly = true): array
+    {
+        return app(\App\Services\Property\PropertyService::class)->speciesLabels($activeOnly);
+    }
 
     public function form(Schema $schema): Schema
     {
@@ -44,7 +32,7 @@ class SpeciesRelationManager extends RelationManager
                 Select::make('species_code')
                     ->label('Species')
                     ->required()
-                    ->options(self::$speciesLabels)
+                    ->options(fn () => self::speciesLabels())
                     ->helperText('Each species can only be added once per property.'),
                 Select::make('availability')
                     ->label('Availability')
@@ -65,7 +53,7 @@ class SpeciesRelationManager extends RelationManager
             ->columns([
                 TextColumn::make('species_code')
                     ->label('Species')
-                    ->formatStateUsing(fn (string $state): string => self::$speciesLabels[$state] ?? $state),
+                    ->formatStateUsing(fn (string $state): string => self::speciesLabels(false)[$state] ?? $state),
                 TextColumn::make('availability')
                     ->label('Availability')
                     ->badge()

@@ -53,7 +53,8 @@ class PropertyDetailController extends Controller
             'species'        => $this->properties->getSpeciesFor($property),
             'rules'          => $this->properties->getRulesFor($property),
             'amenityIds'     => $this->properties->getAmenityIdsFor($property),
-            'speciesOptions' => PropertyService::SPECIES_LABELS,
+            'speciesOptions' => $this->properties->speciesLabels(),
+            'speciesDefaults' => array_column($this->properties->gameTypes(), 'default_availability', 'code'),
             'availabilityOptions' => PropertyService::AVAILABILITY_OPTIONS,
             'amenityCatalog' => $this->properties->getAmenityCatalog(),
             // Photos
@@ -82,7 +83,7 @@ class PropertyDetailController extends Controller
 
         $data = $request->validate([
             'species'                => 'array',
-            'species.*.species_code' => ['required', Rule::in(array_keys(PropertyService::SPECIES_LABELS))],
+            'species.*.species_code' => ['required', Rule::in($this->properties->validSpeciesCodes())],
             'species.*.is_primary'   => 'boolean',
             'species.*.availability' => ['nullable', Rule::in(array_keys(PropertyService::AVAILABILITY_OPTIONS))],
             'rules'                  => 'array',

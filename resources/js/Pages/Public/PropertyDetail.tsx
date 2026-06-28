@@ -6,6 +6,22 @@ import GameIcon from '@/Components/GameIcon';
 interface PropertySpecies {
     species_code: string;
     availability: 'seasonal' | 'year_round';
+    label: string | null;
+    // Inline SVG markup (sanitized server-side); null when icons are disabled or
+    // the game type has no icon set.
+    icon_svg: string | null;
+    icon_viewbox: string;
+}
+
+// Configurable game-icon artist credit shown in the footer. Fully editable in
+// the admin so a different artist/licence can be named, or the credit hidden.
+interface GameIconsConfig {
+    enabled: boolean;
+    credit_enabled: boolean;
+    credit_text: string;
+    credit_url: string;
+    credit_license_label: string;
+    credit_license_url: string;
 }
 
 interface PropertyRule {
@@ -61,6 +77,7 @@ interface Property {
 
 interface PropertyDetailProps {
     property: Property;
+    gameIcons?: GameIconsConfig;
 }
 
 const SPECIES_NAMES: Record<string, string> = {
@@ -98,8 +115,8 @@ function SpeciesGroup({ label, species }: { label: string; species: PropertySpec
                         border: '1px solid var(--ink)', padding: '8px 16px',
                         display: 'inline-flex', alignItems: 'center', gap: 8,
                     }}>
-                        <GameIcon code={s.species_code} />
-                        {formatSpecies(s.species_code)}
+                        <GameIcon svg={s.icon_svg} viewBox={s.icon_viewbox} />
+                        {s.label ?? formatSpecies(s.species_code)}
                     </span>
                 ))}
             </div>
@@ -183,7 +200,7 @@ function GalleryTile({ photo, onClick, moreCount = 0 }: { photo: PropertyPhoto; 
     );
 }
 
-export default function PropertyDetail({ property }: PropertyDetailProps) {
+export default function PropertyDetail({ property, gameIcons }: PropertyDetailProps) {
     const [lightbox, setLightbox] = useState<number | null>(null);
     // publicListings is ordered active → pending → leased, so the first entry is
     // the one to feature: an open listing if any, otherwise the leased/pending one.
@@ -751,15 +768,34 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                         <a href="/">Home</a>
                     </div>
                 </div>
-                <div style={{
-                    maxWidth: 1400, margin: '12px auto 0', position: 'relative', zIndex: 1,
-                    fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.08em',
-                    opacity: 0.55,
-                }}>
-                    Game-type icons by Lorc, Delapouite &amp; Caro Asercion via{' '}
-                    <a href="https://game-icons.net" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>game-icons.net</a>
-                    {' '}(<a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>CC BY 3.0</a>).
-                </div>
+                {gameIcons?.credit_enabled && gameIcons.credit_text && (
+                    <div style={{
+                        maxWidth: 1400, margin: '12px auto 0', position: 'relative', zIndex: 1,
+                        fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.08em',
+                        opacity: 0.55,
+                    }}>
+                        {gameIcons.credit_url ? (
+                            <a href={gameIcons.credit_url} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
+                                {gameIcons.credit_text}
+                            </a>
+                        ) : (
+                            gameIcons.credit_text
+                        )}
+                        {gameIcons.credit_license_label && (
+                            <>
+                                {' '}(
+                                {gameIcons.credit_license_url ? (
+                                    <a href={gameIcons.credit_license_url} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
+                                        {gameIcons.credit_license_label}
+                                    </a>
+                                ) : (
+                                    gameIcons.credit_license_label
+                                )}
+                                )
+                            </>
+                        )}
+                    </div>
+                )}
             </footer>
         </div>
     );
