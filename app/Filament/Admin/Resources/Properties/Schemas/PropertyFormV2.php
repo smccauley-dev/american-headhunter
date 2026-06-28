@@ -638,9 +638,13 @@ class PropertyFormV2
                     app(PropertyService::class)->setListingVisibility($item['id'], $newVisibility);
 
                     // Mirror into the live form so the Visibility select reflects
-                    // it and a subsequent Save writes the same value.
+                    // it and a subsequent Save writes the same value. data_set()
+                    // takes its target by reference, so the Livewire component must
+                    // be held in a variable first — a method return value cannot be
+                    // passed by reference under PHP 8.4.
+                    $livewire = $component->getLivewire();
                     data_set(
-                        $component->getLivewire(),
+                        $livewire,
                         "{$component->getStatePath()}.{$itemKey}.visibility",
                         $newVisibility,
                     );
