@@ -646,6 +646,51 @@ CREATE POLICY lease_payments_parties_and_staff ON lease_payments
 
 ---
 
+### `fee_schedules` ✅ *(BUILT 2026-06-27 · `887381d`)*
+
+Admin-configurable **processing-fee surcharge** schedule (Phase 5.5 Slice 1.5). American Headhunter is merchant of record, so it pays Stripe's processing fee on every charge; a row recovers that cost as a customer-facing surcharge, keyed by transaction category and (optionally) state. Resolved by `FeeService::processingFee(category, state, baseCents)` — the most-specific active, in-window row wins (an exact `state_code` beats the all-states `NULL` row). Distinct from the tier `platform_fee_pct` (which deducts from the landowner's net).
+
+```sql
+CREATE TABLE fee_schedules (
+    id                   UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    transaction_category VARCHAR(24)  NOT NULL
+                             CHECK (transaction_category IN
+                                 ('lease','auction','outfitter_booking',
+                                  'security_deposit','marketplace')),
+    state_code           CHAR(2)      NULL,   -- NULL = applies to all states
+    pct                  NUMERIC(6,4) NULL,   -- percent, e.g. 2.9000
+    flat_cents           BIGINT       NULL,   -- fixed surcharge in cents
+    payer                VARCHAR(12)  NOT NULL DEFAULT 'customer'
+                             CHECK (payer IN ('customer','landowner')),
+    gross_up             BOOLEAN      NOT NULL DEFAULT false,  -- full processor recovery (see below)
+    description          VARCHAR(200) NULL,
+    is_active            BOOLEAN      NOT NULL DEFAULT true,
+    effective_from       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    effective_to         TIMESTAMPTZ  NULL,
+    created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at           TIMESTAMPTZ  NULL,
+
+    CONSTRAINT chk_fee_schedules_has_amount CHECK (pct IS NOT NULL OR flat_cents IS NOT NULL),
+    CONSTRAINT chk_fee_schedules_nonneg
+        CHECK ((pct IS NULL OR pct >= 0) AND (flat_cents IS NULL OR flat_cents >= 0))
+);
+
+-- One active fee per (category, state) at a time; COALESCE folds the all-states row in.
+CREATE UNIQUE INDEX uq_fee_schedules_active_scope
+    ON fee_schedules (transaction_category, COALESCE(state_code, '00'))
+    WHERE is_active AND deleted_at IS NULL;
+```
+
+**`gross_up` — exact processor-fee recovery (migration `2026_06_28_000001`):**
+A naive surcharge of `pct × base` under-recovers, because the platform is merchant of record and Stripe charges its fee on the **gross** the customer pays (`base + surcharge`), not on the base. When `gross_up = true`, `FeeService` returns `ceil((pct × base + flat) / (1 − pct))` instead of `round(pct × base) + flat`. That surcharge `S`, added to `base`, exactly covers Stripe's fee on the gross `G = base + S`: `pct × G + flat = (pct × base + flat)/(1 − pct) = S` (the `ceil` only ever over-recovers by a rounding cent, never under). `false` (default) keeps a row a plain flat % markup on the base — every pre-existing row is unaffected.
+
+**Notes:**
+- **System-authored, runtime-read-only (SEC-045):** RLS on, one `FOR SELECT TO ah_runtime USING (true)` policy (the surcharge is computed on the member checkout path), **no write policy** — rows are authored only by `ah_system` (the Filament `FeeScheduleResource`, nav "Processing Fees" under Billing).
+- Resolutions are cached in **Valkey Cluster 2** per `(category, state)`; `FeeService::flushCache()` (called on any admin mutation) clears them.
+
+---
+
 ### `promo_codes` ✅ *(BUILT 2026-06-15)*
 
 > **Confirmed needed (2026-06-15):** the platform will run ad-hoc discounts, and **partners can be issued their own codes** — an outfitter code, a landowner code, etc. That requires many distinct code strings with per-code limits and partner attribution, which `promotional_periods` alone cannot express.

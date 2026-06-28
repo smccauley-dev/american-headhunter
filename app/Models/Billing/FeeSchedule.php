@@ -13,7 +13,8 @@ use App\Models\BaseModelWithSoftDeletes;
 class FeeSchedule extends BaseModelWithSoftDeletes
 {
     protected $connection = 'billing';
-    protected $table      = 'fee_schedules';
+
+    protected $table = 'fee_schedules';
 
     protected $fillable = [
         'transaction_category',
@@ -23,6 +24,7 @@ class FeeSchedule extends BaseModelWithSoftDeletes
         'payer',
         'description',
         'is_active',
+        'gross_up',
         'effective_from',
         'effective_to',
     ];
@@ -30,11 +32,12 @@ class FeeSchedule extends BaseModelWithSoftDeletes
     protected function casts(): array
     {
         return array_merge(parent::casts(), [
-            'pct'            => 'float',
-            'flat_cents'     => 'integer',
-            'is_active'      => 'boolean',
+            'pct' => 'float',
+            'flat_cents' => 'integer',
+            'is_active' => 'boolean',
+            'gross_up' => 'boolean',
             'effective_from' => 'datetime',
-            'effective_to'   => 'datetime',
+            'effective_to' => 'datetime',
         ]);
     }
 }
