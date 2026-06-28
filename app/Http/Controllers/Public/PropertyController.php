@@ -34,7 +34,7 @@ class PropertyController extends Controller
             'state_code'   => ['nullable', 'string', 'size:2'],
             'county'       => ['nullable', 'string', 'max:100'],
             'listing_type' => ['nullable', 'in:annual_lease,seasonal_lease,day_hunt,auction'],
-            'availability' => ['nullable', 'in:active,pending,leased,all'],
+            'availability' => ['nullable', 'in:active,pending,leased,unavailable,all'],
             'min_price'    => ['nullable', 'numeric', 'min:0'],
             'max_price'    => ['nullable', 'numeric', 'min:0'],
             'min_acres'    => ['nullable', 'numeric', 'min:0'],
@@ -170,10 +170,27 @@ class PropertyController extends Controller
             abort(404);
         }
 
+        // Paused listings (visibility='private') are pulled from the page. If
+        // EVERY public listing is paused, the owner has hidden the property — keep
+        // the URL alive at 200 (no 404 SEO ding) but serve a minimal stub with no
+        // details, and tell crawlers to drop it from results (noindex).
+        $viewable = $property->publicListings
+            ->reject(fn ($l) => $l->visibility === 'private')
+            ->values();
+
+        if ($viewable->isEmpty()) {
+            return inertia('Public/PropertyDetail', [
+                'property' => [
+                    'slug'   => $property->slug,
+                    'paused' => true,
+                ],
+            ]);
+        }
+
         // Detail pages are members-only EXCEPT for featured (advertising)
         // listings, which guests may view. A guest hitting a non-featured
         // property's URL is redirected to sign-up.
-        if (! auth()->check() && ! $property->publicListings->contains(fn ($l) => $l->is_featured)) {
+        if (! auth()->check() && ! $viewable->contains(fn ($l) => $l->is_featured)) {
             return redirect('/get-started');
         }
 
@@ -219,7 +236,7 @@ class PropertyController extends Controller
                     'rule_text'  => $r->rule_text,
                     'sort_order' => $r->sort_order,
                 ])->values(),
-                'listings' => $property->publicListings->map(fn ($l) => [
+                'listings' => $viewable->map(fn ($l) => [
                     'id'              => $l->id,
                     'listing_type'    => $l->listing_type,
                     'status'          => $l->status,

@@ -722,16 +722,20 @@ class PropertyService extends BaseService
             ->whereNull('properties.deleted_at')
             ->where('property_listings.visibility', 'public');
 
-        // Availability gate. Default to open-for-application listings only; the
-        // public search may also surface reserved (pending) or leased listings so
-        // a previously-indexed listing keeps a result, never a dead end. 'all'
-        // spans every publicly-visible state but never draft/expired/archived.
+        // Availability gate. The default browse surfaces on-market listings: those
+        // open for application (active) plus those the landowner has posted but
+        // marked not currently available (unavailable) — both stay in the grid so a
+        // listing is "kept out there". A browser may narrow to reserved (pending),
+        // leased, or unavailable, or widen to all publicly-visible states so a
+        // previously-indexed listing keeps a result, never a dead end. 'all' spans
+        // every publicly-visible state but never draft/expired/archived.
         $availability = $filters['availability'] ?? 'active';
         match ($availability) {
-            'pending' => $query->where('property_listings.status', 'pending'),
-            'leased'  => $query->where('property_listings.status', 'leased'),
-            'all'     => $query->whereIn('property_listings.status', ['active', 'pending', 'leased']),
-            default   => $query->where('property_listings.status', 'active'),
+            'pending'     => $query->where('property_listings.status', 'pending'),
+            'leased'      => $query->where('property_listings.status', 'leased'),
+            'unavailable' => $query->where('property_listings.status', 'unavailable'),
+            'all'         => $query->whereIn('property_listings.status', ['active', 'pending', 'leased', 'unavailable']),
+            default       => $query->whereIn('property_listings.status', ['active', 'unavailable']),
         };
 
         // Home-state gate: a single-state-restricted member sees only listings in
@@ -949,6 +953,20 @@ class PropertyService extends BaseService
         $listing = PropertyListing::on('property')->findOrFail($listingId);
         $listing->delete();
         $this->invalidate("listing:{$listingId}", "property:{$listing->property_id}");
+    }
+
+    /**
+     * Set a listing's visibility — used to PAUSE (visibility 'private', hidden
+     * from every public surface) or RESUME (back to 'public') a listing without
+     * deleting it. Returns the fresh listing.
+     */
+    public function setListingVisibility(string $listingId, string $visibility): PropertyListing
+    {
+        $listing = PropertyListing::on('property')->findOrFail($listingId);
+        $listing->update(['visibility' => $visibility]);
+        $this->invalidate("listing:{$listingId}", "property:{$listing->property_id}");
+
+        return $listing->fresh();
     }
 
     /**

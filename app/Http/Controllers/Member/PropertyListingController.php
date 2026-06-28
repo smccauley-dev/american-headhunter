@@ -30,18 +30,20 @@ class PropertyListingController extends Controller
     ];
 
     private const STATUSES = [
-        'draft'    => 'Draft',
-        'active'   => 'Active',
-        'pending'  => 'Pending',
-        'leased'   => 'Leased Out',
-        'expired'  => 'Expired',
-        'archived' => 'Archived',
+        'draft'       => 'Draft',
+        'active'      => 'Active',
+        'pending'     => 'Pending',
+        'leased'      => 'Leased Out',
+        'unavailable' => 'Not Currently Available',
+        'expired'     => 'Expired',
+        'archived'    => 'Archived',
     ];
 
     private const VISIBILITIES = [
         'public'       => 'Public',
         'members_only' => 'Members Only',
         'invite_only'  => 'Invite Only',
+        'private'      => 'Private / Hidden (Paused)',
     ];
 
     public function index(string $property): Response

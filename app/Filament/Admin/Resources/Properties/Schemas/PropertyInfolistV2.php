@@ -146,21 +146,24 @@ class PropertyInfolistV2
                                             TextEntry::make('status')
                                                 ->badge()
                                                 ->formatStateUsing(fn (string $state): string => match ($state) {
-                                                    'leased' => 'Leased Out',
-                                                    default  => ucwords(str_replace('_', ' ', $state)),
+                                                    'leased'      => 'Leased Out',
+                                                    'unavailable' => 'Not Currently Available',
+                                                    default       => ucwords(str_replace('_', ' ', $state)),
                                                 })
                                                 ->color(fn (string $state): string => match ($state) {
-                                                    'active'   => 'success',
-                                                    'draft'    => 'gray',
-                                                    'pending'  => 'info',
-                                                    'leased'   => 'warning',
-                                                    'expired'  => 'danger',
-                                                    'archived' => 'gray',
-                                                    default    => 'gray',
+                                                    'active'      => 'success',
+                                                    'draft'       => 'gray',
+                                                    'pending'     => 'info',
+                                                    'leased'      => 'warning',
+                                                    'unavailable' => 'gray',
+                                                    'expired'     => 'danger',
+                                                    'archived'    => 'gray',
+                                                    default       => 'gray',
                                                 }),
                                             TextEntry::make('visibility')
-                                                ->formatStateUsing(fn (string $state): string =>
-                                                    ucwords(str_replace('_', ' ', $state))
+                                                ->formatStateUsing(fn (string $state): string => $state === 'private'
+                                                    ? 'Private / Hidden'
+                                                    : ucwords(str_replace('_', ' ', $state))
                                                 ),
                                             IconEntry::make('auto_renew')
                                                 ->label('Auto Renew')

@@ -40,12 +40,13 @@ class ListingsRelationManager extends RelationManager
                         Select::make('status')
                             ->required()
                             ->options([
-                                'draft'    => 'Draft',
-                                'active'   => 'Active',
-                                'pending'  => 'Pending',
-                                'leased'   => 'Leased Out',
-                                'expired'  => 'Expired',
-                                'archived' => 'Archived',
+                                'draft'       => 'Draft',
+                                'active'      => 'Active',
+                                'pending'     => 'Pending',
+                                'leased'      => 'Leased Out',
+                                'unavailable' => 'Not Currently Available',
+                                'expired'     => 'Expired',
+                                'archived'    => 'Archived',
                             ])
                             ->default('draft'),
                         Select::make('visibility')
@@ -54,6 +55,7 @@ class ListingsRelationManager extends RelationManager
                                 'public'       => 'Public',
                                 'members_only' => 'Members Only',
                                 'invite_only'  => 'Invite Only',
+                                'private'      => 'Private / Hidden (Paused)',
                             ])
                             ->default('public'),
                         Toggle::make('auto_renew')
@@ -161,24 +163,30 @@ class ListingsRelationManager extends RelationManager
                 TextColumn::make('status')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'leased' => 'Leased Out',
-                        default  => ucwords(str_replace('_', ' ', $state)),
+                        'leased'      => 'Leased Out',
+                        'unavailable' => 'Not Currently Available',
+                        default       => ucwords(str_replace('_', ' ', $state)),
                     })
                     ->color(fn (string $state): string => match ($state) {
-                        'active'   => 'success',
-                        'draft'    => 'gray',
-                        'pending'  => 'info',
-                        'leased'   => 'warning',
-                        'expired'  => 'danger',
-                        'archived' => 'warning',
-                        default    => 'gray',
+                        'active'      => 'success',
+                        'draft'       => 'gray',
+                        'pending'     => 'info',
+                        'leased'      => 'warning',
+                        'unavailable' => 'gray',
+                        'expired'     => 'danger',
+                        'archived'    => 'warning',
+                        default       => 'gray',
                     }),
                 TextColumn::make('visibility')
                     ->badge()
+                    ->formatStateUsing(fn (string $state): string => $state === 'private'
+                        ? 'Private / Hidden'
+                        : ucwords(str_replace('_', ' ', $state)))
                     ->color(fn (string $state): string => match ($state) {
                         'public'       => 'success',
                         'members_only' => 'info',
                         'invite_only'  => 'warning',
+                        'private'      => 'gray',
                         default        => 'gray',
                     }),
                 TextColumn::make('price_per_hunter')
