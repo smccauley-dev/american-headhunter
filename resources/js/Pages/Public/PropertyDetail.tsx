@@ -50,7 +50,7 @@ interface Property {
     species: PropertySpecies[];
     rules: PropertyRule[];
     photos: PropertyPhoto[];
-    active_listings: PropertyListing[];
+    listings: PropertyListing[];
 }
 
 interface PropertyDetailProps {
@@ -91,6 +91,14 @@ function formatPricePer(listing: PropertyListing): string {
     return '';
 }
 
+// A listing keeps its public page in every non-draft state; only `active` is
+// open for application. pending = a lease is being signed; leased = executed.
+function availabilityLabel(status: string): string {
+    if (status === 'leased') return 'Leased Out';
+    if (status === 'pending') return 'Under Contract';
+    return 'Available';
+}
+
 function formatSeason(listing: PropertyListing): string {
     if (!listing.season_start || !listing.season_end) return '—';
     const start = new Date(listing.season_start);
@@ -123,7 +131,11 @@ function GalleryTile({ photo, onClick, moreCount = 0 }: { photo: PropertyPhoto; 
 
 export default function PropertyDetail({ property }: PropertyDetailProps) {
     const [lightbox, setLightbox] = useState<number | null>(null);
-    const listing = property.active_listings?.[0] ?? null;
+    // publicListings is ordered active → pending → leased, so the first entry is
+    // the one to feature: an open listing if any, otherwise the leased/pending one.
+    const listing = property.listings?.[0] ?? null;
+    const isOpen = listing?.status === 'active';
+    const statusLabel = listing ? availabilityLabel(listing.status) : null;
     const { auth } = usePage<{ auth: { authenticated: boolean } }>().props;
     const applyHref = auth?.authenticated && listing ? `/apply/${listing.id}` : '/get-started';
     const photos = property.photos ?? [];
@@ -225,7 +237,9 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                                     <div className="field-card-label">Lease Listing</div>
                                     <div className="field-card-id">AH-{listing.id.slice(0, 8).toUpperCase()}</div>
                                 </div>
-                                <div className="field-stamp">Available</div>
+                                <div className="field-stamp" style={isOpen ? undefined : { color: 'var(--blaze)', borderColor: 'var(--blaze)' }}>
+                                    {statusLabel}
+                                </div>
                             </div>
                             <div className="field-rows">
                                 <div className="field-row">
@@ -247,9 +261,15 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                                     {formatPricePer(listing) && <small> {formatPricePer(listing)}</small>}
                                 </div>
                             </div>
-                            <Link href={applyHref} className="btn-solid" style={{ width: '100%', justifyContent: 'center', marginTop: 16, boxSizing: 'border-box' }}>
-                                Apply for This Lease →
-                            </Link>
+                            {isOpen ? (
+                                <Link href={applyHref} className="btn-solid" style={{ width: '100%', justifyContent: 'center', marginTop: 16, boxSizing: 'border-box' }}>
+                                    Apply for This Lease →
+                                </Link>
+                            ) : (
+                                <div style={{ width: '100%', textAlign: 'center', marginTop: 16, padding: '12px 16px', boxSizing: 'border-box', border: '1px solid var(--brass-dim)', background: 'var(--bone-dim, rgba(0,0,0,0.03))', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-soft)' }}>
+                                    {listing.status === 'pending' ? 'Under Contract — Not Accepting Applications' : 'Leased Out — Not Currently Available'}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -499,10 +519,12 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                             <div className="field-card">
                                 <div className="field-card-header">
                                     <div>
-                                        <div className="field-card-label">Apply for Lease</div>
+                                        <div className="field-card-label">{isOpen ? 'Apply for Lease' : 'Lease Status'}</div>
                                         <div className="field-card-id">AH-{listing.id.slice(0, 8).toUpperCase()}</div>
                                     </div>
-                                    <div className="field-stamp">Open</div>
+                                    <div className="field-stamp" style={isOpen ? undefined : { color: 'var(--blaze)', borderColor: 'var(--blaze)' }}>
+                                        {statusLabel}
+                                    </div>
                                 </div>
                                 <div className="field-rows">
                                     <div className="field-row">
@@ -533,13 +555,31 @@ export default function PropertyDetail({ property }: PropertyDetailProps) {
                                     </div>
                                 </div>
                                 <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                    <Link href={applyHref} className="btn-solid" style={{ justifyContent: 'center' }}>
-                                        Apply for This Lease →
-                                    </Link>
-                                    {!auth?.authenticated && (
-                                        <Link href="/login" className="btn-outline" style={{ textAlign: 'center', justifyContent: 'center' }}>
-                                            Sign In to Apply
-                                        </Link>
+                                    {isOpen ? (
+                                        <>
+                                            <Link href={applyHref} className="btn-solid" style={{ justifyContent: 'center' }}>
+                                                Apply for This Lease →
+                                            </Link>
+                                            {!auth?.authenticated && (
+                                                <Link href="/login" className="btn-outline" style={{ textAlign: 'center', justifyContent: 'center' }}>
+                                                    Sign In to Apply
+                                                </Link>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div style={{ textAlign: 'center', padding: '12px 16px', border: '1px solid var(--parch-deep)', background: 'var(--parch)', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-soft)' }}>
+                                                {listing.status === 'pending' ? 'Under Contract' : 'Leased Out'}
+                                            </div>
+                                            <p style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--sage-dim)', fontStyle: 'italic', textAlign: 'center', margin: 0 }}>
+                                                {listing.status === 'pending'
+                                                    ? 'This lease is under contract and not currently accepting applications.'
+                                                    : 'This property is leased for the current season. Check back for future availability.'}
+                                            </p>
+                                            <Link href="/get-started" className="btn-outline" style={{ textAlign: 'center', justifyContent: 'center' }}>
+                                                Browse Available Leases →
+                                            </Link>
+                                        </>
                                     )}
                                 </div>
                             </div>

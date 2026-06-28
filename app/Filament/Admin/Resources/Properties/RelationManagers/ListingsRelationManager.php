@@ -42,7 +42,8 @@ class ListingsRelationManager extends RelationManager
                             ->options([
                                 'draft'    => 'Draft',
                                 'active'   => 'Active',
-                                'sold_out' => 'Sold Out',
+                                'pending'  => 'Pending',
+                                'leased'   => 'Leased Out',
                                 'expired'  => 'Expired',
                                 'archived' => 'Archived',
                             ])
@@ -159,10 +160,15 @@ class ListingsRelationManager extends RelationManager
                     }),
                 TextColumn::make('status')
                     ->badge()
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        'leased' => 'Leased Out',
+                        default  => ucwords(str_replace('_', ' ', $state)),
+                    })
                     ->color(fn (string $state): string => match ($state) {
                         'active'   => 'success',
                         'draft'    => 'gray',
-                        'sold_out' => 'warning',
+                        'pending'  => 'info',
+                        'leased'   => 'warning',
                         'expired'  => 'danger',
                         'archived' => 'warning',
                         default    => 'gray',

@@ -299,7 +299,7 @@ class DayHuntBookingTest extends TestCase
             ->where('reason', 'booked')->count();
     }
 
-    public function test_reserving_an_exclusive_lease_books_the_term_and_sells_out_the_listing(): void
+    public function test_reserving_an_exclusive_lease_books_the_term_and_marks_it_pending(): void
     {
         $leaseId = (string) Str::uuid();
 
@@ -313,7 +313,28 @@ class DayHuntBookingTest extends TestCase
         );
 
         $this->assertSame(1, $this->seasonalBookedCount());
-        $this->assertSame('sold_out', $this->seasonalStatus(), 'An exclusive lease must pull the listing from the market.');
+        $this->assertSame('pending', $this->seasonalStatus(), 'An approved exclusive lease takes the listing under contract.');
+    }
+
+    public function test_activating_an_exclusive_lease_marks_it_leased(): void
+    {
+        $leaseId = $this->createLease($this->seasonalListingId, '2026-10-01', '2027-01-31', '5000.00');
+
+        // Approval reserves the term and marks the listing pending.
+        app(PropertyService::class)->reserveExclusiveLease(
+            listingId: $this->seasonalListingId,
+            start:     Carbon::parse('2026-10-01'),
+            end:       Carbon::parse('2027-01-31'),
+            hunters:   2,
+            cost:      5000.00,
+            leaseId:   $leaseId,
+        );
+        $this->assertSame('pending', $this->seasonalStatus());
+
+        // Lease activation (all signatures collected) executes the lease.
+        app(LeaseService::class)->activate($leaseId);
+
+        $this->assertSame('leased', $this->seasonalStatus(), 'An executed exclusive lease marks the listing leased out.');
     }
 
     public function test_a_second_overlapping_exclusive_reservation_is_refused(): void
@@ -341,9 +362,9 @@ class DayHuntBookingTest extends TestCase
             $this->assertStringContainsString('already leased', $e->getMessage());
         }
 
-        // The first reservation stands and the listing stays sold out — no double-book.
+        // The first reservation stands and the listing stays pending — no double-book.
         $this->assertSame(1, $this->seasonalBookedCount());
-        $this->assertSame('sold_out', $this->seasonalStatus());
+        $this->assertSame('pending', $this->seasonalStatus());
     }
 
     public function test_releasing_an_exclusive_reservation_relists_the_listing(): void
@@ -358,7 +379,7 @@ class DayHuntBookingTest extends TestCase
             cost:      5000.00,
             leaseId:   $leaseId,
         );
-        $this->assertSame('sold_out', $this->seasonalStatus());
+        $this->assertSame('pending', $this->seasonalStatus());
 
         app(PropertyService::class)->releaseBooking($leaseId);
 
