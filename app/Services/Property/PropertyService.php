@@ -357,9 +357,75 @@ class PropertyService extends BaseService
     }
 
     /**
+     * Reserve an exclusive (annual / seasonal) listing for an approved lease.
+     * Unlike day-hunt — which reserves its booked range only at activation —
+     * an exclusive listing is committed the moment the lease is created: the
+     * whole listing is spoken for, so a second overlapping approval must be
+     * refused immediately rather than after signing.
+     *
+     * Inserts a `booked` range covering the lease term (the EXCLUDE constraint
+     * is the race-proof guard — a concurrent overlapping approval raises 23P01)
+     * and flips the listing to `sold_out` so it drops out of search and the
+     * apply page. No-op for day-hunt listings, which reserve at activation.
+     *
+     * @throws \RuntimeException when the dates overlap an existing reservation —
+     *         the listing is already leased for those dates.
+     */
+    public function reserveExclusiveLease(
+        string $listingId,
+        Carbon $start,
+        Carbon $end,
+        int $hunters,
+        float $cost,
+        string $leaseId,
+        ?string $createdByUserId = null,
+    ): ?PropertyAvailability {
+        $listing = PropertyListing::on('property')->find($listingId);
+
+        if (! $listing || $listing->listing_type === 'day_hunt') {
+            return null;
+        }
+
+        try {
+            $booking = DB::connection('property')->transaction(function () use ($listing, $listingId, $start, $end, $hunters, $cost, $leaseId, $createdByUserId) {
+                $booking = PropertyAvailability::on('property')->create([
+                    'listing_id'         => $listingId,
+                    'date_start'         => $start->toDateString(),
+                    'date_end'           => $end->toDateString(),
+                    'reason'             => 'booked',
+                    'cost'               => $cost,
+                    'hunter_count'       => $hunters > 0 ? $hunters : null,
+                    'lease_id'           => $leaseId,
+                    'created_by_user_id' => $createdByUserId,
+                ]);
+
+                // Pull the listing from search/apply — it's now leased.
+                if ($listing->status === 'active') {
+                    $listing->update(['status' => 'sold_out']);
+                }
+
+                return $booking;
+            });
+        } catch (QueryException $e) {
+            if ($this->isOverlapViolation($e)) {
+                throw new \RuntimeException(
+                    'This listing is already leased for the requested dates and can no longer be booked.'
+                );
+            }
+            throw $e;
+        }
+
+        $this->invalidate("listing:{$listingId}", "property:{$listing->property_id}");
+
+        return $booking;
+    }
+
+    /**
      * Free any booked date ranges tied to a lease — used when a lease is cancelled
      * or terminated so the dates become bookable again. Hard delete: the table has
      * no soft-delete column and a freed date must immediately drop off the calendar.
+     * An exclusive listing whose last booking is freed is re-listed (sold_out →
+     * active) so it returns to the market; day-hunt listings are never sold_out.
      */
     public function releaseBooking(string $leaseId): void
     {
@@ -377,6 +443,18 @@ class PropertyService extends BaseService
 
         foreach (array_keys($listingIds) as $listingId) {
             $listing = PropertyListing::on('property')->find($listingId);
+
+            if ($listing
+                && $listing->listing_type !== 'day_hunt'
+                && $listing->status === 'sold_out'
+                && ! PropertyAvailability::on('property')
+                    ->where('listing_id', $listingId)
+                    ->where('reason', 'booked')
+                    ->exists()
+            ) {
+                $listing->update(['status' => 'active']);
+            }
+
             $this->invalidate("listing:{$listingId}", "property:{$listing?->property_id}");
         }
     }

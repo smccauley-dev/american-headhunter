@@ -324,5 +324,9 @@ class LeaseService extends BaseService
             userId:         $actorUserId,
             actionSummary:  'Lease expired',
         );
+
+        // Free any reserved dates so an exclusive listing returns to the market
+        // and a day-hunt's dates become bookable again.
+        rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
     }
 }

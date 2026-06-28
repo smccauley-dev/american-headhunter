@@ -77,7 +77,7 @@ class DayHuntBookingTest extends TestCase
     protected function tearDown(): void
     {
         DB::connection('property')->table('property_availability')
-            ->where('listing_id', $this->listingId)->delete();
+            ->whereIn('listing_id', [$this->listingId, $this->seasonalListingId])->delete();
 
         if ($this->leaseIds) {
             DB::connection('lease')->table('leases')->whereIn('id', $this->leaseIds)->delete();
@@ -284,6 +284,104 @@ class DayHuntBookingTest extends TestCase
         $this->assertSame(26, $cal['totals']['available']);
         $this->assertNotEmpty($cal['months']);
         $this->assertSame('August 2026', $cal['months'][0]['label']);
+    }
+
+    private function seasonalStatus(): string
+    {
+        return (string) DB::connection('property')->table('property_listings')
+            ->where('id', $this->seasonalListingId)->value('status');
+    }
+
+    private function seasonalBookedCount(): int
+    {
+        return DB::connection('property')->table('property_availability')
+            ->where('listing_id', $this->seasonalListingId)
+            ->where('reason', 'booked')->count();
+    }
+
+    public function test_reserving_an_exclusive_lease_books_the_term_and_sells_out_the_listing(): void
+    {
+        $leaseId = (string) Str::uuid();
+
+        app(PropertyService::class)->reserveExclusiveLease(
+            listingId:       $this->seasonalListingId,
+            start:           Carbon::parse('2026-10-01'),
+            end:             Carbon::parse('2027-01-31'),
+            hunters:         2,
+            cost:            5000.00,
+            leaseId:         $leaseId,
+        );
+
+        $this->assertSame(1, $this->seasonalBookedCount());
+        $this->assertSame('sold_out', $this->seasonalStatus(), 'An exclusive lease must pull the listing from the market.');
+    }
+
+    public function test_a_second_overlapping_exclusive_reservation_is_refused(): void
+    {
+        app(PropertyService::class)->reserveExclusiveLease(
+            listingId: $this->seasonalListingId,
+            start:     Carbon::parse('2026-10-01'),
+            end:       Carbon::parse('2027-01-31'),
+            hunters:   2,
+            cost:      5000.00,
+            leaseId:   (string) Str::uuid(),
+        );
+
+        try {
+            app(PropertyService::class)->reserveExclusiveLease(
+                listingId: $this->seasonalListingId,
+                start:     Carbon::parse('2026-11-01'), // overlaps the reservation above
+                end:       Carbon::parse('2027-02-28'),
+                hunters:   1,
+                cost:      4000.00,
+                leaseId:   (string) Str::uuid(),
+            );
+            $this->fail('A second overlapping exclusive reservation must be refused.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('already leased', $e->getMessage());
+        }
+
+        // The first reservation stands and the listing stays sold out — no double-book.
+        $this->assertSame(1, $this->seasonalBookedCount());
+        $this->assertSame('sold_out', $this->seasonalStatus());
+    }
+
+    public function test_releasing_an_exclusive_reservation_relists_the_listing(): void
+    {
+        $leaseId = (string) Str::uuid();
+
+        app(PropertyService::class)->reserveExclusiveLease(
+            listingId: $this->seasonalListingId,
+            start:     Carbon::parse('2026-10-01'),
+            end:       Carbon::parse('2027-01-31'),
+            hunters:   2,
+            cost:      5000.00,
+            leaseId:   $leaseId,
+        );
+        $this->assertSame('sold_out', $this->seasonalStatus());
+
+        app(PropertyService::class)->releaseBooking($leaseId);
+
+        $this->assertSame(0, $this->seasonalBookedCount(), 'Release must free the reservation.');
+        $this->assertSame('active', $this->seasonalStatus(), 'A freed exclusive listing returns to the market.');
+    }
+
+    public function test_reserve_exclusive_is_a_noop_for_day_hunt_listings(): void
+    {
+        $result = app(PropertyService::class)->reserveExclusiveLease(
+            listingId: $this->listingId, // day_hunt
+            start:     Carbon::parse('2026-08-05'),
+            end:       Carbon::parse('2026-08-07'),
+            hunters:   1,
+            cost:      900.00,
+            leaseId:   (string) Str::uuid(),
+        );
+
+        $this->assertNull($result, 'Day-hunt listings reserve at activation, not at approval.');
+        $this->assertCount(0, $this->bookedRows());
+        $status = DB::connection('property')->table('property_listings')
+            ->where('id', $this->listingId)->value('status');
+        $this->assertSame('active', $status, 'A day-hunt listing is never sold out.');
     }
 
     public function test_quote_applies_the_weekly_rate_to_each_full_week(): void
