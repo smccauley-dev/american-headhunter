@@ -2021,6 +2021,9 @@ export default function Lease({ lease, property, access_info, deposit, landowner
             </Section>
           )}
 
+          {/* Security Deposit — lessor manages the held deposit: release or file a claim */}
+          {is_lessor && landowner_deposit && <LandownerDepositSection data={landowner_deposit} />}
+
           {/* Signing Status — shown when pending or not all signed */}
           {signers.length > 0 && (lease.status === 'pending_signatures' || !allSigned) && (
             <Section title="Signatures">
@@ -2106,9 +2109,6 @@ export default function Lease({ lease, property, access_info, deposit, landowner
               )}
             </Section>
           )}
-
-          {/* Security Deposit — lessor manages the held deposit: release or file a claim */}
-          {is_lessor && landowner_deposit && <LandownerDepositSection data={landowner_deposit} />}
 
           {/* Damage Claims — lessor files itemized claims against the held deposit */}
           {is_lessor && damage_claims && <DamageClaimsSection data={damage_claims} />}
