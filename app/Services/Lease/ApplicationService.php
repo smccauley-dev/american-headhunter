@@ -19,7 +19,7 @@ use App\Services\Documents\DocumentService;
 use App\Services\Platform\EntitlementService;
 use App\Services\Platform\LegalService;
 use App\Services\Property\PropertyService;
-use Carbon\Carbon;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -370,7 +370,11 @@ class ApplicationService extends BaseService
             DB::connection('lease')->transaction(function () use ($application, $lease): void {
                 LeaseHunter::where('lease_id', $lease->id)->delete();
                 $lease->delete();
-                $application->update([
+                // Builder update keyed by id — the outer $application instance is
+                // stale (still 'pending' in memory after approve() updated a
+                // separate instance), so $application->update() would dirty-check
+                // to a no-op and leave the row 'approved'. Bypass the model.
+                LeaseApplication::where('id', $application->id)->update([
                     'status'              => 'pending',
                     'reviewed_by_user_id' => null,
                     'reviewed_at'         => null,
