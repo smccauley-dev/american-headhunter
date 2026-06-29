@@ -90,6 +90,7 @@ class DamageClaimServiceTest extends TestCase
             app(AuditService::class),
             app(PayoutService::class),
             app(TrustScoreService::class),
+            app(\App\Services\Billing\FeeService::class),
         );
     }
 

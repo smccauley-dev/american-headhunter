@@ -34,6 +34,7 @@ class SecurityDepositService extends BaseService
         private readonly AuditService      $audit,
         private readonly PayoutService     $payouts,
         private readonly TrustScoreService $trustScores,
+        private readonly FeeService        $fees,
     ) {}
 
     // ── Read ────────────────────────────────────────────────────────────────────
@@ -246,6 +247,12 @@ class SecurityDepositService extends BaseService
             $deposit->refunded_amount_cents = (int) $deposit->refunded_amount_cents + $remaining;
         }
 
+        // Recover Stripe's non-refundable processing fee from the landowner. The
+        // hunter was just refunded in full from the platform balance, so the fee is
+        // the landowner's cost; debit it from their Connect balance (best-effort —
+        // sets release_fee_status collected/deferred on the deposit, never throws).
+        $this->collectReleaseFee($deposit);
+
         $deposit->status      = 'released';
         $deposit->released_at = now();
         $deposit->save();
@@ -257,12 +264,79 @@ class SecurityDepositService extends BaseService
             recordId:       $deposit->id,
             userId:         $actorUserId,
             actionSummary:  'Security deposit released to lessee',
-            newValues:      ['status' => 'released', 'refunded_amount_cents' => (int) $deposit->refunded_amount_cents],
+            newValues:      [
+                'status'                => 'released',
+                'refunded_amount_cents' => (int) $deposit->refunded_amount_cents,
+                'release_fee_cents'     => $deposit->release_fee_cents,
+                'release_fee_status'    => $deposit->release_fee_status,
+            ],
         );
 
         $this->invalidate("lease_detail:{$deposit->lease_id}");
 
         return $deposit;
+    }
+
+    /**
+     * Recover the landowner-borne Stripe processing fee on a clean release by
+     * debiting their Connect balance. The fee is DB-driven (fee_schedules category
+     * security_deposit, payer landowner — see FeeService); when no such rule is
+     * configured, or it isn't landowner-borne, nothing is collected.
+     *
+     * Best-effort and non-fatal: the hunter's refund already succeeded, so a failed
+     * or impossible debit must never abort the release. When the landowner has no
+     * chargeable Connect account, or the debit fails (e.g. insufficient balance),
+     * the fee is recorded as 'deferred' (owed) rather than collected. Mutates the
+     * passed deposit; the caller saves it.
+     */
+    private function collectReleaseFee(SecurityDeposit $deposit): void
+    {
+        $stateCode = rescue(
+            fn () => $this->properties->find($deposit->getLease()?->property_id)?->state_code,
+            null,
+        );
+
+        $quote = rescue(
+            fn () => $this->fees->processingFee('security_deposit', $stateCode, (int) $deposit->amount_cents),
+            null,
+        );
+
+        if (! $quote || ($quote['payer'] ?? null) !== 'landowner' || (int) $quote['fee_cents'] <= 0) {
+            return; // no landowner-borne processing fee configured — nothing to collect
+        }
+
+        $feeCents                   = (int) $quote['fee_cents'];
+        $deposit->release_fee_cents = $feeCents;
+
+        $landowner = User::on('identity')->find($deposit->payee_user_id);
+        $account   = $landowner ? $this->payouts->connectAccount($landowner) : null;
+
+        if (! $account || ! $account->charges_enabled) {
+            $deposit->release_fee_status = 'deferred';
+            Log::info('Security deposit release fee deferred — landowner has no chargeable Connect account', [
+                'deposit_id' => $deposit->id,
+                'fee_cents'  => $feeCents,
+            ]);
+
+            return;
+        }
+
+        try {
+            $transfer = $this->stripe->debitConnectedAccount(
+                $account->stripe_account_id,
+                $feeCents,
+                ['purpose' => 'security_deposit_release_fee', 'deposit_id' => $deposit->id],
+            );
+            $deposit->release_fee_status      = 'collected';
+            $deposit->release_fee_transfer_id = $transfer->id;
+        } catch (\Throwable $e) {
+            $deposit->release_fee_status = 'deferred';
+            Log::warning('Security deposit release fee debit failed — deferred', [
+                'deposit_id' => $deposit->id,
+                'fee_cents'  => $feeCents,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 
     /** Forfeit fault attributions and the per-fault settlement policy. */

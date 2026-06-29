@@ -96,6 +96,7 @@ class SecurityDepositServiceTest extends TestCase
             app(AuditService::class),
             $payouts ?? app(PayoutService::class),
             app(\App\Services\Identity\TrustScoreService::class),
+            app(\App\Services\Billing\FeeService::class),
         );
     }
 

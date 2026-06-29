@@ -891,6 +891,47 @@ class StripeService
     }
 
     /**
+     * Pull funds from a connected account's Stripe balance back to the platform —
+     * the counterpart to createTransfer, used to recover a non-recoverable cost from
+     * a landowner. On a clean security-deposit release the platform refunds the
+     * hunter from its own balance and Stripe keeps its (non-refundable) processing
+     * fee; that fee is the landowner's cost, so we debit it from their balance.
+     *
+     * Implemented as a Transfer that originates in the connected account's context
+     * (the Stripe-Account header) and is destined to the platform account id. Throws
+     * Stripe\Exception\* when the connected account has insufficient balance — the
+     * caller treats any failure as "defer / record as owed", never as fatal.
+     *
+     * @param array<string,string> $metadata
+     */
+    public function debitConnectedAccount(string $connectedAccountId, int $amountCents, array $metadata = []): Transfer
+    {
+        return $this->withoutStripeNotice(fn () => Transfer::create(
+            [
+                'amount'      => $amountCents,
+                'currency'    => 'usd',
+                'destination' => $this->platformAccountId(),
+                'metadata'    => $metadata,
+            ],
+            ['stripe_account' => $connectedAccountId],
+        ));
+    }
+
+    /**
+     * The platform's own Stripe account id (the account the secret key belongs to),
+     * resolved once per instance via GET /v1/account. Needed as the destination when
+     * pulling funds back from a connected account in debitConnectedAccount.
+     */
+    private function platformAccountId(): string
+    {
+        return $this->platformAccountId ??= (string) $this->withoutStripeNotice(
+            fn () => Account::retrieve()->id,
+        );
+    }
+
+    private ?string $platformAccountId = null;
+
+    /**
      * The actual Stripe processing fee (in cents) charged on a captured payment,
      * read from the charge's balance transaction — the authoritative figure, not an
      * estimate. Used when allocating who bears the lost Stripe fee on a refund
