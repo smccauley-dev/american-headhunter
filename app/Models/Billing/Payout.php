@@ -22,6 +22,7 @@ class Payout extends BaseModel
         'stripe_transfer_id',
         'scheduled_for',
         'paid_at',
+        'reversed_at',
     ];
 
     protected function casts(): array
@@ -30,6 +31,7 @@ class Payout extends BaseModel
             'amount_cents'  => 'integer',
             'scheduled_for' => 'date',
             'paid_at'       => 'datetime',
+            'reversed_at'   => 'datetime',
         ]);
     }
 }

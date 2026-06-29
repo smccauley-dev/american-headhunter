@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\Billing\Payout;
 use App\Models\Billing\SecurityDeposit;
 use App\Models\Identity\User;
 use App\Models\Lease\Lease;
@@ -677,8 +678,11 @@ class SecurityDepositService extends BaseService
     /**
      * Admin override: REVERSE an already-applied hunter penalty (e.g. new evidence
      * exonerates them after finalize). Restores the +10 the confirmation deducted
-     * via a 'deposit_forfeiture_reversed' event. Trust-only — any money already
-     * disbursed is reconciled manually (flagged in the audit note). Only acts on an
+     * via a 'deposit_forfeiture_reversed' event AND unwinds the money: the forfeited
+     * amount is refunded to the hunter and, if it was disbursed to the landowner via
+     * a Connect transfer, that transfer is reversed so the landowner isn't left
+     * overpaid. The money unwind is best-effort — a Stripe failure flags the deposit
+     * for manual reconciliation but never blocks the exoneration. Only acts on an
      * 'applied' penalty.
      */
     public function reverseForfeitFault(string $depositId, ?string $actorUserId = null, ?string $note = null): SecurityDeposit
@@ -696,6 +700,8 @@ class SecurityDepositService extends BaseService
             ]);
         }
 
+        $clawback = $this->clawbackForfeiture($deposit);
+
         $deposit->forfeit_trust_status = 'reversed';
         $deposit->forfeit_resolved_by  = $actorUserId;
         $deposit->forfeit_resolved_at  = now();
@@ -707,11 +713,91 @@ class SecurityDepositService extends BaseService
             tableName:      'security_deposits',
             recordId:       $deposit->id,
             userId:         $actorUserId,
-            actionSummary:  'Forfeiture penalty reversed; Trust Score restored — money clawback handled manually',
-            newValues:      ['forfeit_trust_status' => 'reversed', 'note' => $note],
+            actionSummary:  $clawback['manual_reconciliation']
+                ? 'Forfeiture penalty reversed; Trust Score restored — money clawback failed, manual reconciliation required'
+                : 'Forfeiture penalty reversed; Trust Score restored, deposit refunded to hunter and landowner payout reversed',
+            newValues:      [
+                'forfeit_trust_status'  => 'reversed',
+                'status'                => $deposit->status,
+                'refunded_cents'        => $clawback['refunded_cents'],
+                'transfer_reversed'     => $clawback['transfer_reversed'],
+                'manual_reconciliation' => $clawback['manual_reconciliation'],
+                'note'                  => $note,
+            ],
         );
 
+        $this->invalidate("lease_detail:{$deposit->lease_id}");
+
         return $deposit;
+    }
+
+    /**
+     * Unwind the money behind a reversed forfeiture. Mutates the deposit (the caller
+     * persists). Reverses the disbursing Connect transfer first so the landowner is
+     * not left overpaid, then refunds the forfeited amount to the hunter from the
+     * original captured deposit charge. Each Stripe call is best-effort — a failure
+     * is logged and flagged for manual reconciliation, never thrown, so an
+     * exoneration is never blocked by a payment hiccup.
+     *
+     * @return array{refunded_cents:int, transfer_reversed:bool, manual_reconciliation:bool}
+     */
+    private function clawbackForfeiture(SecurityDeposit $deposit): array
+    {
+        $claimed = (int) $deposit->forfeited_amount_cents;
+        $result  = ['refunded_cents' => 0, 'transfer_reversed' => false, 'manual_reconciliation' => false];
+
+        if ($claimed <= 0) {
+            return $result; // nothing was forfeited — only the Trust penalty to undo
+        }
+
+        // 1) Reverse the landowner payout transfer (if the forfeiture was disbursed).
+        if ($deposit->forfeit_payout_id) {
+            $payout = Payout::find($deposit->forfeit_payout_id);
+            if ($payout && $payout->stripe_transfer_id && $payout->status === 'paid') {
+                try {
+                    $this->stripe->reverseTransfer($payout->stripe_transfer_id, null, [
+                        'security_deposit_id' => $deposit->id,
+                        'reason'              => 'forfeiture_reversed',
+                    ]);
+                    $payout->status      = 'reversed';
+                    $payout->reversed_at = now();
+                    $payout->save();
+                    $result['transfer_reversed'] = true;
+                } catch (\Throwable $e) {
+                    $result['manual_reconciliation'] = true;
+                    Log::error('Forfeiture transfer reversal failed — manual clawback from landowner required', [
+                        'security_deposit_id' => $deposit->id,
+                        'payout_id'           => $deposit->forfeit_payout_id,
+                        'error'               => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        // 2) Refund the forfeited amount to the hunter from the original deposit charge.
+        if ($deposit->stripe_payment_intent_id) {
+            try {
+                $refund = $this->stripe->refundPaymentIntent(
+                    $deposit->stripe_payment_intent_id,
+                    $claimed,
+                    'Security deposit returned — forfeiture reversed',
+                );
+                $deposit->stripe_refund_id       = $refund->id;
+                $deposit->refunded_amount_cents  = (int) $deposit->refunded_amount_cents + $claimed;
+                $deposit->forfeited_amount_cents = 0;
+                $deposit->released_at            = now();
+                $deposit->status                 = 'released';
+                $result['refunded_cents']        = $claimed;
+            } catch (\Throwable $e) {
+                $result['manual_reconciliation'] = true;
+                Log::error('Forfeiture reversal refund to hunter failed — manual reconciliation required', [
+                    'security_deposit_id' => $deposit->id,
+                    'error'               => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -868,6 +954,10 @@ class SecurityDepositService extends BaseService
                 'security_deposit_id' => $deposit->id,
                 'lease_id'            => $deposit->lease_id,
             ]);
+
+            // Record the disbursing payout so a later forfeiture reversal can reverse
+            // its transfer. The caller persists the deposit after settleForfeiture.
+            $deposit->forfeit_payout_id = $payout->id;
 
             return $payout->id;
         } catch (\Throwable $e) {
