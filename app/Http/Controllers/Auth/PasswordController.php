@@ -80,7 +80,14 @@ class PasswordController extends Controller
 
         $resetToken->update(['used_at' => now()]);
 
-        $user->update(['password_hash' => Hash::make($request->input('password'))]);
+        // A successful reset proves email ownership, so clear any failed-login
+        // lockout — otherwise the new password still can't get in (attempt()
+        // checks isLocked() before the password).
+        $user->update([
+            'password_hash'         => Hash::make($request->input('password')),
+            'failed_login_attempts' => 0,
+            'locked_until'          => null,
+        ]);
 
         $this->audit->logPasswordChanged($user->id, $request->ip());
 
