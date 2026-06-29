@@ -170,6 +170,12 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     // (db.system, BYPASSRLS); evidence is uploaded multipart.
     Route::post('/leases/{lease}/forfeiture/contest', [MemberController::class, 'contestForfeiture'])->name('leases.forfeiture.contest')->middleware(['db.system', 'throttle:10,1']);
     Route::post('/leases/{lease}/forfeiture/opt-out', [MemberController::class, 'optOutForfeiture'])->name('leases.forfeiture.opt-out')->middleware(['db.system', 'throttle:10,1']);
+    // Landowner self-service deposit resolution: return the held deposit to the hunter,
+    // or file a hunter-fault forfeiture claim (the hunter can still contest it). Both
+    // write security_deposits, so they run as ah_system (db.system, BYPASSRLS); the
+    // controller proves lessor ownership in PHP before the privileged write.
+    Route::post('/leases/{lease}/deposit/release', [MemberController::class, 'releaseDeposit'])->name('leases.deposit.release')->middleware(['db.system', 'throttle:10,1']);
+    Route::post('/leases/{lease}/deposit/forfeit', [MemberController::class, 'forfeitDeposit'])->name('leases.deposit.forfeit')->middleware(['db.system', 'throttle:10,1']);
     Route::post('/leases/{lease}/damage-claims', [MemberController::class, 'fileDamageClaim'])->name('leases.damage-claims.store')->middleware(['db.system', 'throttle:10,1']);
     Route::post('/leases/{lease}/incidents', [MemberController::class, 'reportIncident'])->name('leases.incidents.store')->middleware(['db.system', 'throttle:10,1']);
     // Reporter edits their own incident (e.g. correcting a mistake). System-authored
