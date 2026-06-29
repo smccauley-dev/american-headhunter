@@ -311,25 +311,23 @@ class MemberController extends Controller
             ? rescue(fn () => ConnectionRole::asSystem(fn () => $payoutService->onboardingState($landowner)['charges_enabled']), false)
             : false;
 
-        // Non-refundable booking deposit (lessee-facing). Credited toward the lease
-        // total; the page shows the remaining balance (total − booking deposit paid).
+        // Vet-first booking fee (lessee-facing, informational). It was paid in the
+        // apply portal before this lease existed and is held on the platform, crediting
+        // toward the lease total — there is no pay action here. The page shows the
+        // remaining balance (total − booking fee).
         $bookingDeposit = null;
         if (! $isLessor) {
             $existingBooking = rescue(fn () => $bookingDepositService->forLease($lease), null);
-            $bookingDueCents = rescue(fn () => $bookingDepositService->amountDueCents($leaseRecord), 0) ?: 0;
 
-            if ($existingBooking || $bookingDueCents > 0) {
-                $bookingCents = $existingBooking ? (int) $existingBooking->amount_cents : $bookingDueCents;
-                $paid         = $existingBooking !== null && in_array($existingBooking->status, ['collected', 'disbursed'], true);
-                $remaining    = (float) $leaseRecord->total_price - ($paid ? $bookingCents / 100 : 0);
+            if ($existingBooking) {
+                $bookingCents = (int) $existingBooking->amount_cents;
+                $credited     = in_array($existingBooking->status, ['held', 'collected', 'disbursed'], true);
+                $remaining    = (float) $leaseRecord->total_price - ($credited ? $bookingCents / 100 : 0);
                 $bookingDeposit = [
-                    'status'                    => $existingBooking?->status,
-                    'amount'                    => number_format($bookingCents / 100, 2),
-                    'paid'                      => $paid,
-                    'landowner_charges_enabled' => $chargesEnabled,
-                    'can_pay'                   => ! $existingBooking && $bookingDueCents > 0 && $chargesEnabled,
-                    'pay_url'                   => route('member.leases.booking-deposit', $lease),
-                    'remaining_balance'         => number_format(max(0, $remaining), 2),
+                    'status'            => $existingBooking->status,
+                    'amount'            => number_format($bookingCents / 100, 2),
+                    'paid'              => $credited,
+                    'remaining_balance' => number_format(max(0, $remaining), 2),
                 ];
             }
         }
@@ -567,70 +565,6 @@ class MemberController extends Controller
         if ($request->query('return') === 'sign') {
             return redirect()->route('member.leases.sign', $lease)
                 ->with('success', 'Deposit received. You can now sign your lease.');
-        }
-
-        return redirect()->route('member.leases.show', ['lease' => $lease, 'deposit' => 'paid']);
-    }
-
-    /**
-     * Start the hosted Checkout that funds a lease's non-refundable booking deposit.
-     * Only the lessee pays. Mirrors payDeposit; the collected row is authored by the
-     * webhook on payment success (booking_deposits is system-authored).
-     */
-    public function payBookingDeposit(Request $request, string $lease, BookingDepositService $bookingDeposits): \Symfony\Component\HttpFoundation\Response
-    {
-        $userId = session('auth.user_id');
-
-        $leaseRecord = Lease::where('id', $lease)
-            ->where('lessee_user_id', $userId)
-            ->whereNull('deleted_at')
-            ->firstOrFail();
-
-        $existing = $bookingDeposits->forLease($lease);
-        if ($existing && in_array($existing->status, ['collected', 'disbursed'], true)) {
-            return back()->withErrors(['deposit' => 'A booking deposit has already been paid for this lease.']);
-        }
-        if ($bookingDeposits->amountDueCents($leaseRecord) <= 0) {
-            return back()->withErrors(['deposit' => 'No booking deposit is due for this lease.']);
-        }
-
-        $returnToSign = $request->input('return') === 'sign';
-        $cancelUrl = $returnToSign
-            ? route('member.leases.sign', $lease) . '?deposit=cancel'
-            : route('member.leases.show', $lease) . '?deposit=cancel';
-        $successUrl = route('member.leases.booking-deposit.return', $lease) . '?session_id={CHECKOUT_SESSION_ID}'
-            . ($returnToSign ? '&return=sign' : '');
-
-        $payer   = User::findOrFail($userId);
-        $session = $bookingDeposits->createCheckoutSession($leaseRecord, $payer, $successUrl, $cancelUrl);
-
-        return Inertia::location($session->url);
-    }
-
-    /**
-     * Stripe booking-deposit success return. Reconciles the collected row from the
-     * completed Checkout Session up front so the lessee sees it paid without waiting
-     * on the webhook (which remains the backstop). Runs under `db.system` because
-     * booking_deposits is system-authored. recordCollectedFromCheckout is idempotent
-     * on the captured PaymentIntent, so racing the webhook is harmless.
-     */
-    public function bookingDepositReturn(Request $request, string $lease, BookingDepositService $bookingDeposits, StripeService $stripe): RedirectResponse
-    {
-        $sessionId = (string) $request->query('session_id', '');
-
-        if ($sessionId !== '') {
-            rescue(function () use ($stripe, $bookingDeposits, $sessionId, $lease) {
-                $session = $stripe->retrieveCheckoutSession($sessionId)->toArray();
-
-                if (($session['metadata']['lease_id'] ?? null) === $lease) {
-                    $bookingDeposits->recordCollectedFromCheckout($session);
-                }
-            });
-        }
-
-        if ($request->query('return') === 'sign') {
-            return redirect()->route('member.leases.sign', $lease)
-                ->with('success', 'Booking deposit received. You can now sign your lease.');
         }
 
         return redirect()->route('member.leases.show', ['lease' => $lease, 'deposit' => 'paid']);

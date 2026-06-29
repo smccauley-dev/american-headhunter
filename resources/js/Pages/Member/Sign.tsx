@@ -15,12 +15,6 @@ interface Deposit {
   pay_url: string
 }
 
-interface BookingDeposit {
-  amount: string
-  paid: boolean
-  pay_url: string
-}
-
 interface LeaseProps {
   id: string
   status: string
@@ -41,7 +35,6 @@ interface Props {
   signers: Signer[]
   already_signed: boolean
   deposit: Deposit | null
-  booking_deposit: BookingDeposit | null
 }
 
 // Brand palette extensions (see docs/design_system.md): sage for cleared/signed,
@@ -51,7 +44,7 @@ const RUST = '#8a3216'
 const SERIF = 'Crimson Pro, Georgia, serif'
 const mono = 'var(--mono)'
 
-export default function Sign({ lease, request_id, signers, already_signed, deposit, booking_deposit }: Props) {
+export default function Sign({ lease, request_id, signers, already_signed, deposit }: Props) {
   const { props } = usePage<{ flash?: { success?: string; info?: string; error?: string } }>()
   const flash = props.flash ?? {}
 
@@ -62,23 +55,15 @@ export default function Sign({ lease, request_id, signers, already_signed, depos
   })
 
   const [payingDeposit, setPayingDeposit] = useState(false)
-  const [payingBooking, setPayingBooking] = useState(false)
 
   const allSigned = signers.every((s) => s.status === 'signed')
-  // Pay-then-sign: a due-but-unpaid deposit (either kind) locks the signature form.
+  // Pay-then-sign: a due-but-unpaid refundable deposit locks the signature form.
   const depositPending = !!deposit && !deposit.held
-  const bookingPending = !!booking_deposit && !booking_deposit.paid
 
   function payDeposit() {
     if (!deposit) return
     setPayingDeposit(true)
     router.post(deposit.pay_url, { return: 'sign' }, { onFinish: () => setPayingDeposit(false) })
-  }
-
-  function payBooking() {
-    if (!booking_deposit) return
-    setPayingBooking(true)
-    router.post(booking_deposit.pay_url, { return: 'sign' }, { onFinish: () => setPayingBooking(false) })
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -156,25 +141,8 @@ export default function Sign({ lease, request_id, signers, already_signed, depos
           })}
         </Section>
 
-        {/* Deposits — pay-then-sign gate. Both the (non-refundable) booking deposit
-            and the refundable security deposit, when due, must be paid before the
-            signature form unlocks. */}
-        {!already_signed && booking_deposit && (
-          bookingPending ? (
-            <DepositStep
-              eyebrow="Booking Deposit — Non-Refundable"
-              headline="Pay your booking deposit to unlock signing"
-              lineItem="Non-refundable booking deposit"
-              amount={booking_deposit.amount}
-              payLabel={`Pay $${booking_deposit.amount} Booking Deposit`}
-              note="A non-refundable down payment, credited toward your lease total. You'll return here to sign once it's received."
-              paying={payingBooking}
-              onPay={payBooking}
-            />
-          ) : (
-            <DepositCleared text={`Booking deposit of $${booking_deposit.amount} paid — credited toward your total.`} />
-          )
-        )}
+        {/* Deposit — pay-then-sign gate. The refundable security deposit, when due,
+            must be paid before the signature form unlocks. */}
         {!already_signed && deposit && (
           depositPending ? (
             <DepositStep
@@ -208,8 +176,8 @@ export default function Sign({ lease, request_id, signers, already_signed, depos
           </div>
         )}
 
-        {/* Signature form — only shown when not yet signed and both deposits are paid */}
-        {!already_signed && !depositPending && !bookingPending && (
+        {/* Signature form — only shown when not yet signed and the deposit is paid */}
+        {!already_signed && !depositPending && (
           <form onSubmit={handleSubmit}>
             <Section title="Your Signature">
               <div style={{ marginBottom: '18px' }}>

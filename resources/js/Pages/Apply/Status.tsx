@@ -1,5 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 
 interface Application {
     id: string;
@@ -10,8 +10,20 @@ interface Application {
     proposed_end: string | null;
     message: string | null;
     rejection_reason: string | null;
+    closed_reason: string | null;
     submitted_at: string | null;
     reviewed_at: string | null;
+}
+
+interface BookingFee {
+    amount: string;
+    status: 'held' | 'disbursed' | 'forfeited' | 'refunded' | null;
+    window_open: boolean;
+    deadline: string | null;
+    can_pay: boolean;
+    pay_url: string;
+    lease_status: string | null;
+    completion_deadline: string | null;
 }
 
 interface Message {
@@ -45,15 +57,42 @@ interface StatusProps {
     listing: Listing | null;
     property: Property | null;
     sign_url: string | null;
+    booking_fee: BookingFee | null;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; description: string }> = {
     pending:   { label: 'Under Review',  color: 'var(--brass)',  description: 'Your application is being reviewed by the landowner.' },
-    approved:  { label: 'Approved',      color: 'var(--sage)',   description: 'Congratulations — the landowner has approved your application. Check your messages to proceed.' },
+    approved:  { label: 'Approved',      color: 'var(--sage)',   description: 'Congratulations — the landowner has approved your application. Pay the booking fee to claim your spot.' },
     rejected:  { label: 'Not Selected',  color: 'var(--sage-dim)', description: 'The landowner did not select your application for this listing.' },
     withdrawn: { label: 'Withdrawn',     color: 'var(--parch-dim)', description: 'You withdrew this application.' },
     countered: { label: 'Counter Offer', color: 'var(--blaze)', description: 'The landowner has sent a counter-offer. Check your messages to review.' },
+    closed:    { label: 'Closed',        color: 'var(--parch-dim)', description: 'This application is closed.' },
 };
+
+/** Live "Xd Yh Zm Ws" remaining until `deadline`, ticking each second. */
+function useCountdown(deadline: string | null): { text: string; expired: boolean } {
+    const [now, setNow] = useState(() => Date.now());
+
+    useEffect(() => {
+        if (!deadline) return;
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, [deadline]);
+
+    if (!deadline) return { text: '—', expired: true };
+
+    const ms = new Date(deadline).getTime() - now;
+    if (ms <= 0) return { text: 'Expired', expired: true };
+
+    const s = Math.floor(ms / 1000);
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    const parts = d > 0 ? [`${d}d`, `${h}h`, `${m}m`] : [`${h}h`, `${m}m`, `${sec}s`];
+
+    return { text: parts.join(' '), expired: false };
+}
 
 const ROLE_LABEL: Record<string, string> = {
     admin:     'American Headhunter',
@@ -129,7 +168,103 @@ function MessageBubble({ msg }: { msg: Message }) {
     );
 }
 
-export default function Status({ application, messages, listing, property, sign_url }: StatusProps) {
+function BookingFeePanel({ fee, applicationId }: { fee: BookingFee; applicationId: string }) {
+    const [paying, setPaying] = useState(false);
+    const bookingClock     = useCountdown(fee.deadline);
+    const completionClock  = useCountdown(fee.completion_deadline);
+
+    function handlePay() {
+        if (paying) return;
+        setPaying(true);
+        router.post(fee.pay_url, {}, { onError: () => setPaying(false) });
+    }
+
+    // Won — fee held, lease created. Show the 7-day completion countdown; the
+    // separate Sign-lease CTA (sign_url) drives the actual signing.
+    if (fee.status === 'held') {
+        return (
+            <div style={{ padding: '24px 28px', marginBottom: 48, border: '1px solid var(--sage)', background: 'var(--bone)' }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.2em', color: 'var(--sage)', textTransform: 'uppercase', marginBottom: 8 }}>
+                    Booking Fee · Held
+                </div>
+                <div style={{ fontFamily: 'var(--display)', fontSize: 24, fontWeight: 500, color: 'var(--ink)', marginBottom: 8 }}>
+                    ${fee.amount} — Spot Claimed
+                </div>
+                <p style={{ fontFamily: 'var(--body)', fontSize: 15, color: 'var(--ink-lift)', margin: 0 }}>
+                    Your booking fee is held and credited toward your lease total. Complete signing
+                    {fee.completion_deadline && !completionClock.expired
+                        ? <> within <strong style={{ fontFamily: 'var(--mono)', color: 'var(--blaze)' }}>{completionClock.text}</strong></>
+                        : ' soon'} to lock in your lease — otherwise the fee is forfeited to the landowner.
+                </p>
+            </div>
+        );
+    }
+
+    if (fee.status === 'refunded') {
+        return (
+            <div style={{ padding: '24px 28px', marginBottom: 48, border: '1px solid var(--parch-deep)', background: 'var(--bone)' }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.2em', color: 'var(--parch-dim)', textTransform: 'uppercase', marginBottom: 8 }}>
+                    Booking Fee · Refunded
+                </div>
+                <p style={{ fontFamily: 'var(--body)', fontSize: 15, color: 'var(--ink-lift)', margin: 0 }}>
+                    Another applicant claimed this listing first, so your ${fee.amount} booking fee has been refunded in full.
+                </p>
+            </div>
+        );
+    }
+
+    if (fee.status === 'forfeited') {
+        return (
+            <div style={{ padding: '24px 28px', marginBottom: 48, border: '1px solid var(--parch-deep)', background: 'var(--bone)' }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.2em', color: 'var(--parch-dim)', textTransform: 'uppercase', marginBottom: 8 }}>
+                    Booking Fee · Forfeited
+                </div>
+                <p style={{ fontFamily: 'var(--body)', fontSize: 15, color: 'var(--ink-lift)', margin: 0 }}>
+                    The 7-day window to complete your lease lapsed, so your ${fee.amount} booking fee was forfeited to the landowner.
+                </p>
+            </div>
+        );
+    }
+
+    // Unpaid. Offer payment while the window is open; otherwise show it lapsed.
+    if (!fee.can_pay) {
+        return null;
+    }
+
+    return (
+        <div style={{ padding: '24px 28px', marginBottom: 48, border: '1px solid var(--blaze)', background: 'var(--bone)' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.2em', color: 'var(--blaze)', textTransform: 'uppercase', marginBottom: 8 }}>
+                Action Required · Pay Booking Fee
+            </div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: 28, fontWeight: 500, color: 'var(--ink)', marginBottom: 8 }}>
+                ${fee.amount}
+            </div>
+            <p style={{ fontFamily: 'var(--body)', fontSize: 15, color: 'var(--ink-lift)', margin: '0 0 16px' }}>
+                You've been approved — pay the booking fee to claim your spot. The first approved applicant
+                to pay wins the listing; if you're beaten to it, your fee is refunded in full. Your fee credits
+                toward your lease total.
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <button
+                    type="button"
+                    onClick={handlePay}
+                    disabled={paying}
+                    className="btn-solid"
+                    style={{ opacity: paying ? 0.5 : 1, cursor: paying ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}
+                >
+                    {paying ? 'Redirecting…' : `Pay $${fee.amount} →`}
+                </button>
+                {fee.deadline && (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-lift)' }}>
+                        Time left: <strong style={{ color: 'var(--blaze)' }}>{bookingClock.text}</strong>
+                    </span>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export default function Status({ application, messages, listing, property, sign_url, booking_fee }: StatusProps) {
     const status = STATUS_CONFIG[application.status] ?? { label: application.status, color: 'var(--parch-dim)', description: '' };
     const page   = usePage<{ flash: { success?: string } }>();
     const flash  = page.props.flash;
@@ -259,6 +394,11 @@ export default function Status({ application, messages, listing, property, sign_
                                 "{application.rejection_reason}"
                             </p>
                         )}
+                        {application.status === 'closed' && application.closed_reason && (
+                            <p style={{ fontFamily: 'var(--body)', fontSize: 14, color: 'var(--ink-lift)', fontStyle: 'italic', marginTop: 12, paddingTop: 12, borderTop: '1px dotted var(--parch-deep)', marginBottom: 0 }}>
+                                {application.closed_reason}
+                            </p>
+                        )}
 
                         {/* Sign-lease CTA — shown once a lease awaits the applicant's signature */}
                         {sign_url && (
@@ -280,6 +420,9 @@ export default function Status({ application, messages, listing, property, sign_
                             </div>
                         )}
                     </div>
+
+                    {/* Booking fee — pay-to-claim, held, refunded, or forfeited */}
+                    {booking_fee && <BookingFeePanel fee={booking_fee} applicationId={application.id} />}
 
                     {/* Messages */}
                     <div style={{ marginBottom: 48 }}>

@@ -106,10 +106,11 @@ class ProcessStripeWebhook implements ShouldQueue
             return;
         }
 
-        // A payment-mode Checkout funding a (non-refundable) booking deposit.
+        // A payment-mode Checkout funding the vet-first booking fee — author the held
+        // row and drive the win/lose outcome (create the lease, or refund the race loser).
         if (($this->object['mode'] ?? null) === 'payment'
-            && ($this->object['metadata']['purpose'] ?? null) === 'booking_deposit') {
-            app(BookingDepositService::class)->recordCollectedFromCheckout($this->object);
+            && ($this->object['metadata']['purpose'] ?? null) === 'booking_fee') {
+            app(BookingDepositService::class)->recordPaidFromCheckout($this->object);
             return;
         }
 

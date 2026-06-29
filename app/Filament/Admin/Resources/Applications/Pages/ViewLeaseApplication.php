@@ -23,11 +23,9 @@ use App\Services\Lease\LeaseDocumentService;
 use App\Services\Property\PropertyService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
-use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
@@ -473,76 +471,18 @@ class ViewLeaseApplication extends ViewRecord
                 ->label('Approve')
                 ->color('success')
                 ->icon(Heroicon::OutlinedCheckCircle)
-                ->modalHeading('Approve Application & Create Lease')
-                ->visible(fn (LeaseApplication $record): bool => $record->status === 'pending')
-                ->fillForm(fn (LeaseApplication $record): array => [
-                    'start_date'      => $record->proposed_start ?? $record->listing_season_start_snap,
-                    'end_date'        => $record->proposed_end ?? $record->listing_season_end_snap,
-                    'total_price'     => $this->resolveListing($record)?->price_total,
-                    'sign_as_lessor'  => true,
-                    'notify_applicant' => true,
-                ])
+                ->modalHeading('Approve Application')
+                ->modalDescription('Vet-first: approval opens a 24-hour window for the applicant to pay the booking fee and claim the spot. No lease is created until they pay — the first approved applicant to pay wins. Lease terms come from the listing.')
+                ->visible(fn (LeaseApplication $record): bool => in_array($record->status, ['pending', 'under_review'], true))
                 ->form([
-                    DatePicker::make('start_date')
-                        ->label('Lease Start Date')
-                        ->required()
-                        ->native(false),
-                    DatePicker::make('end_date')
-                        ->label('Lease End Date')
-                        ->required()
-                        ->native(false),
-                    TextInput::make('total_price')
-                        ->label('Total Lease Price')
-                        ->numeric()
-                        ->prefix('$')
-                        ->required()
-                        ->minValue(0),
-                    Checkbox::make('sign_as_lessor')
-                        ->label('Sign immediately as lessor (landowner)')
-                        ->helperText('Records the landowner\'s in-platform signature now. Lessee will be notified to sign next.')
-                        ->default(true),
                     Checkbox::make('notify_applicant')
-                        ->label('Send signing link to applicant')
-                        ->helperText('Posts a message with the signing URL so the lessee knows to review and sign.')
+                        ->label('Notify applicant to pay the booking fee')
+                        ->helperText('Posts a message with the payment link so the applicant knows they have 24 hours to claim the spot.')
                         ->default(true),
-                    FileUpload::make('custom_contract_pdf')
-                        ->label('Custom Contract PDF (Ranch+ / Estate only)')
-                        ->disk('local')
-                        ->directory('pending-contracts')
-                        ->acceptedFileTypes(['application/pdf'])
-                        ->maxSize(10240)
-                        ->nullable()
-                        ->helperText('Override the listing\'s MLA. If the listing already has an MLA attached, it will be used automatically — only upload here to override it. Requires Ranch+/Estate entitlement to trigger Dropbox Sign; otherwise falls back to in-platform signing.'),
                 ])
                 ->action(function (LeaseApplication $record, array $data): void {
-                    // Convert the Livewire-stored upload to an UploadedFile; the
-                    // service stores it (or falls back to the listing's MLA).
-                    $upload     = null;
-                    $storedName = $data['custom_contract_pdf'] ?? null;
-                    if (! empty($storedName)) {
-                        $upload = new \Illuminate\Http\UploadedFile(
-                            \Illuminate\Support\Facades\Storage::disk('local')->path($storedName),
-                            basename($storedName),
-                            'application/pdf',
-                            null,
-                            true,
-                        );
-                    }
-
                     try {
-                        $result = app(ApplicationService::class)->approveAndCreateLease(
-                            $record->id,
-                            auth()->id(),
-                            [
-                                'start_date'  => $data['start_date'],
-                                'end_date'    => $data['end_date'],
-                                'total_price' => $data['total_price'],
-                            ],
-                            $upload,
-                            ! empty($data['sign_as_lessor']),
-                            request()->ip() ?? '',
-                            request()->userAgent() ?? '',
-                        );
+                        app(ApplicationService::class)->approve($record->id, auth()->id());
                     } catch (\Throwable $e) {
                         report($e);
                         Notification::make()
@@ -551,35 +491,22 @@ class ViewLeaseApplication extends ViewRecord
                             ->danger()
                             ->send();
                         return;
-                    } finally {
-                        if (! empty($storedName)) {
-                            \Illuminate\Support\Facades\Storage::disk('local')->delete($storedName);
-                        }
                     }
 
-                    if ($result['customPdfFailed']) {
-                        Notification::make()
-                            ->title('Could not store uploaded PDF — using in-platform signing')
-                            ->warning()
-                            ->send();
-                    }
-
-                    // Notify the applicant with their signing link
-                    if (! empty($data['notify_applicant']) && ! $result['activated']) {
-                        $signingUrl = route('member.leases.sign', $result['lease']->id);
+                    if (! empty($data['notify_applicant'])) {
+                        $payUrl = route('apply.status', $record->id);
                         app(ApplicationMessageService::class)->send(
                             $record->id,
                             auth()->id(),
                             'admin',
-                            "Your lease application has been approved! Please review and sign your lease agreement here: {$signingUrl}",
+                            "Your lease application has been approved! You have 24 hours to pay the booking fee and claim your spot. Pay here: {$payUrl}",
                         );
                     }
 
-                    $title = $result['activated']
-                        ? 'Application approved — lease is ACTIVE (both parties signed)'
-                        : 'Application approved — lease created, awaiting lessee signature';
-
-                    Notification::make()->title($title)->success()->send();
+                    Notification::make()
+                        ->title('Application approved — applicant has 24 hours to pay the booking fee')
+                        ->success()
+                        ->send();
                     $this->redirect(LeaseApplicationResource::getUrl('view', ['record' => $record]));
                 }),
 

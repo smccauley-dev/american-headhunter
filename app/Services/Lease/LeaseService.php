@@ -273,7 +273,9 @@ class LeaseService extends BaseService
     public function activate(string $leaseId, ?string $actorUserId = null): void
     {
         $lease = Lease::findOrFail($leaseId);
-        $lease->update(['status' => 'active']);
+        // Clear the 7-day completion clock — the lease completed in time, so the
+        // deadline-enforcement command must not forfeit its booking fee.
+        $lease->update(['status' => 'active', 'completion_deadline' => null]);
 
         // Guard against a silent RLS no-op: under a role without UPDATE rights on
         // `leases` the write affects zero rows without raising, which previously
@@ -320,6 +322,12 @@ class LeaseService extends BaseService
         // is executed, promote it to `leased`. No-op for day-hunt listings.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)
             ->markExclusiveLeased($lease->listing_id));
+
+        // The vet-first booking fee was held on the platform pending this outcome;
+        // the lease completed, so release it to the landowner. No-op when there is
+        // no held fee. Best-effort — never let disbursement break activation.
+        rescue(fn () => app(\App\Services\Billing\BookingDepositService::class)
+            ->disburseForLease($lease->id));
     }
 
     /**

@@ -54,3 +54,9 @@ Schedule::job(new ExpirePromotionClaims)->dailyAt('06:00');
 // and public homepage stats. Hourly; the dashboard "Refresh now" button runs the
 // same job on demand.
 Schedule::job(new SyncPlatformSnapshot)->hourly();
+
+// Enforce the vet-first booking-fee deadlines: close approved applications whose
+// 24h booking window lapsed unpaid (frees the listing), and forfeit + cancel
+// leases whose 7-day completion window lapsed (held fee → landowner). Every 15
+// minutes so a freed listing re-opens promptly and forfeitures are timely.
+Schedule::command('booking:enforce-deadlines')->everyFifteenMinutes();

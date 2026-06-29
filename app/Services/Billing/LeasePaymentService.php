@@ -46,8 +46,11 @@ class LeasePaymentService extends BaseService
     {
         $totalCents = (int) round((float) $lease->total_price * 100);
 
+        // 'held' is the vet-first booking fee paid before this lease existed — it is
+        // already captured and credits toward the total. 'collected'/'disbursed' linger
+        // from the pre-vet destination-charge model.
         $bookingCollected = (int) BookingDeposit::where('lease_id', $lease->id)
-            ->whereIn('status', ['collected', 'disbursed'])
+            ->whereIn('status', ['held', 'collected', 'disbursed'])
             ->sum('amount_cents');
 
         $rentPaid = $this->collectedFor($lease->id)

@@ -26,17 +26,19 @@ class Lease extends BaseModelWithSoftDeletes
         'auto_renew',
         'terminated_at',
         'termination_reason',
+        'completion_deadline',
     ];
 
     protected function casts(): array
     {
         return array_merge(parent::casts(), [
-            'start_date'      => 'date',
-            'end_date'        => 'date',
-            'total_price'     => 'decimal:2',
-            'deposit_paid'    => 'decimal:2',
-            'auto_renew'      => 'boolean',
-            'terminated_at'   => 'datetime',
+            'start_date'          => 'date',
+            'end_date'            => 'date',
+            'total_price'         => 'decimal:2',
+            'deposit_paid'        => 'decimal:2',
+            'auto_renew'          => 'boolean',
+            'terminated_at'       => 'datetime',
+            'completion_deadline' => 'datetime',
         ]);
     }
 

@@ -5,14 +5,21 @@ namespace App\Models\Billing;
 use App\Models\BaseModel;
 
 /**
- * Non-refundable lease booking deposit / down payment (DB 4). System-authored:
- * written only by the trusted ah_system path (booking-deposit webhook, deferred
- * payout job, Filament admin); read under ah_runtime scoped by RLS to the two
- * parties (lessee + landowner) and staff. Distinct from SecurityDeposit — this is
- * earned on booking, credited toward the lease total, and disbursed to the
- * landowner; it has no release/forfeit lifecycle and resolves via $status.
+ * Vet-first booking fee (DB 4). System-authored: written only by the trusted
+ * ah_system path (booking-fee webhook, deadline-enforcement command, Filament
+ * admin); read under ah_runtime scoped by RLS to the two parties (applicant +
+ * landowner) and staff.
  *
- * No soft deletes — a booking deposit is a financial record that resolves via $status.
+ * The fee is application-scoped: it is paid after approval but before a lease
+ * exists (application_id), and lease_id is backfilled when the paying applicant
+ * wins the spot. It is HELD on the platform (a plain charge) and routed on outcome:
+ *  - 'held'      — paid, awaiting the lease outcome (credited toward the lease total)
+ *  - 'disbursed' — lease completed; the fee was released to the landowner
+ *  - 'forfeited' — the 7-day window lapsed; the fee was kept by the landowner
+ *  - 'refunded'  — the applicant lost the first-to-pay race; the fee was returned
+ * ('pending'/'collected' linger from the pre-vet destination-charge model.)
+ *
+ * No soft deletes — a booking fee is a financial record that resolves via $status.
  */
 class BookingDeposit extends BaseModel
 {
@@ -21,6 +28,7 @@ class BookingDeposit extends BaseModel
 
     protected $fillable = [
         'lease_id',
+        'application_id',
         'payer_user_id',
         'payee_user_id',
         'payment_id',
@@ -32,14 +40,18 @@ class BookingDeposit extends BaseModel
         'currency',
         'status',
         'stripe_payment_intent_id',
+        'stripe_charge_id',
         'stripe_transfer_id',
         'collected_at',
         'disbursed_at',
+        'forfeited_at',
+        'refunded_at',
     ];
 
     // Stripe identifiers never reach the client and must never be logged.
     protected $hidden = [
         'stripe_payment_intent_id',
+        'stripe_charge_id',
         'stripe_transfer_id',
     ];
 
@@ -51,13 +63,21 @@ class BookingDeposit extends BaseModel
             'net_cents'             => 'integer',
             'collected_at'          => 'datetime',
             'disbursed_at'          => 'datetime',
+            'forfeited_at'          => 'datetime',
+            'refunded_at'           => 'datetime',
         ]);
     }
 
-    /** Whether the deposit has been disbursed to the landowner. */
+    /** Whether the fee is paid and awaiting the lease outcome. */
+    public function isHeld(): bool
+    {
+        return $this->status === 'held';
+    }
+
+    /** Whether the fee has been routed to the landowner (completion or forfeiture). */
     public function isDisbursed(): bool
     {
-        return $this->status === 'disbursed';
+        return in_array($this->status, ['disbursed', 'forfeited'], true);
     }
 
     /**

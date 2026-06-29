@@ -188,9 +188,6 @@ interface Props {
     status: string | null
     amount: string
     paid: boolean
-    landowner_charges_enabled: boolean
-    can_pay: boolean
-    pay_url: string
     remaining_balance: string
   } | null
   lease_payment: {
@@ -1724,7 +1721,6 @@ export default function Lease({ lease, property, access_info, deposit, landowner
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
   const allSigned   = signers.every(s => s.status === 'signed')
   const [payingDeposit, setPayingDeposit] = useState(false)
-  const [payingBooking, setPayingBooking] = useState(false)
   const [payingLease, setPayingLease] = useState(false)
 
   return (
@@ -1911,40 +1907,25 @@ export default function Lease({ lease, property, access_info, deposit, landowner
             </Section>
           )}
 
-          {/* Booking Deposit — lessee only; non-refundable, credited toward the total */}
+          {/* Booking Fee — lessee only; paid in the apply portal to claim the spot,
+              held by the platform and credited toward the lease total. Informational
+              here — there is no pay action (payment happens before the lease exists). */}
           {booking_deposit && (
-            <Section title="Booking Deposit">
+            <Section title="Booking Fee">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
                 <div>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.1em', color: TAN, marginBottom: '5px' }}>
-                    {booking_deposit.can_pay ? 'Amount Due' : 'Booking Deposit'}
+                    Booking Fee
                   </div>
                   <div style={{ fontFamily: 'var(--body)', fontSize: '22px', fontWeight: 700, color: INK }}>${booking_deposit.amount}</div>
                   <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: booking_deposit.paid ? OLIVE : TAN, marginTop: '4px' }}>
                     {booking_deposit.paid
-                      ? `Non-refundable — credited toward your total. Remaining balance $${booking_deposit.remaining_balance}.`
-                      : 'Non-refundable down payment, credited toward your lease total.'}
+                      ? `Paid to claim your spot — credited toward your total. Remaining balance $${booking_deposit.remaining_balance}.`
+                      : 'Booking fee for this lease.'}
                   </div>
-                  {! booking_deposit.paid && ! booking_deposit.can_pay && ! booking_deposit.landowner_charges_enabled && (
-                    <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: TAN, marginTop: '4px', fontStyle: 'italic' }}>
-                      Awaiting landowner payout setup — you'll be able to pay once it's complete.
-                    </div>
-                  )}
                 </div>
 
-                {booking_deposit.can_pay ? (
-                  <button
-                    type="button"
-                    disabled={payingBooking}
-                    onClick={() => {
-                      setPayingBooking(true)
-                      router.post(booking_deposit.pay_url, {}, { onFinish: () => setPayingBooking(false) })
-                    }}
-                    style={{ ...btnAccent, whiteSpace: 'nowrap', opacity: payingBooking ? 0.6 : 1 }}
-                  >
-                    {payingBooking ? 'Redirecting…' : 'Pay Booking Deposit'}
-                  </button>
-                ) : booking_deposit.paid ? (
+                {booking_deposit.paid && (
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 18px',
                     background: OLIVE, border: `1px solid ${OLIVE}`,
@@ -1954,9 +1935,9 @@ export default function Lease({ lease, property, access_info, deposit, landowner
                     <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                       <path d="M13.5 4.5 6.5 11.5 3 8" stroke="#F4ECDC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                    Paid
+                    Held
                   </span>
-                ) : null}
+                )}
               </div>
             </Section>
           )}

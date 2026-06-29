@@ -121,51 +121,35 @@ class LeaseApplicationController extends Controller
         $this->authorizeManage($property);
         $app = $this->authorizeApplication($property, $application);
 
-        if ($app->status !== 'pending') {
+        if (! in_array($app->status, ['pending', 'under_review'], true)) {
             return back()->with('error', 'Only a pending application can be approved.');
         }
 
         $data = $request->validate([
-            'start_date'       => 'required|date',
-            'end_date'         => 'required|date|after:start_date',
-            'total_price'      => 'required|numeric|min:0',
-            'sign_as_lessor'   => 'boolean',
             'notify_applicant' => 'boolean',
         ]);
 
         $reviewerId = session('auth.user_id');
 
         try {
-            // Creating the lease INSERTs into the RLS-protected `leases` /
-            // `lease_hunters` tables, which have no runtime write policy — run
-            // the whole approval (and the applicant signing-link message) under
-            // ah_system (SEC-046).
-            $result = ConnectionRole::asSystem(function () use ($app, $reviewerId, $data, $request) {
-                $res = $this->applications->approveAndCreateLease(
-                    $app->id,
-                    $reviewerId,
-                    [
-                        'start_date'  => $data['start_date'],
-                        'end_date'    => $data['end_date'],
-                        'total_price' => $data['total_price'],
-                    ],
-                    null,
-                    ! empty($data['sign_as_lessor']),
-                    $request->ip() ?? '',
-                    $request->userAgent() ?? '',
-                );
+            // Vet-first booking fee: approval only opens the 24h window for the
+            // applicant to pay the booking fee and claim the spot — no lease,
+            // reserve, or e-sign is created until they pay (and win the race).
+            // Run under ah_system so the approval write and the applicant
+            // notification (which resolves the applicant's identity row) succeed
+            // under the landowner's ah_runtime request (SEC-046/SEC-047).
+            ConnectionRole::asSystem(function () use ($app, $reviewerId, $data) {
+                $this->applications->approve($app->id, $reviewerId);
 
-                if (! empty($data['notify_applicant']) && ! $res['activated']) {
-                    $signingUrl = route('member.leases.sign', $res['lease']->id);
+                if (! empty($data['notify_applicant'])) {
+                    $payUrl = route('apply.status', $app->id);
                     $this->messages->send(
                         $app->id,
                         $reviewerId,
                         'landowner',
-                        "Your lease application has been approved! Please review and sign your lease agreement here: {$signingUrl}",
+                        "Your lease application has been approved! You have 24 hours to pay the booking fee and claim your spot. Pay here: {$payUrl}",
                     );
                 }
-
-                return $res;
             });
         } catch (\Throwable $e) {
             report($e);
@@ -173,9 +157,7 @@ class LeaseApplicationController extends Controller
             return back()->with('error', 'Approval failed — the application was left unchanged.');
         }
 
-        return back()->with('success', $result['activated']
-            ? 'Application approved — lease is active (both parties signed).'
-            : 'Application approved — lease created, awaiting lessee signature.');
+        return back()->with('success', 'Application approved — the applicant has 24 hours to pay the booking fee and claim the spot.');
     }
 
     public function reject(Request $request, string $property, string $application): RedirectResponse

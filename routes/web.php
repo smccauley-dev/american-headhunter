@@ -54,6 +54,12 @@ Route::middleware('auth.session')->prefix('apply')->name('apply.')->group(functi
     Route::get('/my-applications', [ApplyController::class, 'index'])->name('index');
     Route::get('/status/{application}', [ApplyController::class, 'status'])->name('status');
     Route::post('/status/{application}/message', [ApplyController::class, 'sendMessage'])->name('status.message')->middleware('throttle:10,1');
+    // Vet-first booking fee: an approved applicant pays here to claim the spot (held
+    // on the platform until the outcome). The POST only starts hosted Checkout (no
+    // local write); the success-return reconciles the system-authored booking_deposits
+    // row up front under ah_system, ahead of the webhook backstop.
+    Route::post('/status/{application}/booking-fee', [ApplyController::class, 'payBookingFee'])->name('status.booking-fee')->middleware('throttle:10,1');
+    Route::get('/status/{application}/booking-fee/return', [ApplyController::class, 'bookingFeeReturn'])->name('status.booking-fee.return')->middleware('db.system');
     Route::get('/{listing}', [ApplyController::class, 'show'])->name('show');
     Route::post('/{listing}', [ApplyController::class, 'submit'])->name('submit')->middleware('throttle:5,1');
 });
@@ -184,11 +190,6 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/leases/{lease}/incidents/{incident}', [MemberController::class, 'updateIncident'])->name('leases.incidents.update')->middleware(['db.system', 'throttle:10,1']);
     // Serve an incident's evidence photo to the reporter (RLS scopes the read to them).
     Route::get('/leases/{lease}/incidents/{incident}/photos/{documentId}', [MemberController::class, 'incidentPhoto'])->name('leases.incident-photo');
-
-    Route::post('/leases/{lease}/booking-deposit', [MemberController::class, 'payBookingDeposit'])->name('leases.booking-deposit')->middleware('throttle:10,1');
-    // Stripe booking-deposit success return — reconciles the collected row as
-    // ah_system (booking_deposits is system-authored; ah_runtime cannot write it).
-    Route::get('/leases/{lease}/booking-deposit/return', [MemberController::class, 'bookingDepositReturn'])->name('leases.booking-deposit.return')->middleware('db.system');
 
     Route::post('/leases/{lease}/lease-payment', [MemberController::class, 'payLeaseBalance'])->name('leases.lease-payment')->middleware('throttle:10,1');
     // Stripe lease-payment success return — reconciles the collected row as ah_system

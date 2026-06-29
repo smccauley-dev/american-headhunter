@@ -560,7 +560,7 @@ class StripeService
      *
      * @param array<string,string> $metadata
      */
-    public function createDepositCheckoutSession(User $payer, int $amountCents, array $metadata, string $successUrl, string $cancelUrl): Session
+    public function createDepositCheckoutSession(User $payer, int $amountCents, array $metadata, string $successUrl, string $cancelUrl, string $productName = 'Refundable security deposit'): Session
     {
         return Session::create([
             'mode'                => 'payment',
@@ -571,7 +571,7 @@ class StripeService
                 'price_data' => [
                     'currency'     => 'usd',
                     'unit_amount'  => $amountCents,
-                    'product_data' => ['name' => 'Refundable security deposit'],
+                    'product_data' => ['name' => $productName],
                 ],
             ]],
             'payment_intent_data' => ['metadata' => $metadata],

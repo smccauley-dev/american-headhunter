@@ -472,17 +472,25 @@ class ProcessStripeWebhookTest extends TestCase
         $this->assertSame($leaseId, $deposit->lease_id);
     }
 
-    public function test_checkout_completed_payment_mode_records_collected_booking_deposit(): void
+    public function test_checkout_completed_payment_mode_records_held_booking_fee(): void
     {
-        $payerId = $this->newUserId();
-        $payeeId = $this->newUserId();
-        $leaseId = (string) Str::uuid();
-        $pi      = 'pi_book_' . Str::random(12);
+        $payerId       = $this->newUserId();
+        $payeeId       = $this->newUserId();
+        $applicationId = (string) Str::uuid();
+        $leaseId       = (string) Str::uuid();
+        $pi            = 'pi_book_' . Str::random(12);
         $this->bookingPaymentIntentIds[] = $pi;
 
+        // The vet-first booking fee is HELD on the platform (a plain charge). The win/
+        // lose orchestration is unit-tested elsewhere; stub it so the webhook just
+        // authors the held row and backfills the won lease.
+        $lease = new \App\Models\Lease\Lease(); $lease->id = $leaseId;
+        $applications = \Mockery::mock(\App\Services\Lease\ApplicationService::class);
+        $applications->shouldReceive('onBookingFeePaid')->andReturn(['outcome' => 'won', 'lease' => $lease]);
+        $this->app->instance(\App\Services\Lease\ApplicationService::class, $applications);
+
         $stripe = \Mockery::mock(StripeService::class);
-        $stripe->shouldReceive('chargeAndTransferForPaymentIntent')
-            ->andReturn(['charge_id' => 'ch_book_wh', 'transfer_id' => 'tr_book_wh']);
+        $stripe->shouldReceive('chargeIdForPaymentIntent')->andReturn('ch_book_wh');
 
         $this->dispatch('checkout.session.completed', [
             'mode'           => 'payment',
@@ -490,25 +498,21 @@ class ProcessStripeWebhookTest extends TestCase
             'currency'       => 'usd',
             'amount_total'   => 30000,
             'metadata'       => [
-                'purpose'               => 'booking_deposit',
-                'lease_id'              => $leaseId,
-                'payer_user_id'         => $payerId,
-                'payee_user_id'         => $payeeId,
-                'stripe_account_id'     => 'acct_book_wh',
-                'amount_cents'          => '30000',
-                'application_fee_cents' => '1500',
-                'net_cents'             => '28500',
+                'purpose'        => 'booking_fee',
+                'application_id' => $applicationId,
+                'listing_id'     => (string) Str::uuid(),
+                'payer_user_id'  => $payerId,
+                'payee_user_id'  => $payeeId,
+                'amount_cents'   => '30000',
             ],
         ], $stripe);
 
         $deposit = \App\Models\Billing\BookingDeposit::where('stripe_payment_intent_id', $pi)->first();
-        $this->assertNotNull($deposit, 'a disbursed booking deposit is authored by the webhook (ah_system)');
-        // Booking deposits are now Connect destination charges — the net is transferred
-        // to the landowner at charge time, so the row records 'disbursed'.
-        $this->assertSame('disbursed', $deposit->status);
+        $this->assertNotNull($deposit, 'a held booking fee is authored by the webhook (ah_system)');
+        $this->assertSame('held', $deposit->status);
         $this->assertSame(30000, (int) $deposit->amount_cents);
         $this->assertSame($leaseId, $deposit->lease_id);
-        $this->assertNotNull($deposit->disbursed_at, 'the destination transfer settles at charge time');
+        $this->assertNotNull($deposit->collected_at);
     }
 
     public function test_checkout_completed_payment_mode_records_collected_lease_payment(): void

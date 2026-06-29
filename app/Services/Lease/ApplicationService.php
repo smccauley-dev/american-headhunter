@@ -21,7 +21,6 @@ use App\Services\Platform\LegalService;
 use App\Services\Property\PropertyService;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -158,16 +157,30 @@ class ApplicationService extends BaseService
         return $application;
     }
 
-    public function approve(string $applicationId, string $reviewerUserId): LeaseApplication
+    /**
+     * Vet-first approval. The landowner approves the applicant BEFORE any money
+     * changes hands; this opens a booking-fee window (default 24h) in which the
+     * applicant must pay the held booking fee to claim the spot. No lease,
+     * reservation, or signing request is created here — those are deferred to the
+     * booking-fee win (onBookingFeePaid). The listing stays on-market so other
+     * applicants can also be approved and compete to pay first.
+     */
+    public function approve(string $applicationId, string $reviewerUserId, int $bookingWindowHours = 24): LeaseApplication
     {
         $application  = LeaseApplication::findOrFail($applicationId);
         $fromStatus   = $application->status;
 
+        if (! in_array($fromStatus, ['pending', 'under_review'], true)) {
+            throw new \RuntimeException('Only a pending application can be approved.');
+        }
+
         $application->update([
-            'status'              => 'approved',
-            'reviewed_by_user_id' => $reviewerUserId,
-            'reviewed_at'         => now(),
-            'rejection_reason'    => null,
+            'status'               => 'approved',
+            'reviewed_by_user_id'  => $reviewerUserId,
+            'reviewed_at'          => now(),
+            'rejection_reason'     => null,
+            'booking_fee_deadline' => now()->addHours($bookingWindowHours),
+            'closed_reason'        => null,
         ]);
 
         LeaseApplicationReviewHistory::create([
@@ -183,40 +196,45 @@ class ApplicationService extends BaseService
             tableName:      'lease_applications',
             recordId:       $applicationId,
             userId:         $reviewerUserId,
-            actionSummary:  'Lease application approved',
+            actionSummary:  "Lease application approved — applicant has {$bookingWindowHours}h to pay the booking fee",
         );
 
         return $application->refresh();
     }
 
     /**
-     * Approve an application and create its lease, hunter record, and signing
-     * request as one operation.
+     * Win path: the applicant has paid the held booking fee. Create the lease from
+     * the listing's terms, reserve the term (the EXCLUDE constraint is the race-proof
+     * guard — a second payer racing for the same listing loses here), create the
+     * signing request, start the 7-day completion clock, and close the sibling
+     * applications. A first-to-pay race must offer uniform terms, so the lease price
+     * and dates come from the listing, not per-applicant negotiation.
      *
-     * The property and signer identities are resolved BEFORE any state change
-     * so a missing property cannot strand the application in approved-without-
-     * lease limbo. All lease-DB writes share one transaction; if the
-     * documents-DB signing request fails afterwards, the lease-DB writes are
-     * compensated (lease deleted, application reverted to pending).
-     *
-     * @param  array{start_date: mixed, end_date: mixed, total_price: mixed}  $leaseTerms
-     * @param  ?UploadedFile  $customContractUpload  Admin-uploaded contract
-     *         override; falls back to the listing's attached MLA when null.
-     * @return array{lease: Lease, activated: bool, customPdfFailed: bool}
+     * @return array{outcome: 'won'|'lost', lease: ?Lease} 'lost' means another
+     *         applicant already reserved the listing — the caller refunds the fee.
      */
-    public function approveAndCreateLease(
-        string        $applicationId,
-        string        $reviewerUserId,
-        array         $leaseTerms,
-        ?UploadedFile $customContractUpload,
-        bool          $signAsLessor,
-        string        $ipAddress = '',
-        string        $userAgent = '',
-    ): array {
-        $application = LeaseApplication::findOrFail($applicationId);
+    public function onBookingFeePaid(string $applicationId, ?string $actorUserId = null): array
+    {
+        $application = LeaseApplication::find($applicationId);
+        if (! $application) {
+            throw new \RuntimeException("Booking fee paid for unknown application {$applicationId}.");
+        }
 
-        if ($application->status !== 'pending') {
-            throw new \RuntimeException('Only pending applications can be approved.');
+        // Idempotency: a prior attempt already created the winning lease.
+        $existingLease = Lease::where('application_id', $applicationId)
+            ->whereNull('deleted_at')
+            ->latest('created_at')
+            ->first();
+        if ($existingLease) {
+            return ['outcome' => 'won', 'lease' => $existingLease];
+        }
+
+        // The spot is only claimable from an approved application. If it was closed
+        // (deadline lapsed, or another applicant won), this payer lost the race.
+        if ($application->status !== 'approved') {
+            $this->markLost($application, $actorUserId);
+
+            return ['outcome' => 'lost', 'lease' => null];
         }
 
         // property_id_snapshot may be null for older applications — fall back via listing
@@ -227,12 +245,19 @@ class ApplicationService extends BaseService
                 ->value('property_id');
 
         $property = $propertyId ? Property::on('property')->find($propertyId) : null;
-
         if (! $property) {
-            throw new \RuntimeException(
-                'Property record not found — check the listing exists and has a valid property in the property database.'
-            );
+            throw new \RuntimeException('Property record not found for booking-fee win.');
         }
+
+        $listing = $this->propertyService->findListing($application->listing_id);
+        if (! $listing) {
+            throw new \RuntimeException('Listing not found for booking-fee win.');
+        }
+
+        // Uniform terms from the listing (a race can't have per-applicant pricing).
+        $startDate  = $application->listing_season_start_snap ?? $listing->season_start;
+        $endDate    = $application->listing_season_end_snap   ?? $listing->season_end;
+        $totalPrice = (float) ($listing->price_total ?? 0);
 
         $lessorUser    = User::on('identity')->find($property->owner_user_id);
         $lesseeUser    = User::on('identity')->find($application->applicant_user_id);
@@ -246,52 +271,29 @@ class ApplicationService extends BaseService
             ? trim("{$lesseeProfile->first_name} {$lesseeProfile->last_name}") ?: 'Hunter'
             : 'Hunter';
 
-        // Store the admin-uploaded contract override; a storage failure must
-        // not block approval — fall through to the listing MLA / in-platform.
-        $customPdf       = null;
-        $customPdfFailed = false;
-        if ($customContractUpload !== null) {
-            try {
-                $customPdf = $this->documentService->storeUploadedFile(
-                    $customContractUpload,
-                    $property->owner_user_id,
-                    'contract',
-                );
-            } catch (\Throwable $e) {
-                $customPdfFailed = true;
-                Log::warning('ApplicationService: custom contract PDF store failed — falling back', [
-                    'application_id' => $applicationId,
-                    'error'          => $e->getMessage(),
-                ]);
-            }
+        // The MLA the landowner attached to the listing, if any (else in-platform contract).
+        $customPdf = null;
+        $listingContractDocId = DB::connection('property')
+            ->table('property_listings')
+            ->where('id', $application->listing_id)
+            ->value('custom_contract_document_id');
+        if ($listingContractDocId) {
+            $customPdf = Document::on('documents')->find($listingContractDocId);
         }
 
-        // No admin override — fall back to the MLA the landowner attached to the listing
-        if ($customPdf === null) {
-            $listingContractDocId = DB::connection('property')
-                ->table('property_listings')
-                ->where('id', $application->listing_id)
-                ->value('custom_contract_document_id');
-
-            if ($listingContractDocId) {
-                $customPdf = Document::on('documents')->find($listingContractDocId);
-            }
-        }
-
-        // All lease-DB writes (approval, history, lease, hunter) commit together
-        $lease = DB::connection('lease')->transaction(function () use ($application, $applicationId, $reviewerUserId, $property, $leaseTerms): Lease {
-            $this->approve($applicationId, $reviewerUserId);
-
-            $lease = $this->leaseService->createFromApplication($applicationId, [
-                'property_id'    => $property->id,
-                'listing_id'     => $application->listing_id,
-                'lessee_user_id' => $application->applicant_user_id,
-                'lessor_user_id' => $property->owner_user_id,
-                'start_date'     => $leaseTerms['start_date'],
-                'end_date'       => $leaseTerms['end_date'],
-                'total_price'    => $leaseTerms['total_price'],
-                'deposit_paid'   => 0.00,
-            ], $reviewerUserId);
+        // Lease + hunter commit together. The 7-day completion clock starts now.
+        $lease = DB::connection('lease')->transaction(function () use ($application, $property, $startDate, $endDate, $totalPrice, $actorUserId): Lease {
+            $lease = $this->leaseService->createFromApplication($application->id, [
+                'property_id'         => $property->id,
+                'listing_id'          => $application->listing_id,
+                'lessee_user_id'      => $application->applicant_user_id,
+                'lessor_user_id'      => $property->owner_user_id,
+                'start_date'          => $startDate,
+                'end_date'            => $endDate,
+                'total_price'         => $totalPrice,
+                'deposit_paid'        => 0.00,
+                'completion_deadline' => now()->addDays(7),
+            ], $actorUserId);
 
             LeaseHunter::create([
                 'lease_id'    => $lease->id,
@@ -303,109 +305,154 @@ class ApplicationService extends BaseService
             return $lease;
         });
 
-        // Exclusive (annual / seasonal) listings are committed at approval:
-        // reserve the full term so a second overlapping approval is refused
-        // (the EXCLUDE constraint is the race-proof guard) and pull the listing
-        // from search. Day-hunt listings reserve at activation instead, so this
-        // is a no-op for them. A conflict (already leased) compensates the
-        // freshly created lease and surfaces a friendly error to the reviewer.
+        // Reserve the term — the EXCLUDE constraint is the race guard. A conflict
+        // means a concurrent payer already won; compensate and report a loss so the
+        // caller refunds this fee. (No-op for day-hunt listings, which aren't the
+        // vet-first booking-fee use case — they reserve at activation.)
         try {
             $this->propertyService->reserveExclusiveLease(
                 listingId:       $application->listing_id,
-                start:           Carbon::parse($leaseTerms['start_date']),
-                end:             Carbon::parse($leaseTerms['end_date']),
+                start:           Carbon::parse($startDate),
+                end:             Carbon::parse($endDate),
                 hunters:         $lease->hunters()->count(),
-                cost:            (float) $leaseTerms['total_price'],
+                cost:            $totalPrice,
                 leaseId:         $lease->id,
-                createdByUserId: $reviewerUserId,
+                createdByUserId: $actorUserId,
             );
-        } catch (\Throwable $e) {
-            $this->compensateFailedApproval($application, $lease, $reviewerUserId);
-            throw $e;
+        } catch (\RuntimeException $e) {
+            $this->discardLostLease($lease);
+            $this->markLost($application, $actorUserId);
+
+            return ['outcome' => 'lost', 'lease' => null];
         }
 
-        // Signing request lives in the documents DB — no shared transaction
-        // is possible, so compensate the lease DB if this step fails.
+        // Signing request lives in the documents DB — compensate the lease DB and
+        // release the reservation if it fails, then rethrow so the booking-fee
+        // webhook retries (the held fee stays put meanwhile).
         try {
-            $esigRequest = $this->esignatureService->createRequest(
+            $this->esignatureService->createRequest(
                 $lease,
-                $reviewerUserId,
+                $actorUserId,
                 ['user_id' => $property->owner_user_id, 'name' => $lessorName, 'email' => $lessorUser?->email ?? ''],
                 ['user_id' => $application->applicant_user_id, 'name' => $lesseeName, 'email' => $lesseeUser?->email ?? ''],
                 $customPdf,
             );
         } catch (\Throwable $e) {
-            $this->compensateFailedApproval($application, $lease, $reviewerUserId);
+            rescue(fn () => $this->propertyService->releaseBooking($lease->id));
+            $this->discardLostLease($lease);
             throw $e;
         }
 
-        // Lease and request both exist now — a signature failure here is
-        // recoverable via the "Sign as Lessor" action, so don't compensate.
-        $activated = false;
-        if ($signAsLessor) {
-            try {
-                $activated = $this->esignatureService->recordSignature(
-                    $esigRequest->id,
-                    $property->owner_user_id,
-                    $ipAddress,
-                    $userAgent,
-                    recordedByUserId: $reviewerUserId,
-                );
-            } catch (\Throwable $e) {
-                report($e);
-            }
-        }
+        // The listing is off-market now — close the other live applications for it.
+        $this->closeSiblingApplications($application->listing_id, $application->id, $actorUserId);
 
-        return ['lease' => $lease, 'activated' => $activated, 'customPdfFailed' => $customPdfFailed];
+        $this->auditService->log(
+            eventType:      'lease_application.booking_fee_won',
+            sourceDatabase: 'ah_lease',
+            tableName:      'lease_applications',
+            recordId:       $application->id,
+            userId:         $actorUserId,
+            actionSummary:  'Booking fee paid — lease created and spot claimed (7-day completion window opened)',
+        );
+
+        return ['outcome' => 'won', 'lease' => $lease];
     }
 
     /**
-     * Undo the lease-DB side of a failed approval: remove the lease and its
-     * hunter rows and put the application back to pending so the admin can
-     * retry once the underlying failure is fixed.
+     * Close an approved application whose 24-hour booking-fee window lapsed without
+     * payment. Driven by the deadline-enforcement command. No-op unless still
+     * 'approved' (the applicant may have paid in the meantime).
      */
-    private function compensateFailedApproval(LeaseApplication $application, Lease $lease, string $reviewerUserId): void
+    public function closeForUnpaidBookingFee(string $applicationId, ?string $actorUserId = null): void
     {
-        try {
-            DB::connection('lease')->transaction(function () use ($application, $lease): void {
-                // Hard delete — this lease never validly existed (its creation is
-                // being rolled back). A soft delete would leave the row behind,
-                // and uq_leases_application_id is a plain unique index that counts
-                // soft-deleted rows, so it would permanently block re-approving
-                // this application ("duplicate key value violates uq_leases_application_id").
+        $application = LeaseApplication::find($applicationId);
+        if (! $application || $application->status !== 'approved') {
+            return;
+        }
+
+        $application->update([
+            'status'        => 'closed',
+            'closed_reason' => 'Booking Fee was not paid',
+        ]);
+
+        $this->auditService->log(
+            eventType:      'lease_application.closed',
+            sourceDatabase: 'ah_lease',
+            tableName:      'lease_applications',
+            recordId:       $applicationId,
+            userId:         $actorUserId,
+            actionSummary:  'Application closed — booking fee not paid within the window',
+        );
+    }
+
+    /**
+     * Close the still-live applications for a listing once one applicant has won it.
+     * Builder update (not per-model) so a stale in-memory instance can't dirty-check
+     * the write to a no-op; one summary audit covers the batch.
+     */
+    private function closeSiblingApplications(string $listingId, string $winnerApplicationId, ?string $actorUserId): void
+    {
+        $siblingIds = LeaseApplication::where('listing_id', $listingId)
+            ->where('id', '!=', $winnerApplicationId)
+            ->whereIn('status', ['pending', 'under_review', 'approved'])
+            ->whereNull('deleted_at')
+            ->pluck('id');
+
+        if ($siblingIds->isEmpty()) {
+            return;
+        }
+
+        LeaseApplication::whereIn('id', $siblingIds)->update([
+            'status'        => 'closed',
+            'closed_reason' => 'Another applicant booked this listing first',
+        ]);
+
+        $this->auditService->log(
+            eventType:      'lease_application.closed',
+            sourceDatabase: 'ah_lease',
+            tableName:      'lease_applications',
+            recordId:       $winnerApplicationId,
+            userId:         $actorUserId,
+            actionSummary:  "Closed {$siblingIds->count()} sibling application(s) — listing booked by the winning applicant",
+        );
+    }
+
+    /** Mark a losing payer's application closed (race lost). Idempotent. */
+    private function markLost(LeaseApplication $application, ?string $actorUserId): void
+    {
+        if (in_array($application->status, ['closed', 'cancelled', 'withdrawn', 'rejected'], true)) {
+            return;
+        }
+
+        LeaseApplication::where('id', $application->id)->update([
+            'status'        => 'closed',
+            'closed_reason' => 'Another applicant booked this listing first',
+        ]);
+
+        $this->auditService->log(
+            eventType:      'lease_application.closed',
+            sourceDatabase: 'ah_lease',
+            tableName:      'lease_applications',
+            recordId:       $application->id,
+            userId:         $actorUserId,
+            actionSummary:  'Application closed — lost the booking-fee race; fee refunded',
+        );
+    }
+
+    /**
+     * Hard-delete a lease (and its hunters) created for a booking-fee attempt that
+     * lost the reservation race. A soft delete would linger and uq_leases_application_id
+     * counts soft-deleted rows, permanently blocking a later legitimate lease for the
+     * same application.
+     */
+    private function discardLostLease(Lease $lease): void
+    {
+        rescue(function () use ($lease) {
+            DB::connection('lease')->transaction(function () use ($lease): void {
                 LeaseHunter::where('lease_id', $lease->id)->forceDelete();
                 $lease->forceDelete();
-                // Builder update keyed by id — the outer $application instance is
-                // stale (still 'pending' in memory after approve() updated a
-                // separate instance), so $application->update() would dirty-check
-                // to a no-op and leave the row 'approved'. Bypass the model.
-                LeaseApplication::where('id', $application->id)->update([
-                    'status'              => 'pending',
-                    'reviewed_by_user_id' => null,
-                    'reviewed_at'         => null,
-                ]);
             });
-
-            // Free any exclusive-listing reservation this approval held and
-            // re-list it. No-op when the reservation step is what failed (its
-            // own transaction rolled back, leaving no row for this lease).
-            rescue(fn () => $this->propertyService->releaseBooking($lease->id));
-
-            $this->auditService->log(
-                eventType:      'lease_application.approval_compensated',
-                sourceDatabase: 'ah_lease',
-                tableName:      'lease_applications',
-                recordId:       $application->id,
-                userId:         $reviewerUserId,
-                actionSummary:  'Approval rolled back — signing request creation failed; application returned to pending',
-            );
-        } catch (\Throwable $e) {
-            Log::error('ApplicationService: approval compensation failed', [
-                'application_id' => $application->id,
-                'lease_id'       => $lease->id,
-                'error'          => $e->getMessage(),
-            ]);
-        }
+        });
     }
 
     public function reject(string $applicationId, string $reviewerUserId, string $reason): LeaseApplication
@@ -483,10 +530,14 @@ class ApplicationService extends BaseService
         }
 
         $application->update([
-            'status'              => $newStatus,
-            'reviewed_by_user_id' => $reviewerUserId,
-            'reviewed_at'         => now(),
-            'rejection_reason'    => $newStatus === 'rejected' ? $reason : null,
+            'status'               => $newStatus,
+            'reviewed_by_user_id'  => $reviewerUserId,
+            'reviewed_at'          => now(),
+            'rejection_reason'     => $newStatus === 'rejected' ? $reason : null,
+            // Overriding to approved opens the same 24h booking-fee window as a
+            // normal approval; clear it (and any closed_reason) otherwise.
+            'booking_fee_deadline' => $newStatus === 'approved' ? now()->addHours(24) : null,
+            'closed_reason'        => null,
         ]);
 
         LeaseApplicationReviewHistory::create([

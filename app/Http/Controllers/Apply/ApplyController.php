@@ -10,6 +10,8 @@ use App\Models\Identity\User;
 use App\Models\Identity\UserProfile;
 use App\Models\Lease\Lease;
 use App\Models\Lease\LeaseApplication;
+use App\Services\Billing\BookingDepositService;
+use App\Services\Billing\StripeService;
 use App\Services\Identity\GuestHunterService;
 use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\ApplicationService;
@@ -19,6 +21,7 @@ use App\Services\Platform\LegalService;
 use App\Services\Property\PropertyService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Inertia\Response;
 
 class ApplyController extends Controller
@@ -152,7 +155,7 @@ class ApplyController extends Controller
             ->with('success', 'Your application has been submitted. The landowner will be in touch.');
     }
 
-    public function status(string $applicationId, Request $request): Response
+    public function status(string $applicationId, Request $request, BookingDepositService $bookingDeposits): Response
     {
         $userId = $request->session()->get('auth.user_id');
 
@@ -206,6 +209,7 @@ class ApplyController extends Controller
 
         return inertia('Apply/Status', [
             'sign_url'    => $signUrl,
+            'booking_fee' => $this->buildBookingFeeProps($application, $lease, $bookingDeposits),
             'application' => [
                 'id'               => $application->id,
                 'status'           => $application->status,
@@ -215,6 +219,7 @@ class ApplyController extends Controller
                 'proposed_end'     => $application->proposed_end?->toDateString(),
                 'message'          => $application->message,
                 'rejection_reason' => $application->rejection_reason,
+                'closed_reason'    => $application->closed_reason,
                 'submitted_at'     => $application->created_at?->toIso8601String(),
                 'reviewed_at'      => $application->reviewed_at?->toIso8601String(),
             ],
@@ -223,6 +228,96 @@ class ApplyController extends Controller
             'listing'   => $listing ? $this->serializeListing($listing) : null,
             'property'  => $listing?->property ? $this->serializeProperty($listing->property) : null,
         ]);
+    }
+
+    /**
+     * Vet-first booking-fee state for the status page, or null when no fee applies to
+     * this listing. Drives the "Pay booking fee" CTA + 24h window countdown, the won
+     * state (7-day completion countdown), and the closed/refunded/forfeited messaging.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function buildBookingFeeProps(LeaseApplication $application, ?Lease $lease, BookingDepositService $bookingDeposits): ?array
+    {
+        $amountDueCents = rescue(fn () => $bookingDeposits->amountDueForApplication($application), 0) ?: 0;
+        $deposit        = rescue(fn () => $bookingDeposits->forApplication($application->id), null);
+
+        if ($amountDueCents <= 0 && ! $deposit) {
+            return null;
+        }
+
+        $displayCents = $deposit ? (int) $deposit->amount_cents : $amountDueCents;
+
+        return [
+            'amount'              => number_format($displayCents / 100, 2),
+            // null = unpaid; otherwise held | disbursed | forfeited | refunded.
+            'status'             => $deposit?->status,
+            'window_open'        => $application->bookingWindowOpen(),
+            'deadline'           => $application->booking_fee_deadline?->toIso8601String(),
+            // True only while the applicant can still pay to claim the spot.
+            'can_pay'            => $application->status === 'approved'
+                && $application->bookingWindowOpen()
+                && $deposit === null,
+            'pay_url'            => route('apply.status.booking-fee', $application->id),
+            // Set once the fee is held and the spot is won — drives the 7-day clock.
+            'lease_status'       => $lease?->status,
+            'completion_deadline' => $lease?->completion_deadline?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Start the hosted Checkout an approved applicant pays to claim the spot. The fee
+     * is HELD on the platform; nothing is written locally (the applicant runs as
+     * ah_runtime, which cannot write booking_deposits — the webhook / success-return
+     * authors the row under ah_system).
+     */
+    public function payBookingFee(string $applicationId, Request $request, BookingDepositService $bookingDeposits): \Symfony\Component\HttpFoundation\Response
+    {
+        $userId = $request->session()->get('auth.user_id');
+
+        $application = LeaseApplication::where('id', $applicationId)
+            ->where('applicant_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $cancelUrl  = route('apply.status', $applicationId) . '?booking=cancel';
+        $successUrl = route('apply.status.booking-fee.return', $applicationId) . '?session_id={CHECKOUT_SESSION_ID}';
+
+        $payer = User::on('identity')->findOrFail($userId);
+
+        try {
+            $session = $bookingDeposits->createCheckoutSession($application, $payer, $successUrl, $cancelUrl);
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['booking_fee' => $e->getMessage()]);
+        }
+
+        return Inertia::location($session->url);
+    }
+
+    /**
+     * Stripe booking-fee success return. Reconciles the held row from the completed
+     * Checkout Session up front — driving the win/lose outcome — so the applicant sees
+     * the result without waiting on the webhook (which stays the backstop). Runs under
+     * `db.system` because booking_deposits is system-authored; recordPaidFromCheckout
+     * is idempotent on the captured PaymentIntent, so racing the webhook is harmless.
+     */
+    public function bookingFeeReturn(string $applicationId, Request $request, BookingDepositService $bookingDeposits, StripeService $stripe): RedirectResponse
+    {
+        $sessionId = (string) $request->query('session_id', '');
+
+        if ($sessionId !== '') {
+            rescue(function () use ($stripe, $bookingDeposits, $sessionId, $applicationId) {
+                $session = $stripe->retrieveCheckoutSession($sessionId)->toArray();
+
+                // Only reconcile when the session is this application's booking fee, so
+                // a mismatched id can't author a row through the wrong application URL.
+                if (($session['metadata']['application_id'] ?? null) === $applicationId) {
+                    $bookingDeposits->recordPaidFromCheckout($session);
+                }
+            });
+        }
+
+        return redirect()->route('apply.status', ['application' => $applicationId, 'booking' => 'paid']);
     }
 
     public function sendMessage(string $applicationId, Request $request): RedirectResponse

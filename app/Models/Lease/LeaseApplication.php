@@ -29,6 +29,8 @@ class LeaseApplication extends BaseModelWithSoftDeletes
         'reviewed_by_user_id',
         'reviewed_at',
         'rejection_reason',
+        'booking_fee_deadline',
+        'closed_reason',
         // Snapshot fields — populated at submit time; survive listing archival
         'property_id_snapshot',
         'property_title_snapshot',
@@ -44,6 +46,7 @@ class LeaseApplication extends BaseModelWithSoftDeletes
             'proposed_start'          => 'date',
             'proposed_end'            => 'date',
             'reviewed_at'             => 'datetime',
+            'booking_fee_deadline'    => 'datetime',
             'desired_hunters'         => 'integer',
             'listing_season_start_snap' => 'date',
             'listing_season_end_snap'   => 'date',
@@ -91,5 +94,17 @@ class LeaseApplication extends BaseModelWithSoftDeletes
     public function isApproved(): bool
     {
         return $this->status === 'approved';
+    }
+
+    /**
+     * Whether this application is approved and still inside its 24-hour booking-fee
+     * window — i.e. the applicant may still pay the (held) booking fee to claim the
+     * spot. False once the deadline lapses or the application leaves 'approved'.
+     */
+    public function bookingWindowOpen(): bool
+    {
+        return $this->status === 'approved'
+            && $this->booking_fee_deadline !== null
+            && $this->booking_fee_deadline->isFuture();
     }
 }
