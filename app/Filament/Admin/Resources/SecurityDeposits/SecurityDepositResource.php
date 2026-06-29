@@ -111,6 +111,24 @@ class SecurityDepositResource extends Resource
         };
     }
 
+    public static function releaseFeeLabel(?string $state): ?string
+    {
+        return match ($state) {
+            'collected' => 'Collected from landowner',
+            'deferred'  => 'Deferred — owed, not yet collected',
+            default     => null,
+        };
+    }
+
+    public static function releaseFeeColor(?string $state): string
+    {
+        return match ($state) {
+            'collected' => 'success',
+            'deferred'  => 'warning',
+            default     => 'gray',
+        };
+    }
+
     /** Render a raw cross-DB UUID as small muted mono helper text under a name. */
     public static function rawIdHint(?string $id): ?HtmlString
     {
@@ -233,6 +251,33 @@ class SecurityDepositResource extends Resource
                     TextEntry::make('amount_cents')->label('Amount')->money('USD', divideBy: 100),
                     TextEntry::make('refunded_amount_cents')->label('Refunded')->money('USD', divideBy: 100),
                     TextEntry::make('forfeited_amount_cents')->label('Forfeited')->money('USD', divideBy: 100),
+                ]),
+
+            // Present once a release has recorded a landowner-borne processing fee.
+            // 'Deferred' means the platform couldn't debit the landowner's Connect
+            // balance at release (no chargeable account / insufficient funds), so the
+            // fee is owed and uncollected — this is the surface that flags it.
+            Section::make('Release Processing Fee')
+                ->columns(3)
+                ->visible(fn (SecurityDeposit $record): bool => $record->release_fee_status !== null)
+                ->schema([
+                    TextEntry::make('release_fee_cents')
+                        ->label('Fee')
+                        ->money('USD', divideBy: 100)
+                        ->placeholder('—'),
+                    TextEntry::make('release_fee_status')
+                        ->label('Collection')
+                        ->badge()
+                        ->color(fn (?string $state): string => self::releaseFeeColor($state))
+                        ->formatStateUsing(fn (?string $state): ?string => self::releaseFeeLabel($state))
+                        ->placeholder('—'),
+                    TextEntry::make('release_fee_note')
+                        ->hiddenLabel()
+                        ->state(fn (SecurityDeposit $record): ?string => $record->release_fee_status === 'deferred'
+                            ? 'Recover this on the landowner\'s next payout, or charge it manually.'
+                            : null)
+                        ->placeholder('Debited from the landowner\'s Connect balance.')
+                        ->columnSpanFull(),
                 ]),
 
             // Only present once a forfeiture has been recorded. The hunter's Trust

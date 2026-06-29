@@ -43,6 +43,9 @@ class SecurityDeposit extends BaseModel
         'coverage_status',
         'stripe_payment_intent_id',
         'stripe_refund_id',
+        'release_fee_cents',
+        'release_fee_status',
+        'release_fee_transfer_id',
         'held_at',
         'released_at',
     ];
@@ -51,6 +54,7 @@ class SecurityDeposit extends BaseModel
     protected $hidden = [
         'stripe_payment_intent_id',
         'stripe_refund_id',
+        'release_fee_transfer_id',
     ];
 
     protected function casts(): array
@@ -59,6 +63,7 @@ class SecurityDeposit extends BaseModel
             'amount_cents'           => 'integer',
             'refunded_amount_cents'  => 'integer',
             'forfeited_amount_cents' => 'integer',
+            'release_fee_cents'      => 'integer',
             'held_at'                  => 'datetime',
             'released_at'              => 'datetime',
             'forfeit_resolved_at'      => 'datetime',

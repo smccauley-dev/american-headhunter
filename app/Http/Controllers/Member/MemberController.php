@@ -15,6 +15,7 @@ use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Billing\BookingDepositService;
+use App\Services\Billing\FeeService;
 use App\Services\Billing\LeaseFinanceSummaryService;
 use App\Services\Billing\LeasePaymentService;
 use App\Services\Billing\PayoutService;
@@ -49,7 +50,7 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, LeasePaymentService $leasePaymentService, LeaseFinanceSummaryService $leaseFinanceService, PayoutService $payoutService, DisputeService $disputeService, DamageClaimService $damageClaimService, IncidentService $incidentService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, LeasePaymentService $leasePaymentService, LeaseFinanceSummaryService $leaseFinanceService, PayoutService $payoutService, DisputeService $disputeService, DamageClaimService $damageClaimService, IncidentService $incidentService, FeeService $feeService): Response
     {
         $userId = session('auth.user_id');
 
@@ -233,6 +234,68 @@ class MemberController extends Controller
             }
         }
 
+        // Security deposit (lessor-facing management). The landowner can return the
+        // held deposit to the hunter or file a forfeiture claim against it. A claim is
+        // the hunter-fault path (FAULT_LESSEE): the money stays held and the hunter can
+        // contest it — nothing settles immediately. Both actions write the
+        // system-authored row via the db.system release/forfeit routes, never here.
+        $landownerDeposit = null;
+        if ($isLessor) {
+            $existingDeposit = rescue(fn () => $depositService->forLease($lease), null);
+            if ($existingDeposit) {
+                $hasClaim  = $existingDeposit->forfeit_fault !== null;
+                $isHeld    = $existingDeposit->status === 'held';
+                $remaining = $existingDeposit->remainingCents();
+
+                $claim = null;
+                if ($hasClaim) {
+                    $latestDispute = rescue(fn () => $disputeService->latestForDeposit($existingDeposit->id), null);
+                    $claim = [
+                        'amount'           => number_format((int) $existingDeposit->forfeited_amount_cents / 100, 2),
+                        'reason'           => $existingDeposit->forfeit_reason,
+                        'trust_status'     => $existingDeposit->forfeit_trust_status,
+                        'contest_deadline' => $existingDeposit->forfeit_contest_deadline?->format('F j, Y'),
+                        'dispute_status'   => $latestDispute && ! in_array($latestDispute->status, ['resolved'], true)
+                            ? $latestDispute->status
+                            : null,
+                    ];
+                }
+
+                // The card-processing cost Stripe keeps on a refund is non-recoverable,
+                // and the landowner bears it (DB-driven, fee_schedules 'security_deposit'
+                // payer=landowner — never hardcoded). Shown on the release control so the
+                // landowner sees the cost before refunding. Computed on the original
+                // captured amount (what Stripe charged its fee against).
+                $releaseFee = null;
+                if ($isHeld && ! $hasClaim) {
+                    $quote = rescue(fn () => $feeService->processingFee('security_deposit', $property?->state_code, (int) $existingDeposit->amount_cents), null);
+                    if ($quote && $quote['payer'] === 'landowner' && $quote['fee_cents'] > 0) {
+                        $releaseFee = [
+                            'amount' => number_format($quote['fee_cents'] / 100, 2),
+                            'pct'    => (float) $quote['pct'],
+                            'flat'   => number_format($quote['flat_cents'] / 100, 2),
+                        ];
+                    }
+                }
+
+                $landownerDeposit = [
+                    'status'           => $existingDeposit->status,
+                    'amount'           => number_format((int) $existingDeposit->amount_cents / 100, 2),
+                    'remaining'        => number_format($remaining / 100, 2),
+                    'refunded'         => number_format((int) $existingDeposit->refunded_amount_cents / 100, 2),
+                    'forfeited'        => number_format((int) $existingDeposit->forfeited_amount_cents / 100, 2),
+                    // One forfeiture per deposit; a pending claim blocks release.
+                    'can_release'      => $isHeld && ! $hasClaim,
+                    'can_forfeit'      => $isHeld && ! $hasClaim,
+                    'release_fee'      => $releaseFee,
+                    'claim'            => $claim,
+                    'lease_terminated' => in_array($leaseRecord->status, ['terminated', 'expired', 'cancelled'], true),
+                    'release_url'      => route('member.leases.deposit.release', $lease),
+                    'forfeit_url'      => route('member.leases.deposit.forfeit', $lease),
+                ];
+            }
+        }
+
         // Both lessee money flows (booking deposit + lease balance) now collect via a
         // Stripe Connect destination charge to the landowner, so both are gated on the
         // landowner being able to take charges. Resolve that once.
@@ -409,6 +472,7 @@ class MemberController extends Controller
             ] : null,
             'access_info'    => $accessInfo,
             'deposit'        => $deposit,
+            'landowner_deposit' => $landownerDeposit,
             'booking_deposit' => $bookingDeposit,
             'lease_payment'  => $leasePayment,
             'landowner_finance' => $landownerFinance,
@@ -746,6 +810,81 @@ class MemberController extends Controller
         }
 
         return back()->with('success', 'Settled via insurance — no fault recorded against either party.');
+    }
+
+    /**
+     * Release the held security deposit back to the hunter (lessor only). Refunds the
+     * full remaining balance via Stripe and marks it released. Runs under db.system
+     * because security_deposits is system-authored — ah_runtime cannot write it.
+     */
+    public function releaseDeposit(string $lease, SecurityDepositService $depositService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessor_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $deposit = $depositService->forLease($lease);
+        if (! $deposit) {
+            return back()->withErrors(['deposit' => 'No security deposit found for this lease.']);
+        }
+
+        // The landowner on this lease must be the deposit's payee. The lease lookup
+        // already proves they're the lessor; this guards a mismatched payee row too.
+        abort_unless($deposit->payee_user_id === $userId, 403);
+
+        try {
+            $depositService->release($deposit->id, $userId, 'Released to hunter by landowner');
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['deposit' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Security deposit released to the hunter.');
+    }
+
+    /**
+     * File a forfeiture claim against the held security deposit (lessor only). This is
+     * the hunter-fault path (FAULT_LESSEE): it records a CLAIM only — the money stays
+     * held and the hunter can contest it — nothing settles immediately. Runs under
+     * db.system because security_deposits is system-authored.
+     */
+    public function forfeitDeposit(Request $request, string $lease, SecurityDepositService $depositService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessor_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $request->validate([
+            'amount'   => 'required|numeric|min:0.01|max:1000000',
+            'reason'   => 'required|string|max:2000',
+            'category' => 'nullable|string|max:60',
+        ]);
+
+        $deposit = $depositService->forLease($lease);
+        if (! $deposit) {
+            return back()->withErrors(['forfeit' => 'No security deposit found for this lease.']);
+        }
+        abort_unless($deposit->payee_user_id === $userId, 403);
+
+        try {
+            $depositService->forfeit(
+                $deposit->id,
+                (int) round((float) $request->input('amount') * 100),
+                $request->input('reason'),
+                $userId,
+                SecurityDepositService::FAULT_LESSEE,
+                $request->input('category'),
+            );
+        } catch (\RuntimeException | \InvalidArgumentException $e) {
+            return back()->withErrors(['forfeit' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Forfeiture claim filed. The hunter will be notified and may contest it.');
     }
 
     /**

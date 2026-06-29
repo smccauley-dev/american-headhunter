@@ -128,6 +128,28 @@ interface Props {
     contest_url: string
     opt_out_url: string
   } | null
+  landowner_deposit: {
+    status: string
+    amount: string
+    remaining: string
+    refunded: string
+    forfeited: string
+    can_release: boolean
+    can_forfeit: boolean
+    // Landowner-borne, non-recoverable Stripe processing cost on a refund
+    // (fee_schedules 'security_deposit', payer=landowner). Null when no rule applies.
+    release_fee: { amount: string; pct: number; flat: string } | null
+    claim: {
+      amount: string
+      reason: string | null
+      trust_status: string | null
+      contest_deadline: string | null
+      dispute_status: string | null
+    } | null
+    lease_terminated: boolean
+    release_url: string
+    forfeit_url: string
+  } | null
   damage_claims: {
     claims: {
       claim_type: string
@@ -723,6 +745,142 @@ function DamageClaimsSection({ data }: { data: NonNullable<Props['damage_claims'
       )}
       <FileDamageClaimForm url={data.file_url} />
     </Section>
+  )
+}
+
+// ── Security deposit management (lessor) ─────────────────────────────────────
+function LandownerDepositSection({ data }: { data: NonNullable<Props['landowner_deposit']> }) {
+  const [releasing, setReleasing] = useState(false)
+  const showNudge = data.lease_terminated && data.status === 'held' && !data.claim
+
+  return (
+    <Section title="Security Deposit">
+      {showNudge && (
+        <div style={{ background: '#fbf1e9', border: `1px solid ${BRASS}`, padding: '12px 14px', marginBottom: '16px' }}>
+          <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: '#7a5a1e' }}>
+            This lease has ended, but ${data.remaining} is still held. Release it to the hunter, or file a forfeiture claim if there's damage owed.
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.1em', color: TAN, marginBottom: '5px' }}>
+            {data.status === 'held' ? 'Held' : 'Deposit'}
+          </div>
+          <div style={{ fontFamily: 'var(--body)', fontSize: '22px', fontWeight: 700, color: INK }}>${data.amount}</div>
+          {data.status === 'held' && !data.claim && (
+            <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginTop: '4px' }}>
+              ${data.remaining} held as refundable collateral.
+            </div>
+          )}
+          {data.can_release && data.release_fee && (
+            <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: BRASS, marginTop: '6px' }}>
+              On release, Stripe's processing fee (~${data.release_fee.amount} · {data.release_fee.pct}% + ${data.release_fee.flat}) is non-refundable and is the landowner's cost.
+            </div>
+          )}
+          {data.status === 'released' && (
+            <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginTop: '4px' }}>
+              Released — ${data.refunded} refunded to the hunter.
+            </div>
+          )}
+          {data.status === 'forfeited' && (
+            <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: '#9a3412', marginTop: '4px' }}>
+              ${data.forfeited} forfeited{Number(data.refunded) > 0 ? ` · $${data.refunded} refunded` : ''}.
+            </div>
+          )}
+        </div>
+
+        {data.can_release && (
+          <button
+            type="button"
+            disabled={releasing}
+            onClick={() => {
+              if (!confirm(
+                `Release $${data.remaining} back to the hunter? This refunds the deposit in full and can't be undone.` +
+                (data.release_fee ? `\n\nStripe keeps ~$${data.release_fee.amount} (${data.release_fee.pct}% + $${data.release_fee.flat}) in non-refundable processing — the landowner's cost.` : '')
+              )) return
+              setReleasing(true)
+              router.post(data.release_url, {}, { preserveScroll: true, onFinish: () => setReleasing(false) })
+            }}
+            style={{ ...btnAccent, whiteSpace: 'nowrap', opacity: releasing ? 0.6 : 1 }}
+          >
+            {releasing ? 'Releasing…' : 'Release to Hunter'}
+          </button>
+        )}
+      </div>
+
+      {data.claim && (
+        <div style={{ marginTop: '16px', borderTop: `1px solid ${DIVIDER}`, paddingTop: '16px' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#9a3412', marginBottom: '6px', fontWeight: 600 }}>
+            Forfeiture Claim Filed — ${data.claim.amount}
+          </div>
+          {data.claim.reason && <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: INK, marginBottom: '6px' }}>{data.claim.reason}</div>}
+          <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: data.claim.dispute_status ? BRASS : OLIVE }}>
+            {data.claim.dispute_status
+              ? 'The hunter contested this claim — our team is reviewing the evidence.'
+              : data.claim.trust_status === 'pending'
+                ? `Awaiting the hunter's response${data.claim.contest_deadline ? ` until ${data.claim.contest_deadline}` : ''}. The money stays held until it resolves.`
+                : 'This claim has been resolved.'}
+          </div>
+        </div>
+      )}
+
+      {data.can_forfeit && <FileForfeitureClaimForm url={data.forfeit_url} maxAmount={data.remaining} />}
+    </Section>
+  )
+}
+
+function FileForfeitureClaimForm({ url, maxAmount }: { url: string; maxAmount: string }) {
+  const [open, setOpen] = useState(false)
+  const { data, setData, post, processing, errors, reset } = useForm<{ amount: string; reason: string; category: string }>(
+    { amount: maxAmount, reason: '', category: '' },
+  )
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    post(url, { preserveScroll: true, onSuccess: () => { reset(); setOpen(false) } })
+  }
+
+  const labelStyle: React.CSSProperties = { display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: OLIVE, marginBottom: '5px' }
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: `1px solid ${FIELD_BORDER}`, fontFamily: 'var(--body)', fontSize: '15px', background: '#fff', boxSizing: 'border-box' }
+
+  if (!open) {
+    return <div style={{ marginTop: '16px' }}><button onClick={() => setOpen(true)} style={btnDark}>+ File Forfeiture Claim</button></div>
+  }
+
+  return (
+    <form onSubmit={submit} style={{ background: '#fff', border: `1px solid ${FIELD_BORDER}`, padding: '18px', marginTop: '16px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: TAN, marginBottom: '6px', fontWeight: 600 }}>
+        File a Forfeiture Claim
+      </div>
+      <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginBottom: '14px' }}>
+        This files a claim against the hunter's deposit — the money stays held and the hunter can contest it with evidence. Nothing is paid out until it's resolved.
+      </div>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 140px' }}>
+          <label style={labelStyle}>Amount (USD) *</label>
+          <input type="number" step="0.01" min="0.01" max={maxAmount} value={data.amount} onChange={e => setData('amount', e.target.value)} required style={inputStyle} />
+          {errors.amount && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.amount}</div>}
+          <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: TAN, marginTop: '4px' }}>Up to ${maxAmount} held.</div>
+        </div>
+        <div style={{ flex: '1 1 160px' }}>
+          <label style={labelStyle}>Category (optional)</label>
+          <input value={data.category} onChange={e => setData('category', e.target.value)} maxLength={60} placeholder="e.g. cleaning, damage" style={inputStyle} />
+        </div>
+      </div>
+      <div style={{ marginBottom: '16px' }}>
+        <label style={labelStyle}>Reason *</label>
+        <textarea value={data.reason} onChange={e => setData('reason', e.target.value)} rows={3} maxLength={2000} required style={{ ...inputStyle, resize: 'vertical' }} />
+        {errors.reason && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.reason}</div>}
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button type="submit" disabled={processing} style={{ ...btnAccent, opacity: processing ? 0.7 : 1, cursor: processing ? 'not-allowed' : 'pointer' }}>
+          {processing ? 'Filing…' : 'File Claim'}
+        </button>
+        <button type="button" onClick={() => { reset(); setOpen(false) }} style={btnGhost}>Cancel</button>
+      </div>
+    </form>
   )
 }
 
@@ -1558,7 +1716,7 @@ function CommunicationsSection({ data, isLessor }: { data: Communications; isLes
   )
 }
 
-export default function Lease({ lease, property, access_info, deposit, booking_deposit, lease_payment, landowner_finance, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
+export default function Lease({ lease, property, access_info, deposit, landowner_deposit, booking_deposit, lease_payment, landowner_finance, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -1873,6 +2031,9 @@ export default function Lease({ lease, property, access_info, deposit, booking_d
               <LandownerFinance data={landowner_finance} />
             </Section>
           )}
+
+          {/* Security Deposit — lessor manages the held deposit: release or file a claim */}
+          {is_lessor && landowner_deposit && <LandownerDepositSection data={landowner_deposit} />}
 
           {/* Signing Status — shown when pending or not all signed */}
           {signers.length > 0 && (lease.status === 'pending_signatures' || !allSigned) && (
