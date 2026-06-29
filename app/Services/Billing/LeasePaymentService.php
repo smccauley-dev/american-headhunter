@@ -233,7 +233,30 @@ class LeasePaymentService extends BaseService
 
         $this->invalidate("lease_detail:{$leaseId}");
 
+        // A signed lease is held in 'pending_payment' until its balance is settled;
+        // this payment may be the one that clears it. Promote to 'active' so field
+        // access (check-in, gate QR, stand map — all gate on 'active') unlocks.
+        $this->activateIfFullyPaid($leaseId);
+
         return $payment;
+    }
+
+    /**
+     * Promote a signed-but-unpaid lease to active once its balance reaches zero.
+     * No-op unless the lease is currently 'pending_payment' and nothing is owed.
+     * Best-effort — an activation hiccup must never fail the payment recording.
+     */
+    private function activateIfFullyPaid(string $leaseId): void
+    {
+        $lease = Lease::find($leaseId);
+        if (! $lease || $lease->status !== 'pending_payment') {
+            return;
+        }
+        if ($this->balanceDueCents($lease) > 0) {
+            return;
+        }
+
+        rescue(fn () => app(\App\Services\Lease\LeaseService::class)->activate($leaseId));
     }
 
     /**

@@ -69,7 +69,7 @@ class LeaseService extends BaseService
      */
     public function getLeaseSummariesForLessee(string $userId): array
     {
-        $leases = Lease::whereIn('status', ['active', 'pending_signatures'])
+        $leases = Lease::whereIn('status', ['active', 'pending_signatures', 'pending_payment'])
             ->where('lessee_user_id', $userId)
             ->whereNull('deleted_at')
             ->orderByDesc('start_date')
@@ -104,6 +104,7 @@ class LeaseService extends BaseService
                 'id'                 => $lease->id,
                 'status'             => $lease->status,
                 'needs_my_signature' => $needsMySignature,
+                'needs_payment'      => $lease->status === 'pending_payment',
                 'start_date'        => $lease->start_date?->format('M j, Y'),
                 'end_date'          => $endDate?->format('M j, Y'),
                 'total_price'       => number_format((float) $lease->total_price, 2),
@@ -211,6 +212,62 @@ class LeaseService extends BaseService
         );
 
         return $lease;
+    }
+
+    /**
+     * Entry point when all signatures are collected. A signed lease is legally
+     * executed, but "usable in the field" is a separate state: if a balance is
+     * still owed the lease is held in `pending_payment` (field access — check-in,
+     * gate QR, stand map — gates on `active`, so it stays locked) and the
+     * lease-payment webhook activates it once the balance reaches zero. When
+     * nothing is owed it activates immediately. If the balance can't be computed
+     * we activate rather than strand a signed lease over a billing read.
+     */
+    public function finalizeSignatures(string $leaseId, ?string $actorUserId = null): void
+    {
+        $lease = Lease::findOrFail($leaseId);
+
+        $balanceDue = rescue(
+            fn () => app(\App\Services\Billing\LeasePaymentService::class)->balanceDueCents($lease),
+            0,
+        );
+
+        if ($balanceDue > 0) {
+            $this->markPendingPayment($leaseId, $actorUserId);
+            return;
+        }
+
+        $this->activate($leaseId, $actorUserId);
+    }
+
+    /**
+     * Hold a fully-signed lease awaiting its balance. No field side effects (QR,
+     * calendar booking, listing promotion) run here — those fire in activate()
+     * once the balance is paid.
+     */
+    private function markPendingPayment(string $leaseId, ?string $actorUserId = null): void
+    {
+        $lease = Lease::findOrFail($leaseId);
+        $lease->update(['status' => 'pending_payment']);
+
+        // Same RLS no-op guard as activate(): fail loudly rather than silently
+        // leaving the lease pending_signatures under a role without UPDATE rights.
+        if ($lease->fresh()?->status !== 'pending_payment') {
+            throw new \RuntimeException(
+                "Lease {$leaseId} could not be set pending_payment — the connection role lacks UPDATE on leases."
+            );
+        }
+
+        $this->invalidate("lease_detail:{$leaseId}");
+
+        $this->auditService->log(
+            eventType:      'lease.pending_payment',
+            sourceDatabase: 'ah_lease',
+            tableName:      'leases',
+            recordId:       $leaseId,
+            userId:         $actorUserId,
+            actionSummary:  'Lease fully signed; awaiting balance payment before activation',
+        );
     }
 
     public function activate(string $leaseId, ?string $actorUserId = null): void

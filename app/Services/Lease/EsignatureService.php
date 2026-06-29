@@ -411,10 +411,13 @@ class EsignatureService extends BaseService
                 'occurred_at' => now(),
             ]);
 
-            // Activate the lease record — LeaseService::activate() writes the
-            // canonical 'lease.activated' audit event (no actor: automatic on the
-            // final signature; the SignatureEvent rows record who signed).
-            $this->leaseService->activate($request->lease_id);
+            // Finalize the lease now that all signatures are in. This activates
+            // immediately when nothing is owed, or holds the lease in
+            // pending_payment until the balance is paid (the lease-payment webhook
+            // activates it then). Either path writes the canonical audit event (no
+            // actor: automatic on the final signature; the SignatureEvent rows
+            // record who signed).
+            $this->leaseService->finalizeSignatures($request->lease_id);
 
             // Approve the primary lessee in lease_hunters
             LeaseHunter::where('lease_id', $request->lease_id)

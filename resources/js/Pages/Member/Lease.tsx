@@ -226,6 +226,7 @@ interface Props {
 const STATUS_LABEL: Record<string, string> = {
   active: 'Active',
   pending_signatures: 'Awaiting Signatures',
+  pending_payment: 'Payment Pending',
   expired: 'Expired',
   terminated: 'Terminated',
   cancelled: 'Cancelled',
@@ -234,6 +235,7 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUS_COLOR: Record<string, string> = {
   active: '#4a7c59',
   pending_signatures: '#b8934a',
+  pending_payment: '#C84C21',
   expired: '#a89874',
   terminated: '#a89874',
   cancelled: '#a89874',
@@ -1975,6 +1977,11 @@ export default function Lease({ lease, property, access_info, deposit, landowner
                   {lease_payment.balance_due && !lease_payment.landowner_charges_enabled && (
                     <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: TAN, marginTop: '4px', fontStyle: 'italic' }}>
                       Awaiting landowner payout setup — you'll be able to pay once it's complete.
+                    </div>
+                  )}
+                  {lease.status === 'pending_payment' && (
+                    <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: ACCENT, marginTop: '8px', fontWeight: 700 }}>
+                      Your lease is signed but not yet active. Check-in, the gate code, and the stand map unlock once this balance is paid.
                     </div>
                   )}
                   {!lease_payment.balance_due && (

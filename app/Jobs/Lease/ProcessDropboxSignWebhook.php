@@ -131,9 +131,10 @@ class ProcessDropboxSignWebhook implements ShouldQueue
             'occurred_at' => now(),
         ]);
 
-        // Activate via LeaseService — it owns the canonical 'lease.activated'
-        // audit event. No actor: this is a provider-driven (system) activation.
-        app(\App\Services\Lease\LeaseService::class)->activate($esigRequest->lease_id);
+        // Finalize via LeaseService — it owns the canonical audit event and either
+        // activates now or holds the lease in pending_payment until the balance is
+        // paid. No actor: this is a provider-driven (system) finalization.
+        app(\App\Services\Lease\LeaseService::class)->finalizeSignatures($esigRequest->lease_id);
 
         \App\Models\Lease\LeaseHunter::where('lease_id', $esigRequest->lease_id)
             ->where('role', 'primary')
