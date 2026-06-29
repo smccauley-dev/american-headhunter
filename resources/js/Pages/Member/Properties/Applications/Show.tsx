@@ -38,7 +38,7 @@ interface Props {
   documents: LeaseDoc[]
   messages: Message[]
   history: History[]
-  defaults: { start_date: string | null; end_date: string | null }
+  defaults: { start_date: string | null; end_date: string | null; total_price: number | null }
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -306,11 +306,11 @@ export default function ApplicationShow({ property, application, listing, applic
   )
 }
 
-function ApproveModal({ base, defaults, onClose }: { base: string; defaults: { start_date: string | null; end_date: string | null }; onClose: () => void }) {
+function ApproveModal({ base, defaults, onClose }: { base: string; defaults: { start_date: string | null; end_date: string | null; total_price: number | null }; onClose: () => void }) {
   const { data, setData, post, processing, errors } = useForm({
     start_date: defaults.start_date ?? '',
     end_date: defaults.end_date ?? '',
-    total_price: '',
+    total_price: defaults.total_price != null ? String(defaults.total_price) : '',
     sign_as_lessor: true,
     notify_applicant: true,
   })

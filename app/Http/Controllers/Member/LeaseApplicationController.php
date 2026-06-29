@@ -231,6 +231,12 @@ class LeaseApplicationController extends Controller
             $applicant = User::on('identity')->with('profile')->find($app->applicant_user_id);
             $senderNames = $this->resolveApplicantNames($messages->pluck('sender_user_id'));
 
+            // Asking price from the listing, to pre-fill the approve modal's
+            // total — flat price_total, else price_per_hunter × desired hunters.
+            // Null (blank field) when the listing is archived or unpriced; the
+            // landowner can always override the negotiated figure.
+            $askingTotalPrice = $this->listingAskingPrice($app);
+
             $lease   = $app->lease()->first();
             $signers = null;
             $signingUrl = null;
@@ -310,9 +316,36 @@ class LeaseApplicationController extends Controller
                 'defaults' => [
                     'start_date'  => ($app->proposed_start ?? $app->listing_season_start_snap)?->toDateString(),
                     'end_date'    => ($app->proposed_end ?? $app->listing_season_end_snap)?->toDateString(),
+                    'total_price' => $askingTotalPrice,
                 ],
             ];
         });
+    }
+
+    /**
+     * The listing's asking price for this application, in dollars — a flat
+     * `price_total`, otherwise `price_per_hunter` × the desired hunter count.
+     * Returns null when the listing is archived/unresolvable, carries no usable
+     * price, or per-hunter pricing has no hunter count to multiply. Used only to
+     * pre-fill the approve modal; the landowner sets the final negotiated figure.
+     */
+    private function listingAskingPrice(LeaseApplication $app): ?float
+    {
+        $listing = $this->properties->findListing($app->listing_id);
+        if (! $listing) {
+            return null;
+        }
+
+        if ($listing->price_total !== null && (float) $listing->price_total > 0) {
+            return (float) $listing->price_total;
+        }
+
+        $hunters = (int) $app->desired_hunters;
+        if ($listing->price_per_hunter !== null && (float) $listing->price_per_hunter > 0 && $hunters > 0) {
+            return (float) $listing->price_per_hunter * $hunters;
+        }
+
+        return null;
     }
 
     /**
