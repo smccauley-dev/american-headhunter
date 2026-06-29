@@ -73,6 +73,59 @@ class SecurityDepositService extends BaseService
             ->first();
     }
 
+    /**
+     * Held-deposit summaries for every lease where this user is the lessor (payee).
+     * Surfaces deposits that still need action on the landowner profile — the
+     * actual release/forfeit controls live on each lease's detail page, so every
+     * row carries the link to get there. Names are resolved in the service layer
+     * (no cross-DB joins). Returns [] when nothing is held.
+     *
+     * @return list<array{lease_id:string,property_name:string,amount:string,lease_status:string,has_claim:bool,url:string}>
+     */
+    public function heldSummariesForLandowner(string $userId): array
+    {
+        $deposits = SecurityDeposit::where('payee_user_id', $userId)
+            ->where('status', 'held')
+            ->latest('created_at')
+            ->get();
+
+        if ($deposits->isEmpty()) {
+            return [];
+        }
+
+        $leases = Lease::whereIn('id', $deposits->pluck('lease_id')->all())
+            ->whereNull('deleted_at')
+            ->get()
+            ->keyBy('id');
+
+        $propertyNames = [];
+        foreach ($leases->pluck('property_id')->filter()->unique() as $propertyId) {
+            $property = rescue(fn () => $this->properties->find($propertyId), null);
+            if ($property) {
+                $propertyNames[$propertyId] = $property->title;
+            }
+        }
+
+        $rows = [];
+        foreach ($deposits as $deposit) {
+            $lease = $leases->get($deposit->lease_id);
+            if (! $lease) {
+                continue;
+            }
+
+            $rows[] = [
+                'lease_id'      => $lease->id,
+                'property_name' => $propertyNames[$lease->property_id] ?? 'Property',
+                'amount'        => number_format($deposit->remainingCents() / 100, 2),
+                'lease_status'  => $lease->status,
+                'has_claim'     => $deposit->forfeit_fault !== null,
+                'url'           => route('member.leases.show', $lease->id),
+            ];
+        }
+
+        return $rows;
+    }
+
     // ── Member-initiated capture (runtime — no local write) ──────────────────────
 
     /**

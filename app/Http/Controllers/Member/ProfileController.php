@@ -16,6 +16,7 @@ use App\Services\Documents\DocumentService;
 use App\Services\Identity\ProfilePhotoService;
 use App\Support\PhotoTagVocabulary;
 use App\Services\Billing\PayoutService;
+use App\Services\Billing\SecurityDepositService;
 use App\Services\Billing\StripeService;
 use App\Services\Lease\LeaseService;
 use App\Services\Platform\EntitlementService;
@@ -38,7 +39,7 @@ class ProfileController extends Controller
         private readonly ProfilePhotoService $photos,
     ) {}
 
-    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, EntitlementService $entitlements, PayoutService $payouts, StripeService $stripe, string $initialTab = 'about'): Response
+    public function show(LeaseService $leaseService, ProfileTemplateService $templates, PropertyService $properties, EntitlementService $entitlements, PayoutService $payouts, StripeService $stripe, SecurityDepositService $deposits, string $initialTab = 'about'): Response
     {
         $userId  = session('auth.user_id');
         $user    = User::findOrFail($userId);
@@ -119,8 +120,9 @@ class ProfileController extends Controller
         ];
 
         if ($isLandowner) {
-            $props['properties'] = $properties->getManagedPropertySummaries($userId);
-            $props['payouts']    = $payouts->onboardingState($user);
+            $props['properties']    = $properties->getManagedPropertySummaries($userId);
+            $props['payouts']       = $payouts->onboardingState($user);
+            $props['held_deposits'] = $deposits->heldSummariesForLandowner($userId);
         }
 
         return Inertia::render('Member/Profile/Hunter', $props);

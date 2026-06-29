@@ -515,6 +515,20 @@ interface Props {
   payouts?: PayoutState
   // Set after returning from Connect onboarding: 'complete' | 'pending' | 'error'.
   payouts_status?: string | null
+  // Held security deposits across the landowner's leases (landowner accounts only).
+  // The release/forfeit controls live on each lease's detail page.
+  held_deposits?: HeldDeposit[]
+}
+
+// Mirror of SecurityDepositService::heldSummariesForLandowner — one held deposit
+// needing action, linking to the lease where the controls live.
+interface HeldDeposit {
+  lease_id: string
+  property_name: string
+  amount: string
+  lease_status: string
+  has_claim: boolean
+  url: string
 }
 
 // Mirror of PayoutService::onboardingState — drives the My Properties payout card.
@@ -779,7 +793,7 @@ function PillToggle({ options, selected, onChange }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HunterProfile({ user, profile, photos, photo_tags, activity, security, leases, membership, invoices, checkout, billing, initial_tab, template, properties, payouts, payouts_status }: Props) {
+export default function HunterProfile({ user, profile, photos, photo_tags, activity, security, leases, membership, invoices, checkout, billing, initial_tab, template, properties, payouts, payouts_status, held_deposits }: Props) {
   // Landowner accounts reuse this profile shell but swap the hunting-specific
   // modules (gear, hunting prefs) for a "My Properties" blade.
   const isLandowner = user.account_type === 'landowner'
@@ -1222,6 +1236,42 @@ export default function HunterProfile({ user, profile, photos, photo_tags, activ
                       </>
                     )}
                   </div>
+
+                  {/* ── Security Deposits (held, needs action) ────────────── */}
+                  {held_deposits && held_deposits.length > 0 && (
+                    <div style={{ marginTop: '18px' }}>
+                      <SideLabel>Security Deposits</SideLabel>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {held_deposits.map(d => (
+                          <a
+                            key={d.lease_id}
+                            href={d.url}
+                            style={{ display: 'block', textDecoration: 'none', border: '1px solid #e5ddd0', background: '#F3EDD8', padding: '8px 9px' }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '6px', marginBottom: '3px' }}>
+                              <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '12px', fontWeight: 500, color: 'var(--ah-ink)', lineHeight: 1.25 }}>
+                                {d.property_name}
+                              </span>
+                              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: 700, color: 'var(--ah-ink)', whiteSpace: 'nowrap' }}>
+                                ${d.amount}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '1px 6px', background: d.has_claim ? '#a8742c' : 'var(--ah-accent)', color: '#fff' }}>
+                                {d.has_claim ? 'Claim filed' : 'Held'}
+                              </span>
+                              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: '#6b7856' }}>
+                                lease {d.lease_status}
+                              </span>
+                              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a89874', marginLeft: 'auto' }}>
+                                Manage →
+                              </span>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
