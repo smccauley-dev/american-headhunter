@@ -1071,6 +1071,26 @@ The `stripe_accounts` table (DB 4) — the landowner ↔ Stripe Connect account 
 
 ---
 
+## SEC-057 — Forfeiture Reversal Left the Landowner Overpaid — No Transfer Reversal / Hunter Refund on Exoneration
+
+| Field | Detail |
+|---|---|
+| **Severity** | Medium (financial integrity) |
+| **Status** | **FIXED (2026-06-29)** — reversal now reverses the Connect transfer + refunds the hunter; regression tests green |
+| **Found** | 2026-06-29 |
+| **File** | `app/Services/Billing/SecurityDepositService.php` (`reverseForfeitFault` / new `clawbackForfeiture`) |
+
+**Description:**
+When a security-deposit forfeiture is upheld (`confirmForfeitFault`), the forfeited amount is disbursed to the landowner via a **separate** Stripe Connect transfer (`PayoutService::disburse` → `StripeService::createTransfer`). If the hunter is later exonerated, `reverseForfeitFault` only restored the hunter's Trust Score and recorded an audit note saying *"money clawback handled manually"* — it moved **no money**. The disbursing transfer was never reversed (landowner kept the net) and the hunter was never refunded. `StripeService::reverseTransfer` existed for exactly this but had **zero callers**.
+
+**Impact:** An exonerated hunter stayed out their full deposit while the landowner kept a payout they were no longer owed; the platform silently absorbed the gap unless an operator caught it and reversed by hand. Money-correctness defect, not an exposure — adjudication-gated (admin-only), so no untrusted trigger.
+
+**Root cause:** Under separate charges & transfers a customer-side refund does not auto-reverse the landowner transfer; the reversal must be issued explicitly. The forfeiture-reversal path was shipped Trust-only and deferred the money unwind to manual reconciliation, which was never built.
+
+**Fix applied (2026-06-29):** `disburseForfeitedAmount` now records the disbursing payout id on the deposit (`security_deposits.forfeit_payout_id`, new column). `reverseForfeitFault` calls a new `clawbackForfeiture()` that (1) reverses the payout's transfer via `StripeService::reverseTransfer` — clawing the net back from the landowner and marking the `Payout` `reversed` (new `reversed_at` column + extended status CHECK) — and (2) refunds the forfeited amount to the hunter from the original captured deposit charge, flipping the deposit to `released`. Both Stripe calls are best-effort, mirroring the disbursement's graceful-deferral pattern: a failure is logged and flagged `manual_reconciliation` in the audit trail but never blocks the exoneration. Migration `2026_06_29_000001_add_forfeiture_clawback_to_billing`. Regression: `tests/Feature/Billing/SecurityDepositServiceTest` — `reverse_claws_back_a_disbursed_forfeiture` (transfer reversed + payout `reversed` + hunter refunded) and `reverse_restores_the_hunters_score_and_refunds_an_undisbursed_forfeiture` (no transfer to reverse, hunter still refunded).
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -1089,6 +1109,7 @@ The `stripe_accounts` table (DB 4) — the landowner ↔ Stripe Connect account 
 | SEC-054 | Env templates default to `APP_DEBUG=true`/`APP_ENV=local` → full debug error page (stack trace, SQL, versions, headers) if used for prod | Low | **OPEN** — warnings added to both env examples (2026-06-25); enforce `APP_DEBUG=false`/`APP_ENV=production` when prod deploy is built | Pre-launch hardening |
 | SEC-056 | RLS context-injection middleware eagerly opens all 14 databases per request → connection-slot exhaustion; the connection that loses the race has its context silently skipped (warning-logged, request continues), so that DB's RLS reads return zero rows — intermittent, load-dependent. Surfaced as a paid security deposit rendering "Pay Deposit" (the held row default-denied). | Medium | **FIXED (2026-06-25)** — lazy injection via `RlsContext` + `ConnectionEstablished` listener (only opens databases a request uses; re-applies on reconnect); fail-loud instead of swallowing; regression tests green (51 passed) | — |
 | SEC-055 | `stripe_accounts` shipped without RLS → any authenticated user could read/forge a landowner's Connect account + `payouts_enabled` flag | High (latent) | **FIXED (2026-06-25)** — RLS enabled, SELECT-only `TO ah_runtime` (own row + staff), no write policy (system-authored); regression test green (6 passed) | — |
+| SEC-057 | Forfeiture reversal left the landowner overpaid — exoneration restored Trust only, never reversed the disbursing Connect transfer or refunded the hunter ("manual reconciliation" that was never built) | Medium | **FIXED (2026-06-29)** — `reverseForfeitFault` now reverses the payout transfer + refunds the hunter (best-effort, manual-recon flagged on Stripe failure); regression tests green | — |
 
 ---
 

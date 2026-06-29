@@ -36,6 +36,7 @@ class SecurityDeposit extends BaseModel
         'forfeit_resolved_by',
         'forfeit_resolved_at',
         'forfeit_contest_deadline',
+        'forfeit_payout_id',
         'insurance_covered_party',
         'insurer_name',
         'policy_number',

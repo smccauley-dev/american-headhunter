@@ -28,9 +28,13 @@ class SecurityDepositServiceTest extends TestCase
 {
     /** @var array<int,string> */ private array $depositIds = [];
     /** @var array<int,string> */ private array $userIds = [];
+    /** @var array<int,string> */ private array $payoutIds = [];
 
     protected function tearDown(): void
     {
+        if ($this->payoutIds) {
+            DB::connection('billing')->table('payouts')->whereIn('id', $this->payoutIds)->delete();
+        }
         if ($this->depositIds) {
             DB::connection('billing')->table('security_deposits')->whereIn('id', $this->depositIds)->delete();
         }
@@ -381,7 +385,7 @@ class SecurityDepositServiceTest extends TestCase
         $payouts->shouldReceive('disburse')
             ->once()
             ->with(Mockery::type(User::class), 5000, Mockery::type('array'))
-            ->andReturn((new Payout())->forceFill(['id' => 'po_forfeit']));
+            ->andReturn((new Payout())->forceFill(['id' => (string) Str::uuid()]));
 
         $service = $this->service(stripe: $stripe, payouts: $payouts);
         $service->forfeit($deposit->id, 5000, 'Property damage', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
@@ -461,21 +465,87 @@ class SecurityDepositServiceTest extends TestCase
 
     // ── reverse — admin override on an already-applied penalty ───────────────────
 
-    public function test_reverse_restores_the_hunters_score(): void
+    public function test_reverse_restores_the_hunters_score_and_refunds_an_undisbursed_forfeiture(): void
     {
         $hunter  = $this->makeUser('hunter', 80);
-        $deposit = $this->seedHeldFor(payerId: $hunter);
+        $deposit = $this->seedHeldFor(payerId: $hunter); // payee has no payouts account → never disbursed
 
-        $service = $this->service();
+        // No transfer to reverse (nothing was disbursed); the captured deposit is
+        // refunded to the hunter from the original charge.
+        $stripe = Mockery::mock(StripeService::class);
+        $stripe->shouldNotReceive('reverseTransfer');
+        $stripe->shouldReceive('refundPaymentIntent')
+            ->once()
+            ->with($deposit->stripe_payment_intent_id, 5000, 'Security deposit returned — forfeiture reversed')
+            ->andReturn(Refund::constructFrom(['id' => 're_rev']));
+
+        $service = $this->service(stripe: $stripe);
         $service->forfeit($deposit->id, 5000, 'Damage', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
         $service->confirmForfeitFault($deposit->id); // -10 → 70, applied
         $result = $service->reverseForfeitFault($deposit->id, (string) Str::uuid(), 'New evidence');
 
         $this->assertSame('reversed', $result->forfeit_trust_status);
+        $this->assertSame('released', $result->status);
+        $this->assertSame(0, (int) $result->forfeited_amount_cents);
+        $this->assertSame(5000, (int) $result->refunded_amount_cents);
         // +10 restores the score to 80.
         $this->assertSame(80, (int) DB::connection('identity')->table('users')->where('id', $hunter)->value('trust_score'));
         $this->assertSame(1, DB::connection('identity')->table('trust_score_events')
             ->where('user_id', $hunter)->where('event_type', 'deposit_forfeiture_reversed')->count());
+    }
+
+    public function test_reverse_claws_back_a_disbursed_forfeiture(): void
+    {
+        $hunter    = $this->makeUser('hunter', 80);
+        $landowner = $this->makeLandowner();
+        $deposit   = $this->seedHeldFor(payerId: $hunter, payeeId: $landowner);
+
+        // Disbursement persists a real payout (with a transfer id) so the reversal
+        // can find and reverse it.
+        $payouts = Mockery::mock(PayoutService::class);
+        $payouts->shouldReceive('canReceivePayouts')->andReturnTrue();
+        $payouts->shouldReceive('disburse')->once()->andReturnUsing(function () use ($landowner) {
+            $payout = Payout::create([
+                'payee_user_id'      => $landowner,
+                'stripe_account_id'  => 'acct_forfeit',
+                'amount_cents'       => 5000,
+                'currency'           => 'USD',
+                'status'             => 'paid',
+                'stripe_transfer_id' => 'tr_forfeit',
+                'paid_at'            => now(),
+            ]);
+            $this->payoutIds[] = $payout->id;
+
+            return $payout;
+        });
+
+        $stripe = Mockery::mock(StripeService::class);
+        $stripe->shouldReceive('reverseTransfer')
+            ->once()
+            ->with('tr_forfeit', null, Mockery::type('array'))
+            ->andReturn(\Stripe\TransferReversal::constructFrom(['id' => 'trr_1']));
+        $stripe->shouldReceive('refundPaymentIntent')
+            ->once()
+            ->with($deposit->stripe_payment_intent_id, 5000, 'Security deposit returned — forfeiture reversed')
+            ->andReturn(Refund::constructFrom(['id' => 're_rev']));
+
+        $service = $this->service(stripe: $stripe, payouts: $payouts);
+        $service->forfeit($deposit->id, 5000, 'Damage', (string) Str::uuid(), SecurityDepositService::FAULT_LESSEE);
+        $confirmed = $service->confirmForfeitFault($deposit->id);
+        $payoutId  = $confirmed->forfeit_payout_id;
+        $this->assertNotNull($payoutId);
+
+        $result = $service->reverseForfeitFault($deposit->id, (string) Str::uuid(), 'Exonerated');
+
+        $this->assertSame('reversed', $result->forfeit_trust_status);
+        $this->assertSame('released', $result->status);
+        $this->assertSame(0, (int) $result->forfeited_amount_cents);
+        $this->assertSame(5000, (int) $result->refunded_amount_cents);
+
+        // The disbursing payout is now reversed (landowner clawed back).
+        $payout = Payout::find($payoutId);
+        $this->assertSame('reversed', $payout->status);
+        $this->assertNotNull($payout->reversed_at);
     }
 
     public function test_reverse_requires_an_applied_penalty(): void
