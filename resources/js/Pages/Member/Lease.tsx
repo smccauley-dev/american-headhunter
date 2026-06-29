@@ -136,6 +136,9 @@ interface Props {
     forfeited: string
     can_release: boolean
     can_forfeit: boolean
+    // Landowner-borne, non-recoverable Stripe processing cost on a refund
+    // (fee_schedules 'security_deposit', payer=landowner). Null when no rule applies.
+    release_fee: { amount: string; pct: number; flat: string } | null
     claim: {
       amount: string
       reason: string | null
@@ -771,6 +774,11 @@ function LandownerDepositSection({ data }: { data: NonNullable<Props['landowner_
               ${data.remaining} held as refundable collateral.
             </div>
           )}
+          {data.can_release && data.release_fee && (
+            <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: BRASS, marginTop: '6px' }}>
+              On release, Stripe's processing fee (~${data.release_fee.amount} · {data.release_fee.pct}% + ${data.release_fee.flat}) is non-refundable and is the landowner's cost.
+            </div>
+          )}
           {data.status === 'released' && (
             <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, marginTop: '4px' }}>
               Released — ${data.refunded} refunded to the hunter.
@@ -788,7 +796,10 @@ function LandownerDepositSection({ data }: { data: NonNullable<Props['landowner_
             type="button"
             disabled={releasing}
             onClick={() => {
-              if (!confirm(`Release $${data.remaining} back to the hunter? This refunds the deposit in full and can't be undone.`)) return
+              if (!confirm(
+                `Release $${data.remaining} back to the hunter? This refunds the deposit in full and can't be undone.` +
+                (data.release_fee ? `\n\nStripe keeps ~$${data.release_fee.amount} (${data.release_fee.pct}% + $${data.release_fee.flat}) in non-refundable processing — the landowner's cost.` : '')
+              )) return
               setReleasing(true)
               router.post(data.release_url, {}, { preserveScroll: true, onFinish: () => setReleasing(false) })
             }}

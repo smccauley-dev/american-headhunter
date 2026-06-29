@@ -15,6 +15,7 @@ use App\Services\Lease\ApplicationMessageService;
 use App\Services\Lease\CheckInService;
 use App\Services\Lease\EsignatureService;
 use App\Services\Billing\BookingDepositService;
+use App\Services\Billing\FeeService;
 use App\Services\Billing\LeaseFinanceSummaryService;
 use App\Services\Billing\LeasePaymentService;
 use App\Services\Billing\PayoutService;
@@ -49,7 +50,7 @@ class MemberController extends Controller
         ]);
     }
 
-    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, LeasePaymentService $leasePaymentService, LeaseFinanceSummaryService $leaseFinanceService, PayoutService $payoutService, DisputeService $disputeService, DamageClaimService $damageClaimService, IncidentService $incidentService): Response
+    public function show(string $lease, PropertyService $propertyService, EsignatureService $esigService, LeaseDocumentService $leaseDocumentService, CheckInService $checkInService, DocumentService $documentService, PropertyMapService $mapService, ApplicationMessageService $messageService, SecurityDepositService $depositService, BookingDepositService $bookingDepositService, LeasePaymentService $leasePaymentService, LeaseFinanceSummaryService $leaseFinanceService, PayoutService $payoutService, DisputeService $disputeService, DamageClaimService $damageClaimService, IncidentService $incidentService, FeeService $feeService): Response
     {
         $userId = session('auth.user_id');
 
@@ -260,6 +261,23 @@ class MemberController extends Controller
                     ];
                 }
 
+                // The card-processing cost Stripe keeps on a refund is non-recoverable,
+                // and the landowner bears it (DB-driven, fee_schedules 'security_deposit'
+                // payer=landowner — never hardcoded). Shown on the release control so the
+                // landowner sees the cost before refunding. Computed on the original
+                // captured amount (what Stripe charged its fee against).
+                $releaseFee = null;
+                if ($isHeld && ! $hasClaim) {
+                    $quote = rescue(fn () => $feeService->processingFee('security_deposit', $property?->state_code, (int) $existingDeposit->amount_cents), null);
+                    if ($quote && $quote['payer'] === 'landowner' && $quote['fee_cents'] > 0) {
+                        $releaseFee = [
+                            'amount' => number_format($quote['fee_cents'] / 100, 2),
+                            'pct'    => (float) $quote['pct'],
+                            'flat'   => number_format($quote['flat_cents'] / 100, 2),
+                        ];
+                    }
+                }
+
                 $landownerDeposit = [
                     'status'           => $existingDeposit->status,
                     'amount'           => number_format((int) $existingDeposit->amount_cents / 100, 2),
@@ -269,6 +287,7 @@ class MemberController extends Controller
                     // One forfeiture per deposit; a pending claim blocks release.
                     'can_release'      => $isHeld && ! $hasClaim,
                     'can_forfeit'      => $isHeld && ! $hasClaim,
+                    'release_fee'      => $releaseFee,
                     'claim'            => $claim,
                     'lease_terminated' => in_array($leaseRecord->status, ['terminated', 'expired', 'cancelled'], true),
                     'release_url'      => route('member.leases.deposit.release', $lease),
