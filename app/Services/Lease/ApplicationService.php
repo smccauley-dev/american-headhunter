@@ -368,8 +368,13 @@ class ApplicationService extends BaseService
     {
         try {
             DB::connection('lease')->transaction(function () use ($application, $lease): void {
-                LeaseHunter::where('lease_id', $lease->id)->delete();
-                $lease->delete();
+                // Hard delete — this lease never validly existed (its creation is
+                // being rolled back). A soft delete would leave the row behind,
+                // and uq_leases_application_id is a plain unique index that counts
+                // soft-deleted rows, so it would permanently block re-approving
+                // this application ("duplicate key value violates uq_leases_application_id").
+                LeaseHunter::where('lease_id', $lease->id)->forceDelete();
+                $lease->forceDelete();
                 // Builder update keyed by id — the outer $application instance is
                 // stale (still 'pending' in memory after approve() updated a
                 // separate instance), so $application->update() would dirty-check
