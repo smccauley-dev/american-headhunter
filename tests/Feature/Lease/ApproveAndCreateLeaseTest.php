@@ -146,8 +146,55 @@ class ApproveAndCreateLeaseTest extends TestCase
         $this->assertNull($app->reviewed_at);
         $this->assertNull($app->reviewed_by_user_id);
 
-        // The half-created lease was rolled back (soft-deleted).
+        // The half-created lease was rolled back and hard-deleted, so the row is
+        // gone entirely — leaving a soft-deleted row would trip the plain
+        // uq_leases_application_id unique index on any re-approval.
         $lease = DB::connection('lease')->table('leases')->where('listing_id', $this->listingId)->first();
-        $this->assertNotNull($lease->deleted_at, 'The compensated lease should be soft-deleted.');
+        $this->assertNull($lease, 'The compensated lease row should be removed entirely.');
+    }
+
+    public function test_a_failed_approval_can_be_retried_successfully(): void
+    {
+        // The reservation fails the first time and succeeds the second. The first
+        // failure's compensation must HARD-delete the lease — a soft delete would
+        // leave a row that trips the plain uq_leases_application_id unique index,
+        // breaking the retry with "duplicate key value" (the bug the user hit).
+        // One mock for both calls: ApplicationService is a singleton, so the
+        // PropertyService it captured in its constructor is reused across calls.
+        $reserveCalls = 0;
+        $properties = Mockery::mock(PropertyService::class);
+        $properties->shouldReceive('reserveExclusiveLease')->twice()->andReturnUsing(
+            function () use (&$reserveCalls) {
+                if (++$reserveCalls === 1) {
+                    throw new \RuntimeException('reservation boom');
+                }
+                return null;
+            }
+        );
+        $properties->shouldReceive('releaseBooking')->andReturnNull();
+        $this->instance(PropertyService::class, $properties);
+
+        // Only the successful (second) approval reaches the e-sign step.
+        $esig = Mockery::mock(EsignatureService::class);
+        $esig->shouldReceive('createRequest')->once()->andReturn(new EsignatureRequest());
+        $this->instance(EsignatureService::class, $esig);
+
+        try {
+            app(ApplicationService::class)->approveAndCreateLease(
+                $this->applicationId, $this->reviewerId, $this->terms, null, false,
+            );
+            $this->fail('Expected the first reservation failure to propagate.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('reservation boom', $e->getMessage());
+        }
+
+        // Retry — must succeed, not hit a leftover-lease unique violation.
+        $result = app(ApplicationService::class)->approveAndCreateLease(
+            $this->applicationId, $this->reviewerId, $this->terms, null, false,
+        );
+
+        $this->assertInstanceOf(Lease::class, $result['lease']);
+        $app = DB::connection('lease')->table('lease_applications')->where('id', $this->applicationId)->first();
+        $this->assertSame('approved', $app->status);
     }
 }
