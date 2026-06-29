@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Head, router, useForm, usePage } from '@inertiajs/react'
+import { router, useForm, usePage } from '@inertiajs/react'
+import { PortalChrome, TitleHead, BackLink, Section, fieldCard, DashedInset, INK, ACCENT, TAN, DIVIDER, BRASS, PAPER } from '@/Components/Member/PropertyChrome'
 
 interface Signer {
   name: string
@@ -43,6 +44,13 @@ interface Props {
   booking_deposit: BookingDeposit | null
 }
 
+// Brand palette extensions (see docs/design_system.md): sage for cleared/signed,
+// rust for errors. Everything else comes from the shared member-portal tokens.
+const SAGE = '#3d6b54'
+const RUST = '#8a3216'
+const SERIF = 'Crimson Pro, Georgia, serif'
+const mono = 'var(--mono)'
+
 export default function Sign({ lease, request_id, signers, already_signed, deposit, booking_deposit }: Props) {
   const { props } = usePage<{ flash?: { success?: string; info?: string; error?: string } }>()
   const flash = props.flash ?? {}
@@ -78,235 +86,259 @@ export default function Sign({ lease, request_id, signers, already_signed, depos
     post(`/member/leases/${lease.id}/sign`)
   }
 
+  const locationLine = lease.property
+    ? [lease.property.county ? `${lease.property.county} County` : null, lease.property.state,
+       lease.property.acres ? `${Number(lease.property.acres).toLocaleString()} acres` : null]
+      .filter(Boolean).join(' · ')
+    : null
+
   return (
-    <>
-      <Head title="Sign Lease Agreement" />
+    <PortalChrome headTitle="Sign Lease Agreement">
+      <div style={{ maxWidth: '680px', margin: '0 auto' }}>
 
-      <div style={{ minHeight: '100vh', background: '#fafaf9', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: '48px', paddingBottom: '64px' }}>
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div style={{ fontFamily: 'monospace', fontSize: '11px', letterSpacing: '.15em', textTransform: 'uppercase', color: '#C84C21', marginBottom: '8px' }}>
-            American Headhunter
-          </div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#0A1512', margin: '0 0 4px' }}>
-            Lease Agreement
-          </h1>
-          <p style={{ fontSize: '14px', color: '#888', margin: 0 }}>
-            Review the terms below and sign to confirm your hunting lease.
-          </p>
-        </div>
+        <BackLink href={`/member/leases/${lease.id}`}>← Back to Lease</BackLink>
 
-        <div style={{ width: '100%', maxWidth: '640px', padding: '0 16px' }}>
+        <TitleHead
+          kicker="Electronic Signature"
+          title="Sign Your Lease"
+          subtitle="Review the terms below and sign to confirm your hunting lease."
+        />
 
-          {/* Flash messages */}
-          {flash.success && (
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '12px 16px', marginBottom: '20px', color: '#15803d', fontSize: '14px' }}>
-              {flash.success}
-            </div>
-          )}
-          {flash.info && (
-            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '12px 16px', marginBottom: '20px', color: '#1d4ed8', fontSize: '14px' }}>
-              {flash.info}
-            </div>
-          )}
-          {flash.error && (
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', padding: '12px 16px', marginBottom: '20px', color: '#b91c1c', fontSize: '14px' }}>
-              {flash.error}
-            </div>
-          )}
+        {/* Flash messages — on-brand sage / brass / rust */}
+        {flash.success && <FlashBar color={SAGE}>{flash.success}</FlashBar>}
+        {flash.info && <FlashBar color={BRASS}>{flash.info}</FlashBar>}
+        {flash.error && <FlashBar color={RUST}>{flash.error}</FlashBar>}
 
-          {/* Lease Summary */}
-          <div style={{ background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', marginBottom: '20px', overflow: 'hidden' }}>
-            <div style={{ background: '#0A1512', padding: '14px 20px' }}>
-              <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.12em', textTransform: 'uppercase', color: '#C84C21', marginBottom: '4px' }}>Lease Agreement</div>
-              <div style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+        {/* Lease Record — Field Record card */}
+        <div style={fieldCard}>
+          <DashedInset />
+          <div style={{ position: 'relative', zIndex: 2 }}>
+            <div style={{ padding: '18px 24px', borderBottom: `1px solid ${DIVIDER}` }}>
+              <div style={{ fontFamily: mono, fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, marginBottom: '7px' }}>
+                Lease Record
+              </div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '22px', fontWeight: 400, color: INK, lineHeight: 1.15 }}>
                 {lease.property?.title ?? 'Hunting Property'}
               </div>
-              {lease.property && (
-                <div style={{ fontSize: '12px', color: '#aaa', marginTop: '2px' }}>
-                  {lease.property.county} County, {lease.property.state}
-                  {lease.property.acres ? ` · ${Number(lease.property.acres).toLocaleString()} acres` : ''}
+              {locationLine && (
+                <div style={{ fontFamily: mono, fontSize: '10px', letterSpacing: '.08em', color: TAN, marginTop: '6px' }}>
+                  {locationLine}
                 </div>
               )}
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
+              <RecordCell label="Start Date" value={lease.start_date} border />
+              <RecordCell label="End Date" value={lease.end_date} border />
+              <RecordCell label="Total Price" value={`$${lease.total_price}`} />
+            </div>
+          </div>
+        </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0', borderTop: '1px solid #e5e0d8' }}>
-              <div style={{ padding: '14px 20px', borderRight: '1px solid #e5e0d8' }}>
-                <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#888', marginBottom: '4px' }}>Start Date</div>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: '#0A1512' }}>{lease.start_date}</div>
+        {/* Signatures Required */}
+        <Section title="Signatures Required">
+          {signers.map((signer, i) => {
+            const isSigned = signer.status === 'signed'
+            const color = isSigned ? SAGE : BRASS
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '11px 0', borderBottom: i < signers.length - 1 ? `1px solid ${DIVIDER}` : 'none' }}>
+                <span style={{ width: '24px', height: '24px', border: `1.5px solid ${color}`, color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {isSigned && <CheckMark />}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: SERIF, fontSize: '16px', color: INK }}>{signer.name}</div>
+                  <div style={{ fontFamily: mono, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, marginTop: '2px' }}>{signer.role}</div>
+                </div>
+                <div style={{ fontFamily: mono, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', color }}>
+                  {isSigned ? 'Signed' : 'Pending'}
+                </div>
               </div>
-              <div style={{ padding: '14px 20px', borderRight: '1px solid #e5e0d8' }}>
-                <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#888', marginBottom: '4px' }}>End Date</div>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: '#0A1512' }}>{lease.end_date}</div>
-              </div>
-              <div style={{ padding: '14px 20px' }}>
-                <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#888', marginBottom: '4px' }}>Total Price</div>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: '#0A1512' }}>${lease.total_price}</div>
+            )
+          })}
+        </Section>
+
+        {/* Deposits — pay-then-sign gate. Both the (non-refundable) booking deposit
+            and the refundable security deposit, when due, must be paid before the
+            signature form unlocks. */}
+        {!already_signed && booking_deposit && (
+          bookingPending ? (
+            <DepositStep
+              eyebrow="Booking Deposit — Non-Refundable"
+              headline="Pay your booking deposit to unlock signing"
+              lineItem="Non-refundable booking deposit"
+              amount={booking_deposit.amount}
+              payLabel={`Pay $${booking_deposit.amount} Booking Deposit`}
+              note="A non-refundable down payment, credited toward your lease total. You'll return here to sign once it's received."
+              paying={payingBooking}
+              onPay={payBooking}
+            />
+          ) : (
+            <DepositCleared text={`Booking deposit of $${booking_deposit.amount} paid — credited toward your total.`} />
+          )
+        )}
+        {!already_signed && deposit && (
+          depositPending ? (
+            <DepositStep
+              eyebrow="Security Deposit — Refundable"
+              headline="Pay your refundable deposit to unlock signing"
+              lineItem="Refundable security deposit"
+              amount={deposit.amount}
+              payLabel={`Pay $${deposit.amount} Deposit`}
+              note="Held securely and refundable at the end of your lease. You'll return here to sign once it's received."
+              paying={payingDeposit}
+              onPay={payDeposit}
+            />
+          ) : (
+            <DepositCleared text={`Security deposit of $${deposit.amount} held — you're clear to sign.`} />
+          )
+        )}
+
+        {/* Already signed state */}
+        {already_signed && (
+          <div style={{ ...fieldCard, boxShadow: `6px 6px 0 ${SAGE}` }}>
+            <DashedInset />
+            <div style={{ position: 'relative', zIndex: 2, padding: '24px', textAlign: 'center' }}>
+              <span style={{ width: '34px', height: '34px', border: `1.5px solid ${SAGE}`, color: SAGE, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                <CheckMark size={18} />
+              </span>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '19px', color: INK, marginBottom: '5px' }}>You have already signed this lease.</div>
+              <div style={{ fontFamily: SERIF, fontSize: '15px', color: SAGE }}>
+                {allSigned ? 'All parties have signed — your lease is now active.' : 'Waiting for the landowner to countersign.'}
               </div>
             </div>
           </div>
+        )}
 
-          {/* Signing Status */}
-          <div style={{ background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', marginBottom: '20px', padding: '16px 20px' }}>
-            <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#888', marginBottom: '12px' }}>
-              Signatures Required
-            </div>
-            {signers.map((signer, i) => {
-              const isSigned = signer.status === 'signed'
-              return (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: i < signers.length - 1 ? '1px solid #f0ece6' : 'none' }}>
-                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isSigned ? '#f0fdf4' : '#fff7ed', border: `2px solid ${isSigned ? '#15803d' : '#d97706'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ fontSize: '14px', color: isSigned ? '#15803d' : '#d97706', fontWeight: '700' }}>
-                      {isSigned ? '✓' : '○'}
-                    </span>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#1a1a1a' }}>{signer.name}</div>
-                    <div style={{ fontSize: '11px', color: '#888', fontFamily: 'monospace' }}>{signer.role}</div>
-                  </div>
-                  <div style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '.06em', color: isSigned ? '#15803d' : '#d97706' }}>
-                    {isSigned ? 'Signed' : 'Pending'}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Deposits — pay-then-sign gate. Both the (non-refundable) booking deposit
-              and the refundable security deposit, when due, must be paid before the
-              signature form unlocks. */}
-          {!already_signed && booking_deposit && (
-            bookingPending ? (
-              <DepositStep
-                eyebrow="Booking Deposit — Non-Refundable"
-                headline="Pay your booking deposit to unlock signing"
-                lineItem="Non-refundable booking deposit"
-                amount={booking_deposit.amount}
-                payLabel={`Pay $${booking_deposit.amount} Booking Deposit`}
-                note="A non-refundable down payment, credited toward your lease total. You'll return here to sign once it's received."
-                paying={payingBooking}
-                onPay={payBooking}
-              />
-            ) : (
-              <DepositCleared text={`Booking deposit of $${booking_deposit.amount} paid — credited toward your total.`} />
-            )
-          )}
-          {!already_signed && deposit && (
-            depositPending ? (
-              <DepositStep
-                eyebrow="Security Deposit — Refundable"
-                headline="Pay your refundable deposit to unlock signing"
-                lineItem="Refundable security deposit"
-                amount={deposit.amount}
-                payLabel={`Pay $${deposit.amount} Deposit`}
-                note="Held securely and refundable at the end of your lease. You'll return here to sign once it's received."
-                paying={payingDeposit}
-                onPay={payDeposit}
-              />
-            ) : (
-              <DepositCleared text={`Security deposit of $${deposit.amount} held — you're clear to sign.`} />
-            )
-          )}
-
-          {/* Already signed state */}
-          {already_signed && (
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '20px', textAlign: 'center', color: '#15803d' }}>
-              <div style={{ fontSize: '20px', marginBottom: '8px' }}>✓</div>
-              <div style={{ fontSize: '15px', fontWeight: '600', marginBottom: '4px' }}>You have already signed this lease.</div>
-              {allSigned
-                ? <div style={{ fontSize: '13px', color: '#166534' }}>All parties have signed — your lease is now active.</div>
-                : <div style={{ fontSize: '13px', color: '#166534' }}>Waiting for the landowner to countersign.</div>
-              }
-            </div>
-          )}
-
-          {/* Signature form — only shown when not yet signed and both deposits are paid */}
-          {!already_signed && !depositPending && !bookingPending && (
-            <form onSubmit={handleSubmit}>
-              <div style={{ background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', padding: '20px', marginBottom: '16px' }}>
-                <div style={{ fontFamily: 'monospace', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.1em', color: '#888', marginBottom: '16px' }}>
-                  Your Signature
-                </div>
-
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#1a1a1a', marginBottom: '6px' }}>
-                    Type your full legal name to sign
-                  </label>
-                  <input
-                    type="text"
-                    value={data.full_name}
-                    onChange={(e) => setData('full_name', e.target.value)}
-                    placeholder="Your full legal name"
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      border: errors.full_name ? '1px solid #b91c1c' : '1px solid #d1d5db',
-                      borderRadius: '4px',
-                      fontSize: '15px',
-                      fontStyle: 'italic',
-                      color: '#0A1512',
-                      background: '#fafaf9',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                  {errors.full_name && (
-                    <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '4px' }}>{errors.full_name}</div>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '14px', background: '#fafaf9', borderRadius: '4px', border: '1px solid #e5e0d8' }}>
-                  <input
-                    type="checkbox"
-                    id="agreed"
-                    checked={data.agreed}
-                    onChange={(e) => setData('agreed', e.target.checked)}
-                    style={{ marginTop: '2px', width: '16px', height: '16px', flexShrink: 0, accentColor: '#C84C21' }}
-                  />
-                  <label htmlFor="agreed" style={{ fontSize: '13px', color: '#444', lineHeight: '1.5', cursor: 'pointer' }}>
-                    I, <strong>{data.full_name || '[your name]'}</strong>, agree to the terms of this hunting lease agreement
-                    for the period {lease.start_date} through {lease.end_date}, for the total amount of ${lease.total_price}.
-                    I understand this constitutes a legally binding electronic signature under the ESIGN Act.
-                  </label>
-                </div>
-                {errors.agreed && (
-                  <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '4px' }}>{errors.agreed}</div>
+        {/* Signature form — only shown when not yet signed and both deposits are paid */}
+        {!already_signed && !depositPending && !bookingPending && (
+          <form onSubmit={handleSubmit}>
+            <Section title="Your Signature">
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontFamily: mono, fontSize: '10px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: TAN, marginBottom: '8px' }}>
+                  Type your full legal name to sign
+                </label>
+                <input
+                  type="text"
+                  value={data.full_name}
+                  onChange={(e) => setData('full_name', e.target.value)}
+                  placeholder="Your full legal name"
+                  style={{
+                    width: '100%',
+                    padding: '11px 14px',
+                    border: `1px solid ${errors.full_name ? RUST : TAN}`,
+                    fontFamily: 'var(--display)',
+                    fontSize: '20px',
+                    fontStyle: 'italic',
+                    fontWeight: 400,
+                    color: INK,
+                    background: '#fff',
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                  }}
+                />
+                {errors.full_name && (
+                  <div style={{ fontFamily: mono, fontSize: '10px', color: RUST, marginTop: '5px' }}>{errors.full_name}</div>
                 )}
               </div>
 
-              <button
-                type="submit"
-                disabled={processing || !data.full_name.trim() || !data.agreed}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: (!data.full_name.trim() || !data.agreed) ? '#d1d5db' : '#C84C21',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '4px',
-                  fontSize: '15px',
-                  fontWeight: '700',
-                  letterSpacing: '.04em',
-                  cursor: (!data.full_name.trim() || !data.agreed) ? 'not-allowed' : 'pointer',
-                  transition: 'background 0.15s',
-                }}
-              >
-                {processing ? 'Signing…' : 'Sign Lease Agreement'}
-              </button>
+              <label htmlFor="agreed" style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '15px', background: PAPER, border: `1px solid ${DIVIDER}`, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  id="agreed"
+                  checked={data.agreed}
+                  onChange={(e) => setData('agreed', e.target.checked)}
+                  style={{ marginTop: '2px', width: '16px', height: '16px', flexShrink: 0, accentColor: ACCENT }}
+                />
+                <span style={{ fontFamily: SERIF, fontSize: '15px', color: INK, lineHeight: 1.5 }}>
+                  I, <strong style={{ fontWeight: 600 }}>{data.full_name || '[your name]'}</strong>, agree to the terms of this hunting lease agreement
+                  for the period {lease.start_date} through {lease.end_date}, for the total amount of ${lease.total_price}.
+                  I understand this constitutes a legally binding electronic signature under the ESIGN Act.
+                </span>
+              </label>
+              {errors.agreed && (
+                <div style={{ fontFamily: mono, fontSize: '10px', color: RUST, marginTop: '6px' }}>{errors.agreed}</div>
+              )}
+            </Section>
 
-              <p style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '12px', lineHeight: '1.6' }}>
-                Your signature is recorded with your account ID, timestamp, and IP address.
-                This constitutes a legally binding agreement under the U.S. ESIGN Act (15 U.S.C. § 7001).
-              </p>
-            </form>
-          )}
+            <BrandButton type="submit" disabled={processing || !data.full_name.trim() || !data.agreed}>
+              {processing ? 'Signing…' : 'Sign Lease Agreement'}
+            </BrandButton>
 
-        </div>
+            <p style={{ fontFamily: mono, fontSize: '10px', letterSpacing: '.04em', color: TAN, textAlign: 'center', marginTop: '14px', lineHeight: 1.7 }}>
+              Your signature is recorded with your account ID, timestamp, and IP address.
+              This constitutes a legally binding agreement under the U.S. ESIGN Act (15 U.S.C. § 7001).
+            </p>
+          </form>
+        )}
+
       </div>
-    </>
+    </PortalChrome>
   )
 }
 
-/** Amber "pay this deposit to unlock signing" card. */
+/** One labelled cell in the lease-record data grid. */
+function RecordCell({ label, value, border }: { label: string; value: string; border?: boolean }) {
+  return (
+    <div style={{ padding: '15px 22px', borderRight: border ? `1px solid ${DIVIDER}` : 'none' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: TAN, marginBottom: '6px' }}>{label}</div>
+      <div style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '17px', fontWeight: 600, color: INK }}>{value}</div>
+    </div>
+  )
+}
+
+/** Sharp single-stroke check, inherits currentColor (no emoji — see design system). */
+function CheckMark({ size = 13 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="square">
+      <path d="M5 12l5 5L20 6" />
+    </svg>
+  )
+}
+
+/** Thin on-brand flash bar — colour carries the meaning. */
+function FlashBar({ color, children }: { color: string; children: React.ReactNode }) {
+  return (
+    <div style={{ borderLeft: `3px solid ${color}`, border: `1px solid ${color}`, background: '#fff', padding: '12px 16px', marginBottom: '20px', fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: INK }}>
+      {children}
+    </div>
+  )
+}
+
+/** Primary action — ink field-button that warms to blaze on hover (design system). */
+function BrandButton({ children, disabled, type = 'button', onClick }: {
+  children: React.ReactNode
+  disabled?: boolean
+  type?: 'button' | 'submit'
+  onClick?: () => void
+}) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: '100%',
+        padding: '15px',
+        background: disabled ? '#c9b896' : (hover ? ACCENT : INK),
+        color: disabled ? '#f4ecdc' : '#F4ECDC',
+        border: 'none',
+        fontFamily: 'var(--mono)',
+        fontSize: '11px',
+        fontWeight: 600,
+        letterSpacing: '.15em',
+        textTransform: 'uppercase',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background 0.2s',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Brass "pay this deposit to unlock signing" Field Record card. */
 function DepositStep({ eyebrow, headline, lineItem, amount, payLabel, note, paying, onPay }: {
   eyebrow: string
   headline: string
@@ -318,49 +350,36 @@ function DepositStep({ eyebrow, headline, lineItem, amount, payLabel, note, payi
   onPay: () => void
 }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #d97706', borderRadius: '4px', marginBottom: '20px', overflow: 'hidden' }}>
-      <div style={{ background: '#fffbeb', padding: '14px 20px', borderBottom: '1px solid #fde68a' }}>
-        <div style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.12em', textTransform: 'uppercase', color: '#b45309', marginBottom: '4px' }}>{eyebrow}</div>
-        <div style={{ fontSize: '15px', fontWeight: '700', color: '#0A1512' }}>{headline}</div>
-      </div>
-      <div style={{ padding: '18px 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <span style={{ fontSize: '13px', color: '#666' }}>{lineItem}</span>
-          <span style={{ fontSize: '20px', fontWeight: '700', color: '#0A1512' }}>${amount}</span>
+    <div style={{ ...fieldCard, boxShadow: `6px 6px 0 ${BRASS}` }}>
+      <DashedInset />
+      <div style={{ position: 'relative', zIndex: 2 }}>
+        <div style={{ padding: '16px 24px', borderBottom: `1px solid ${DIVIDER}` }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: '#7a6028', marginBottom: '6px' }}>{eyebrow}</div>
+          <div style={{ fontFamily: 'var(--display)', fontSize: '18px', fontWeight: 400, color: INK }}>{headline}</div>
         </div>
-        <button
-          type="button"
-          onClick={onPay}
-          disabled={paying}
-          style={{
-            width: '100%',
-            padding: '14px',
-            background: paying ? '#d1d5db' : '#C84C21',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '4px',
-            fontSize: '15px',
-            fontWeight: '700',
-            letterSpacing: '.04em',
-            cursor: paying ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {paying ? 'Redirecting…' : payLabel}
-        </button>
-        <p style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '12px', lineHeight: '1.6' }}>
-          {note}
-        </p>
+        <div style={{ padding: '20px 24px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <span style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: '#6b5e50' }}>{lineItem}</span>
+            <span style={{ fontFamily: 'var(--display)', fontSize: '24px', fontWeight: 500, color: INK }}>${amount}</span>
+          </div>
+          <BrandButton onClick={onPay} disabled={paying}>
+            {paying ? 'Redirecting…' : payLabel}
+          </BrandButton>
+          <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.04em', color: TAN, textAlign: 'center', marginTop: '12px', lineHeight: 1.7 }}>
+            {note}
+          </p>
+        </div>
       </div>
     </div>
   )
 }
 
-/** Green "this deposit is settled" confirmation chip. */
+/** Sage "this deposit is settled" confirmation chip. */
 function DepositCleared({ text }: { text: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '12px 16px', marginBottom: '20px', color: '#15803d', fontSize: '13px', fontWeight: '600' }}>
-      <span style={{ fontSize: '15px' }}>✓</span>
-      <span>{text}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '11px', background: '#fff', border: `1px solid ${SAGE}`, borderLeft: `3px solid ${SAGE}`, padding: '12px 16px', marginBottom: '20px' }}>
+      <span style={{ color: SAGE, display: 'inline-flex', flexShrink: 0 }}><CheckMark /></span>
+      <span style={{ fontFamily: 'Crimson Pro, Georgia, serif', fontSize: '15px', color: INK }}>{text}</span>
     </div>
   )
 }
