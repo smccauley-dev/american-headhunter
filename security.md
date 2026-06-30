@@ -1118,6 +1118,45 @@ Authenticated-only and requires the user to grab their own `cs_…` id, so not w
 
 ---
 
+## SEC-059 — IDOR on Public Boundary API: `boundary()` Returns Geometry for Non-Active / Draft / Deleted Properties (the Endpoint SEC-002 Missed)
+
+| Field | Detail |
+|---|---|
+| **Severity** | Medium (unauthenticated location-data disclosure; boundary sibling of SEC-002 / SEC-025) |
+| **Status** | **FIXED (2026-06-30)** — `boundary()` now applies the SEC-002 active-status/`deleted_at` 404 guard before serving geometry; regression tests green (14 passed) |
+| **Found** | 2026-06-30 |
+| **File** | `app/Http/Controllers/Api/PropertyController.php` (`boundary()`); routed unauthenticated at `routes/api.php` `GET /properties/{id}/boundary` |
+
+**Description:**
+`Api\PropertyController::boundary($id)` calls `GeospatialService::getPropertyBoundaryGeoJson($id)` and returns the parcel boundary GeoJSON (polygon geometry + `area_acres` + `source`) **without any `status`/`deleted_at` visibility check**. The service queries `property_boundaries` (DB 13) by `property_id` alone — no join to the property's status, no RLS on that path — so it resolves a boundary for a property in *any* state: `draft`, `suspended`, `archived`, or soft-deleted.
+
+The endpoint is mounted on the **unauthenticated** legacy route group (`Route::prefix('properties')->middleware('throttle:public-api')`), so `GET /properties/{uuid}/boundary` is reachable with no token — only a per-IP throttle. A caller who knows or obtains a property UUID retrieves its precise parcel outline regardless of whether the property is publicly listed.
+
+This is the **same vulnerability class as SEC-002** ("draft properties accessible by UUID on the public API"), on the **sibling endpoint that the SEC-002 fix did not touch**. SEC-002 added the `status !== 'active' → 404` guard to `show()` (and `findBySlug()`), but `boundary()` — in the same controller, on the same unauthenticated route group — was never gated. It is also the JSON-geometry analogue of **SEC-025** (the public boundary-map *image* route, which *is* correctly gated to `p.status = 'active'`): the boundary **image** of a non-active property is private, but the boundary **polygon** of the same property is not.
+
+**Impact:**
+Unauthenticated disclosure of precise parcel boundaries (exact location/extent + acreage) for properties the owner has **not** made public — a property still being set up as a draft, one suspended/archived by the owner or staff, or a soft-deleted one. The platform deliberately treats boundary geometry as access-controlled (SEC-024 GPS handling, SEC-025 boundary-image gating, the lessee-only `Api\PropertyMapController`/`PropertyContactController`), so this is a least-privilege/location-privacy leak, not a payment/PII exposure. Not enumerable by brute force (128-bit UUID), but property UUIDs leak through ordinary channels (Inertia payloads, shared preview links, browser history, logs, a former-lessee who saw the property while active). For an *active* property the boundary image is already public, so the practical exposure is the **non-active** set.
+
+**Root cause:**
+`getPropertyBoundaryGeoJson()` is intentionally unrestricted (admin/internal callers need full visibility), exactly like `PropertyService::find()` in SEC-002. The public-facing controller is responsible for applying the visibility filter before returning, and `boundary()` — unlike its neighbor `show()` — does not. The SEC-002 audit fixed the data-returning endpoints it enumerated (`show`, `findBySlug`) but did not extend the gate to the geometry endpoint.
+
+**Recommended fix (small, mirrors SEC-002):**
+In `boundary()`, resolve the property first and apply the identical guard before serving geometry:
+```php
+$property = $this->propertyService->find($id);
+if (! $property || $property->status !== 'active' || $property->deleted_at !== null) {
+    return response()->json(['error' => 'Not found'], 404);
+}
+$geoJson = $this->geospatialService->getPropertyBoundaryGeoJson($id);
+```
+This closes the unauthenticated legacy route and keeps the authenticated `v1` route consistent with `show()`. If an active *lessee* must read the boundary of a property that later went non-active, additionally allow `LeaseService::userHasActiveLeaseForProperty()` (the gate already used by `Api\PropertyMapController`) — but the active-status check alone matches the existing SEC-002/SEC-025 contract and is the minimal fix.
+
+**Verification:**
+- `GET /properties/{uuid-of-draft}/boundary` → 404; `GET /properties/{uuid-of-soft-deleted}/boundary` → 404; `GET /properties/{uuid-of-active}/boundary` → 200.
+- `tests/Feature/Api/PropertyDetailTest.php` — `test_boundary_endpoint_returns_404_for_draft_property_with_boundary`, `..._for_soft_deleted_property_with_boundary`, `..._for_unknown_property_uuid`, alongside the existing active-with-boundary 200 case. Suite green (14 passed).
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -1138,6 +1177,7 @@ Authenticated-only and requires the user to grab their own `cs_…` id, so not w
 | SEC-055 | `stripe_accounts` shipped without RLS → any authenticated user could read/forge a landowner's Connect account + `payouts_enabled` flag | High (latent) | **FIXED (2026-06-25)** — RLS enabled, SELECT-only `TO ah_runtime` (own row + staff), no write policy (system-authored); regression test green (6 passed) | — |
 | SEC-057 | Forfeiture reversal left the landowner overpaid — exoneration restored Trust only, never reversed the disbursing Connect transfer or refunded the hunter ("manual reconciliation" that was never built) | Medium | **FIXED (2026-06-29)** — `reverseForfeitFault` now reverses the payout transfer + refunds the hunter (best-effort, manual-recon flagged on Stripe failure); regression tests green | — |
 | SEC-058 | Payment bypass — payment-mode success-return reconcilers (lease payment / security deposit / booking fee) author paid rows from an attacker-supplied `session_id` without checking `payment_status`; an unpaid-session replay fakes a paid lease balance / held deposit / won booking fee (free lease) | High | **FIXED (2026-06-30)** — `payment_status in ('paid','no_payment_required')` gate added to all three `record*FromCheckout` methods (covers webhook + return); webhook path unaffected; regression tests green (83 passed) | — |
+| SEC-059 | IDOR on public API — `Api\PropertyController::boundary()` serves parcel boundary GeoJSON + acreage for **any** property UUID with no `status`/`deleted_at` gate, reachable unauthenticated on the legacy `GET /properties/{id}/boundary` route; the geometry sibling of SEC-002 that the SEC-002 fix never touched (and the JSON analogue of the SEC-025 boundary-image gate) — leaks precise location/extent of draft/suspended/archived/soft-deleted properties | Medium | **FIXED (2026-06-30)** — `boundary()` now applies the same active-status/`deleted_at` 404 guard as `show()` before serving geometry; regression tests green (14 passed) | — |
 
 ---
 

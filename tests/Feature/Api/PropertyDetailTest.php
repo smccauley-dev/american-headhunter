@@ -250,6 +250,56 @@ class PropertyDetailTest extends TestCase
         $response->assertJsonPath('properties.source', 'manual');
     }
 
+    // ── SEC-059: boundary endpoint enforces the same visibility gate as show() ─
+
+    /**
+     * A non-active property must not leak its parcel geometry even when a
+     * boundary row exists — the boundary query keys only on property_id, so the
+     * controller is responsible for the status gate (SEC-059).
+     */
+    private function insertBoundary(): void
+    {
+        Cache::store('valkey')->forget("geo:boundary:property:{$this->propertyId}");
+
+        DB::connection('geospatial')->statement(
+            "INSERT INTO property_boundaries (id, property_id, boundary, source)
+             VALUES (gen_random_uuid(), ?, ST_SetSRID(ST_GeomFromText('MULTIPOLYGON(((-98.5 30.2,-98.6 30.2,-98.6 30.3,-98.5 30.3,-98.5 30.2)))'), 4326), 'manual')",
+            [$this->propertyId]
+        );
+    }
+
+    public function test_boundary_endpoint_returns_404_for_draft_property_with_boundary(): void
+    {
+        $this->insertBoundary();
+
+        DB::connection('property')->table('properties')
+            ->where('id', $this->propertyId)
+            ->update(['status' => 'draft']);
+
+        $response = $this->getJson("/api/properties/{$this->propertyId}/boundary");
+        $response->assertStatus(404);
+        $response->assertJson(['error' => 'Not found']);
+    }
+
+    public function test_boundary_endpoint_returns_404_for_soft_deleted_property_with_boundary(): void
+    {
+        $this->insertBoundary();
+
+        DB::connection('property')->table('properties')
+            ->where('id', $this->propertyId)
+            ->update(['deleted_at' => now()]);
+
+        $response = $this->getJson("/api/properties/{$this->propertyId}/boundary");
+        $response->assertStatus(404);
+        $response->assertJson(['error' => 'Not found']);
+    }
+
+    public function test_boundary_endpoint_returns_404_for_unknown_property_uuid(): void
+    {
+        $response = $this->getJson('/api/properties/' . Str::uuid() . '/boundary');
+        $response->assertStatus(404);
+    }
+
     // ── Visibility enforcement ────────────────────────────────────────────────
 
     public function test_draft_property_returns_404(): void

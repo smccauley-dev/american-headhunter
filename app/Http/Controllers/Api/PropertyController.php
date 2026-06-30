@@ -48,6 +48,16 @@ class PropertyController extends Controller
 
     public function boundary(string $id): JsonResponse
     {
+        // Enforce the same public-visibility gate as show() (SEC-059). The
+        // boundary query keys only on property_id, so without this check it
+        // would serve precise parcel geometry for draft/inactive/deleted
+        // properties — the geometry sibling SEC-002 missed.
+        $property = $this->propertyService->find($id);
+
+        if (! $property || $property->status !== 'active' || $property->deleted_at !== null) {
+            return response()->json(['error' => 'Not found'], 404);
+        }
+
         // $id is the property UUID — GeospatialService queries by property_id
         $geoJson = $this->geospatialService->getPropertyBoundaryGeoJson($id);
 
