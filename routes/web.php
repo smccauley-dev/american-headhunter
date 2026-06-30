@@ -253,6 +253,10 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
 
     // Landowner front-end property management. 'create' is declared before the
     // '{property}' wildcard so it is not captured as a property id.
+    // There is no properties index page — the "My Properties" list lives in the
+    // profile sidebar — so a bare GET /member/properties redirects there (typing the
+    // collection URL otherwise 405s against the POST store route).
+    Route::get('/properties',            fn () => redirect()->route('member.profile'))->name('properties.index');
     Route::get('/properties/create',     [MemberPropertyController::class, 'create'])->name('properties.create');
     Route::post('/properties',           [MemberPropertyController::class, 'store'])->name('properties.store');
     Route::get('/properties/{property}', [MemberPropertyController::class, 'edit'])->name('properties.edit');
