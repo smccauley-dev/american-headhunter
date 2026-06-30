@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { formatPhone, telHref } from '@/lib/phone'
 import FilePondUploader from '@/Components/FilePondUploader'
 import LandownerFinance, { type LandownerFinanceData } from '@/Components/Member/LandownerFinance'
+import NotificationBell from '@/Components/Member/NotificationBell'
 
 interface Signer {
   name: string
@@ -2058,9 +2059,12 @@ export default function Lease({ lease, property, access_info, deposit, landowner
                 </div>
               </div>
             </div>
-            <a href="/member" style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, textDecoration: 'none' }}>
-              ← My Leases
-            </a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+              <NotificationBell />
+              <a href="/member" style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, textDecoration: 'none' }}>
+                ← My Leases
+              </a>
+            </div>
           </div>
         </div>
 

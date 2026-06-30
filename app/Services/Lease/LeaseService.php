@@ -9,6 +9,7 @@ use App\Models\Lease\LeaseTerminationRequest;
 use App\Jobs\Lease\SendLeaseTerminationDecisionEmail;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
+use App\Services\Communications\NotificationService;
 use App\Services\Property\PropertyService;
 use App\Services\Identity\UserService;
 use App\DTOs\LeaseDetailDTO;
@@ -699,6 +700,18 @@ class LeaseService extends BaseService
         rescue(fn () => SendLeaseTerminationDecisionEmail::dispatch(
             $lease->id, $lease->lessee_user_id, 'approved', $refundCents, $rentRefundedCents, $note,
         ));
+
+        // In-app bell. Exact figures live on the lease page banner — keep the body
+        // high-level (no amounts) and link there. System-authored: this runs under
+        // db.system (ah_system), so the insert is permitted.
+        rescue(fn () => app(NotificationService::class)->notify(
+            userId:    $lease->lessee_user_id,
+            type:      'lease.early_termination_approved',
+            title:     'Early termination approved',
+            body:      'Your request to end your lease early was approved — the lease is now terminated. Open your lease to see any refund details.',
+            actionUrl: "/member/leases/{$lease->id}",
+            data:      ['lease_id' => $lease->id],
+        ));
     }
 
     /**
@@ -734,6 +747,16 @@ class LeaseService extends BaseService
         // Tell the hunter (email) their request was denied and the lease stands.
         rescue(fn () => SendLeaseTerminationDecisionEmail::dispatch(
             $lease->id, $lease->lessee_user_id, 'denied', 0, 0, $note,
+        ));
+
+        // In-app bell — system-authored (runs under db.system / ah_system).
+        rescue(fn () => app(NotificationService::class)->notify(
+            userId:    $lease->lessee_user_id,
+            type:      'lease.early_termination_denied',
+            title:     'Early termination not approved',
+            body:      'Your request to end your lease early was not approved — the lease remains active. You can submit a new request from your lease page.',
+            actionUrl: "/member/leases/{$lease->id}",
+            data:      ['lease_id' => $lease->id],
         ));
     }
 

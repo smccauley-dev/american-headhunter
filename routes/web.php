@@ -10,6 +10,7 @@ use App\Http\Controllers\Member\LeaseDocumentController;
 use App\Http\Controllers\Member\LeaseSignController;
 use App\Http\Controllers\Member\MemberController;
 use App\Http\Controllers\Member\MembershipController;
+use App\Http\Controllers\Member\NotificationController;
 use App\Http\Controllers\Member\PayoutController;
 use App\Http\Controllers\Member\ProfileController;
 use App\Http\Controllers\Member\PropertyController as MemberPropertyController;
@@ -211,6 +212,13 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/checkin',  [CheckInController::class, 'store'])->name('checkin.store')->middleware('throttle:20,1');
     Route::post('/checkout', [CheckInController::class, 'destroy'])->name('checkin.destroy')->middleware('throttle:20,1');
     Route::post('/leases/{lease}/email-qr', [CheckInController::class, 'emailQr'])->name('leases.email-qr')->middleware('throttle:5,1');
+
+    // In-app notification center (the bell + unread inbox). Reads and mark-read
+    // run as the member (ah_runtime); RLS scopes every query to their own rows.
+    // Creation is system-authored elsewhere, so there is no create route here.
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications');
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all')->middleware('throttle:30,1');
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read')->middleware('throttle:60,1');
 
     Route::get('/profile/avatar/{userId}', [ProfileController::class, 'serveAvatar'])->name('profile.avatar');
     Route::get('/profile/photos/{documentId}', [ProfileController::class, 'servePhoto'])->name('profile.photos.serve');

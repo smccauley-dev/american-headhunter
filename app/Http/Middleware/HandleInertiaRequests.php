@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Communications\NotificationService;
 use App\Services\Platform\TenantService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -32,7 +33,33 @@ class HandleInertiaRequests extends Middleware
             // skipped on partial reloads that don't ask for it; TenantService is
             // Valkey-cached, so resolving it per full load is cheap.
             'nav' => fn (): array => $this->navData(),
+            // In-app notification bell — unread count + a short recent list for
+            // the dropdown. Lazy closure: only resolved on full loads (and skipped
+            // on partial reloads), and null for unauthenticated visitors so the
+            // public site never touches DB 7.
+            'notifications' => fn (): ?array => $this->notificationData($request),
         ]);
+    }
+
+    /**
+     * Unread count + recent in-app notifications for the signed-in member. Null
+     * when unauthenticated. RLS scopes the queries to the current user.
+     *
+     * @return array{unread_count:int, recent:array<int, array<string, mixed>>}|null
+     */
+    private function notificationData(Request $request): ?array
+    {
+        $userId = $request->hasSession() ? $request->session()->get('auth.user_id') : null;
+        if (! $userId) {
+            return null;
+        }
+
+        $service = app(NotificationService::class);
+
+        return [
+            'unread_count' => $service->unreadCount($userId),
+            'recent'       => $service->recentForUser($userId, 8),
+        ];
     }
 
     /**

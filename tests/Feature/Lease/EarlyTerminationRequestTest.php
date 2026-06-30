@@ -5,6 +5,7 @@ namespace Tests\Feature\Lease;
 use App\Jobs\Lease\SendLeaseTerminationDecisionEmail;
 use App\Models\Billing\LeasePayment;
 use App\Models\Billing\SecurityDeposit;
+use App\Models\Communications\Notification;
 use App\Models\Lease\LeaseTerminationRequest;
 use App\Services\Billing\StripeService;
 use App\Services\Lease\LeaseService;
@@ -69,6 +70,7 @@ class EarlyTerminationRequestTest extends TestCase
 
     protected function tearDown(): void
     {
+        DB::connection('communications')->table('notifications')->where('user_id', $this->lesseeId)->delete();
         DB::connection('lease')->table('lease_termination_requests')->where('lease_id', $this->leaseId)->delete();
         if ($this->paymentIds) {
             DB::connection('billing')->table('lease_payments')->whereIn('id', $this->paymentIds)->delete();
@@ -424,6 +426,36 @@ class EarlyTerminationRequestTest extends TestCase
 
         Queue::assertPushed(SendLeaseTerminationDecisionEmail::class, fn ($job) =>
             $job->decision === 'denied' && $job->recipientUserId === $this->lesseeId);
+    }
+
+    public function test_approval_creates_an_in_app_notification_for_the_hunter(): void
+    {
+        Queue::fake();
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        $this->service()->approveEarlyTermination($request->id, null, $this->lessorId);
+
+        $note = Notification::where('user_id', $this->lesseeId)
+            ->where('type', 'lease.early_termination_approved')
+            ->first();
+        $this->assertNotNull($note, 'Expected an in-app notification for the hunter.');
+        $this->assertSame('in_app', $note->channel);
+        $this->assertNull($note->read_at);
+        $this->assertSame("/member/leases/{$this->leaseId}", $note->action_url);
+        $this->assertSame($this->leaseId, $note->data['lease_id'] ?? null);
+    }
+
+    public function test_denial_creates_an_in_app_notification_for_the_hunter(): void
+    {
+        Queue::fake();
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        $this->service()->denyEarlyTermination($request->id, 'Not this season.', $this->lessorId);
+
+        $this->assertSame(1, Notification::where('user_id', $this->lesseeId)
+            ->where('type', 'lease.early_termination_denied')
+            ->whereNull('read_at')
+            ->count());
     }
 
     public function test_only_the_lessor_may_decide(): void

@@ -1,4 +1,5 @@
 import { Head, router } from '@inertiajs/react'
+import NotificationBell from '../../Components/Member/NotificationBell'
 
 interface Property {
   id: string
@@ -105,12 +106,15 @@ export default function Dashboard({ name, leases, open_check_in }: Props) {
                 Member Portal
               </span>
             </div>
-            <button
-              onClick={handleSignOut}
-              style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}
-            >
-              Sign Out
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+              <NotificationBell />
+              <button
+                onClick={handleSignOut}
+                style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
 
