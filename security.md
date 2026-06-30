@@ -1157,6 +1157,53 @@ This closes the unauthenticated legacy route and keeps the authenticated `v1` ro
 
 ---
 
+## SEC-060 — Public Homepage Leaks Owner Identity + Precise Coordinates via Raw-Model Serialization in the Inertia Payload
+
+| Field | Detail |
+|---|---|
+| **Severity** | Medium (unauthenticated owner-identity + precise-location disclosure; the homepage analogue of SEC-002 / SEC-024 / SEC-025 / SEC-042 / SEC-059) |
+| **Status** | **FIXED (2026-06-30)** — `HomeController` now maps featured listings to an explicit curated array (mirroring `Public\PropertyController::index`); `owner_user_id` / `boundary_geospatial_id` / internal listing fields dropped, coordinates coarsened to 2 decimals server-side; regression test green |
+| **Found** | 2026-06-30 |
+| **File** | `app/Http/Controllers/HomeController.php` (featured-listings map → `inertia('Home', [...])`); models `app/Models/Property/Property.php`, `app/Models/Property/PropertyListing.php` |
+
+**Description:**
+The public homepage controller (`HomeController`, invokable, unauthenticated, routed at `/`) builds its `featured` prop by returning **raw Eloquent models**:
+```php
+$listings = $this->propertyService->featuredListings(...)->map(function ($listing) {
+    $docId = $listing->property?->primary_photo_document_id;
+    $listing->property?->setAttribute('primary_photo_url', $docId ? route('property-photos.show', $docId) : null);
+    return $listing;            // raw PropertyListing, with ->property and ->property.species loaded
+})->all();
+```
+`featuredListings()` eager-loads `['property', 'property.species']`. When this array is handed to `inertia('Home', [...])`, Inertia serializes every non-`$hidden` attribute of each model **and its loaded relations** into the page's JSON props — visible in view-source and the network response even though `Home.tsx` only renders a curated subset.
+
+`Property` declares `protected $hidden = ['address_encrypted'];` **only**, and `PropertyListing` declares **no `$hidden` at all**. So each featured card in the homepage payload ships:
+- `property.owner_user_id` — the landowner's DB 1 identity UUID (cross-DB join key / owner correlation),
+- `property.center_lat` + `property.center_lng` — the property's **precise** center coordinates,
+- `property.boundary_geospatial_id` — the DB 13 boundary handle,
+- internal listing fields — `visibility`, `early_termination_rent_policy`, deposit columns, etc.
+
+**Impact:**
+Unauthenticated disclosure, on the most-trafficked public page, of exactly the two field classes the platform treats as access-controlled everywhere else:
+- **Precise location** — `center_lat`/`center_lng` are withheld and gated throughout: `Public\PropertyController::show()` only emits boundary-map coordinates when `show_coords_publicly` is true, SEC-024 makes EXIF GPS member-only, SEC-025/SEC-059 gate boundary geometry. The homepage hands out precise coordinates for every featured property with no gate — the location-privacy / trespassing / poaching risk those controls exist to prevent.
+- **Owner identity** — `owner_user_id` is the same landowner UUID disclosure that SEC-042 fixed for lessees; here it leaks to anonymous visitors and lets one correlate all featured properties belonging to a given owner.
+
+This is the homepage analogue of SEC-002/SEC-059: the same data the curated public endpoints deliberately strip is leaked because the homepage returns models instead of a curated shape. It is a least-privilege / location-privacy leak, not a payment/PII-secret exposure (encrypted `address_encrypted` stays hidden; no card/Stripe data is involved).
+
+**Root cause:**
+The homepage was wired to return raw models for convenience, unlike `Public\PropertyController::index()`/`show()`, which both map to an **explicit curated array** that omits `owner_user_id`, `center_lat`/`center_lng`, and `boundary_geospatial_id`. Inertia's default full-model serialization plus the near-empty `$hidden` lists on `Property`/`PropertyListing` mean every column reaches the client. The contrast with the curated public controller (same data, same models, no leak) confirms the homepage path is the inconsistent one.
+
+**Recommended fix (mirror `Public\PropertyController::index`):**
+Map featured listings to a curated array in `HomeController` — expose only the fields the homepage card needs (e.g. `id`, `title`, `slug`, `state_code`, `county`, `total_acres`/`huntable_acres`, primary species, price/`price_per_hunter`, `primary_photo_url`) and **drop** `owner_user_id`, `center_lat`, `center_lng`, `boundary_geospatial_id`, and the internal listing fields (`visibility`, `early_termination_rent_policy`, deposit columns). Defense-in-depth: add `owner_user_id`, `center_lat`, `center_lng`, `boundary_geospatial_id` to `Property::$hidden` and the internal columns to a `PropertyListing::$hidden` so no future raw-model return re-leaks them — but note `center_lat`/`center_lng` are needed by the member property-map editor, so prefer the controller-level curation as the primary fix and treat `$hidden` as a backstop verified against those callers.
+
+**Verification:**
+- `tests/Feature/Property/HomeFeaturedPayloadTest.php` — `GET /` (guest) asserts the Inertia `listings` prop omits `owner_user_id`, `boundary_geospatial_id`, `address_encrypted`, and the internal listing fields (`visibility`, `early_termination_rent_policy`), and that `center_lat`/`center_lng` are coarsened to 2 decimals (`30.123456 → 30.12`, `-98.654321 → -98.65`) rather than full precision, while the curated card fields (title/county/state/species/listing_type) remain. Test green (30 assertions).
+- The hero card still renders its approximate coordinate readout (it already displayed `.toFixed(2)`), and the property cards still show title/location/acres/species/price/photo.
+
+> Note: `center_lat`/`center_lng` are **coarsened**, not dropped, because the homepage hero "Field Record" card deliberately shows an approximate (~1km) coordinate readout. The precise value is rounded server-side so it never reaches the client. `$hidden` backstops on `Property`/`PropertyListing` were intentionally **not** added in this pass — `center_lat`/`center_lng` are needed in full precision by the member property-map editor's serialization path, so the fix is kept at the controller-curation layer to avoid breaking that caller.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -1178,6 +1225,7 @@ This closes the unauthenticated legacy route and keeps the authenticated `v1` ro
 | SEC-057 | Forfeiture reversal left the landowner overpaid — exoneration restored Trust only, never reversed the disbursing Connect transfer or refunded the hunter ("manual reconciliation" that was never built) | Medium | **FIXED (2026-06-29)** — `reverseForfeitFault` now reverses the payout transfer + refunds the hunter (best-effort, manual-recon flagged on Stripe failure); regression tests green | — |
 | SEC-058 | Payment bypass — payment-mode success-return reconcilers (lease payment / security deposit / booking fee) author paid rows from an attacker-supplied `session_id` without checking `payment_status`; an unpaid-session replay fakes a paid lease balance / held deposit / won booking fee (free lease) | High | **FIXED (2026-06-30)** — `payment_status in ('paid','no_payment_required')` gate added to all three `record*FromCheckout` methods (covers webhook + return); webhook path unaffected; regression tests green (83 passed) | — |
 | SEC-059 | IDOR on public API — `Api\PropertyController::boundary()` serves parcel boundary GeoJSON + acreage for **any** property UUID with no `status`/`deleted_at` gate, reachable unauthenticated on the legacy `GET /properties/{id}/boundary` route; the geometry sibling of SEC-002 that the SEC-002 fix never touched (and the JSON analogue of the SEC-025 boundary-image gate) — leaks precise location/extent of draft/suspended/archived/soft-deleted properties | Medium | **FIXED (2026-06-30)** — `boundary()` now applies the same active-status/`deleted_at` 404 guard as `show()` before serving geometry; regression tests green (14 passed) | — |
+| SEC-060 | Public homepage (`HomeController` → `inertia('Home')`) returns raw `PropertyListing`/`Property` models, leaking `owner_user_id`, precise `center_lat`/`center_lng`, `boundary_geospatial_id`, and internal listing fields (`visibility`, deposit/early-term policy) into the unauthenticated page JSON; the curated `Public\PropertyController` deliberately strips exactly these — homepage analogue of SEC-002/024/025/042/059 | Medium | **FIXED (2026-06-30)** — featured listings curated to an explicit array (mirrors `Public\PropertyController::index`); owner UUID + boundary id + internal fields dropped, coords coarsened to 2 decimals server-side; regression test green (`HomeFeaturedPayloadTest`) | — |
 
 ---
 

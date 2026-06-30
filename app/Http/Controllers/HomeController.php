@@ -23,13 +23,42 @@ class HomeController extends Controller
         $cardCount = (int) $t->getSetting('home.hero_card_count', '1');
 
         try {
+            // Curate the public payload (SEC-060). featuredListings() returns raw
+            // Eloquent models; returning them directly serializes every non-hidden
+            // attribute (owner_user_id, precise center_lat/center_lng,
+            // boundary_geospatial_id, internal listing fields) into the page JSON.
+            // Emit an explicit shape — mirroring Public\PropertyController::index —
+            // that exposes only what the homepage card renders. Coordinates are
+            // coarsened to the 2-decimal precision the hero card already displays,
+            // so the precise location never leaves the server.
             $listings = $this->propertyService->featuredListings(max(6, $cardCount + 5))->map(function ($listing) {
-                $docId = $listing->property?->primary_photo_document_id;
-                $listing->property?->setAttribute(
-                    'primary_photo_url',
-                    $docId ? route('property-photos.show', $docId) : null,
-                );
-                return $listing;
+                $property = $listing->property;
+                $docId    = $property?->primary_photo_document_id;
+
+                return [
+                    'id'               => $listing->id,
+                    'listing_type'     => $listing->listing_type,
+                    'price_per_hunter' => $listing->price_per_hunter,
+                    'price_total'      => $listing->price_total,
+                    'min_hunters'      => $listing->min_hunters,
+                    'max_hunters'      => $listing->max_hunters,
+                    'season_start'     => $listing->season_start,
+                    'season_end'       => $listing->season_end,
+                    'property'         => $property ? [
+                        'id'                => $property->id,
+                        'title'             => $property->title,
+                        'slug'              => $property->slug,
+                        'state_code'        => $property->state_code,
+                        'county'            => $property->county,
+                        'total_acres'       => $property->total_acres,
+                        'description'       => $property->description,
+                        // Coarsened to ~1km (matches the hero card's .toFixed(2) display).
+                        'center_lat'        => $property->center_lat !== null ? round((float) $property->center_lat, 2) : null,
+                        'center_lng'        => $property->center_lng !== null ? round((float) $property->center_lng, 2) : null,
+                        'primary_photo_url' => $docId ? route('property-photos.show', $docId) : null,
+                        'species'           => $property->species->map(fn ($s) => ['species_code' => $s->species_code])->values()->all(),
+                    ] : null,
+                ];
             })->all();
         } catch (\Throwable $e) {
             Log::error('HomeController: failed to load listings', ['error' => $e->getMessage()]);
