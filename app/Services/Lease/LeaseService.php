@@ -20,6 +20,17 @@ class LeaseService extends BaseService
         private readonly AuditService    $auditService,
     ) {}
 
+    /**
+     * How much PREPAID RENT a hunter forfeits vs gets back when a landowner
+     * terminates their lease for a violation. The security deposit is always
+     * forfeited separately (a contestable claim) — this governs the rent only.
+     */
+    public const RENT_FORFEIT      = 'full_forfeit'; // hunter forfeits all prepaid rent
+    public const RENT_PRORATED     = 'prorated';     // refund the unused (future) portion of the term
+    public const RENT_FULL_REFUND  = 'full_refund';  // refund all prepaid rent (deposit still forfeited)
+
+    public const RENT_POLICIES = [self::RENT_FORFEIT, self::RENT_PRORATED, self::RENT_FULL_REFUND];
+
     // ── Read ──────────────────────────────────────────────────────────────────
 
     public function getLeaseDetail(string $leaseId): LeaseDetailDTO
@@ -378,6 +389,160 @@ class LeaseService extends BaseService
 
         // Free any day-hunt dates this lease held so they become bookable again.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
+    }
+
+    /**
+     * Terminate an active lease for the hunter's violation of the agreement. Two
+     * money consequences, both best-effort so a billing hiccup never strands the
+     * termination itself:
+     *
+     *  1. The security deposit is forfeited as a contestable FAULT_LESSEE claim —
+     *     the money stays held and the hunter can dispute it (a provisional Trust
+     *     hit), exactly like a damage forfeiture.
+     *  2. Prepaid rent is forfeited or refunded per the lease's snapshotted
+     *     early-termination policy ($rentDisposition overrides it for this action):
+     *       full_forfeit → none refunded · prorated → unused portion · full_refund → all.
+     *     The booking fee (a non-refundable commitment) is never touched.
+     *
+     * @throws \RuntimeException         when the lease is not active
+     * @throws \InvalidArgumentException when $rentDisposition is not a known policy
+     */
+    public function terminateForViolation(
+        string $leaseId,
+        string $reason,
+        ?string $rentDisposition = null,
+        ?string $actorUserId = null,
+    ): void {
+        $lease = Lease::findOrFail($leaseId);
+
+        if ($lease->status !== 'active') {
+            throw new \RuntimeException("Only an active lease can be terminated for a violation (status {$lease->status}).");
+        }
+
+        $disposition = $rentDisposition ?? $lease->early_termination_rent_policy ?? self::RENT_FORFEIT;
+        if (! in_array($disposition, self::RENT_POLICIES, true)) {
+            throw new \InvalidArgumentException("Invalid rent disposition: {$disposition}.");
+        }
+
+        $lease->update([
+            'status'             => 'terminated',
+            'terminated_at'      => now(),
+            'termination_reason' => $reason,
+        ]);
+        $this->invalidate("lease_detail:{$leaseId}");
+
+        $this->auditService->log(
+            eventType:      'lease.terminated_for_violation',
+            sourceDatabase: 'ah_lease',
+            tableName:      'leases',
+            recordId:       $leaseId,
+            userId:         $actorUserId,
+            actionSummary:  "Lease terminated for violation ({$disposition} prepaid rent): {$reason}",
+            newValues:      ['status' => 'terminated', 'rent_disposition' => $disposition],
+        );
+
+        // Forfeit the deposit as a contestable hunter-fault claim (money stays held).
+        rescue(fn () => $this->forfeitDepositForViolation($leaseId, $reason, $actorUserId));
+
+        // Refund prepaid rent per the policy (reverses the destination charge + fee).
+        rescue(fn () => $this->refundPrepaidRent($lease, $disposition, $actorUserId));
+
+        // Free the reserved term so the listing returns to the market.
+        rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
+    }
+
+    /**
+     * File the deposit forfeiture for a violation termination: the full remaining
+     * held balance, as a contestable FAULT_LESSEE claim. No-op when there is no
+     * held deposit or one is already claimed.
+     */
+    private function forfeitDepositForViolation(string $leaseId, string $reason, ?string $actorUserId): void
+    {
+        $deposits = app(\App\Services\Billing\SecurityDepositService::class);
+        $deposit  = $deposits->forLease($leaseId);
+        if (! $deposit || $deposit->status !== 'held' || $deposit->forfeit_fault !== null) {
+            return;
+        }
+
+        $remaining = $deposit->remainingCents();
+        if ($remaining <= 0) {
+            return;
+        }
+
+        $deposits->forfeit(
+            $deposit->id,
+            $remaining,
+            $reason,
+            $actorUserId,
+            \App\Services\Billing\SecurityDepositService::FAULT_LESSEE,
+            'rule_violation',
+        );
+    }
+
+    /**
+     * Refund prepaid rent (collected lease payments) per the chosen disposition.
+     * full_forfeit refunds nothing; full_refund the whole collected gross; prorated
+     * the unused (future) portion of the term. Refunds are applied charge-by-charge
+     * (each reverses its destination transfer + platform fee) until the budget is
+     * spent. Only untouched 'collected' charges are refunded — partials are left be.
+     */
+    private function refundPrepaidRent(Lease $lease, string $disposition, ?string $actorUserId): void
+    {
+        if ($disposition === self::RENT_FORFEIT) {
+            return;
+        }
+
+        $payments   = app(\App\Services\Billing\LeasePaymentService::class);
+        $refundable = $payments->collectedFor($lease->id)->where('status', 'collected');
+        $totalGross = (int) $refundable->sum('gross_cents');
+        if ($totalGross <= 0) {
+            return;
+        }
+
+        $budget = $disposition === self::RENT_FULL_REFUND
+            ? $totalGross
+            : $this->unusedRentCents($lease, $totalGross);
+        if ($budget <= 0) {
+            return;
+        }
+
+        foreach ($refundable as $payment) {
+            if ($budget <= 0) {
+                break;
+            }
+            $gross  = (int) $payment->gross_cents;
+            $amount = min($budget, $gross);
+            $payments->refund($payment, $amount >= $gross ? null : $amount, $actorUserId);
+            $budget -= $amount;
+        }
+    }
+
+    /**
+     * The portion of prepaid rent attributable to the UNUSED (future) part of the
+     * term — straight-line by day. Whole amount before the term starts, nothing once
+     * it has ended.
+     */
+    private function unusedRentCents(Lease $lease, int $totalGross): int
+    {
+        $start = $lease->start_date;
+        $end   = $lease->end_date;
+        if (! $start || ! $end || ! $end->greaterThan($start)) {
+            return 0;
+        }
+
+        $now = now();
+        if ($now->lessThanOrEqualTo($start)) {
+            return $totalGross;
+        }
+        if ($now->greaterThanOrEqualTo($end)) {
+            return 0;
+        }
+
+        // Day-granular: a partial current day counts as not-yet-used (refundable).
+        $totalDays = $start->diffInDays($end);
+        $usedDays  = floor($start->diffInDays($now));
+
+        return (int) round($totalGross * (($totalDays - $usedDays) / $totalDays));
     }
 
     public function expire(string $leaseId, ?string $actorUserId = null): void

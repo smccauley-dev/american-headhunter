@@ -27,6 +27,7 @@ class PropertyListing extends BaseModelWithSoftDeletes
         'auto_renew',
         'visibility',
         'is_featured',
+        'early_termination_rent_policy',
     ];
 
     protected function casts(): array

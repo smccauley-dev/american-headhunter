@@ -1480,6 +1480,16 @@ class PropertyFormV2
                                                     ->suffix('%')
                                                     ->minValue(0)
                                                     ->maxValue(100),
+                                                Select::make('early_termination_rent_policy')
+                                                    ->label('Prepaid Rent on Violation')
+                                                    ->helperText('If you terminate a lease for the hunter\'s violation, the deposit is always forfeited. This sets what happens to prepaid rent. Snapshotted onto each lease at signing.')
+                                                    ->options([
+                                                        'full_forfeit' => 'Forfeit all prepaid rent',
+                                                        'prorated'     => 'Refund the unused (future) portion',
+                                                        'full_refund'  => 'Refund all prepaid rent (deposit only)',
+                                                    ])
+                                                    ->default('full_forfeit')
+                                                    ->selectablePlaceholder(false),
                                             ]),
                                     ]),
                             ]),

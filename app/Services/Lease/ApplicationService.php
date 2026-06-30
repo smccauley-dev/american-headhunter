@@ -258,6 +258,9 @@ class ApplicationService extends BaseService
         $startDate  = $application->listing_season_start_snap ?? $listing->season_start;
         $endDate    = $application->listing_season_end_snap   ?? $listing->season_end;
         $totalPrice = (float) ($listing->price_total ?? 0);
+        // Snapshot the listing's early-termination rent policy so the lease keeps the
+        // terms in force at signing even if the listing changes later (grandfathering).
+        $rentPolicy = $listing->early_termination_rent_policy ?? 'full_forfeit';
 
         $lessorUser    = User::on('identity')->find($property->owner_user_id);
         $lesseeUser    = User::on('identity')->find($application->applicant_user_id);
@@ -282,17 +285,18 @@ class ApplicationService extends BaseService
         }
 
         // Lease + hunter commit together. The 7-day completion clock starts now.
-        $lease = DB::connection('lease')->transaction(function () use ($application, $property, $startDate, $endDate, $totalPrice, $actorUserId): Lease {
+        $lease = DB::connection('lease')->transaction(function () use ($application, $property, $startDate, $endDate, $totalPrice, $rentPolicy, $actorUserId): Lease {
             $lease = $this->leaseService->createFromApplication($application->id, [
-                'property_id'         => $property->id,
-                'listing_id'          => $application->listing_id,
-                'lessee_user_id'      => $application->applicant_user_id,
-                'lessor_user_id'      => $property->owner_user_id,
-                'start_date'          => $startDate,
-                'end_date'            => $endDate,
-                'total_price'         => $totalPrice,
-                'deposit_paid'        => 0.00,
-                'completion_deadline' => now()->addDays(7),
+                'property_id'                   => $property->id,
+                'listing_id'                    => $application->listing_id,
+                'lessee_user_id'                => $application->applicant_user_id,
+                'lessor_user_id'                => $property->owner_user_id,
+                'start_date'                    => $startDate,
+                'end_date'                      => $endDate,
+                'total_price'                   => $totalPrice,
+                'deposit_paid'                  => 0.00,
+                'early_termination_rent_policy' => $rentPolicy,
+                'completion_deadline'           => now()->addDays(7),
             ], $actorUserId);
 
             LeaseHunter::create([

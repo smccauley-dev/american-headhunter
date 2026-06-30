@@ -296,6 +296,31 @@ class MemberController extends Controller
             }
         }
 
+        // Terminate for violation (lessor-facing). Only on an active lease: the
+        // landowner ends the lease for a breach, forfeiting the deposit (a contestable
+        // claim) and forfeiting/refunding prepaid rent per the lease's snapshotted
+        // policy (overridable here). Surfaces the deposit held + prepaid rent collected
+        // as context so the landowner sees what the action will move.
+        $violationTermination = null;
+        if ($isLessor && $leaseRecord->status === 'active') {
+            $heldDepositCents = isset($existingDeposit) && $existingDeposit && $existingDeposit->status === 'held'
+                ? $existingDeposit->remainingCents()
+                : 0;
+            $prepaidRentCents = (int) rescue(
+                fn () => $leasePaymentService->collectedFor($lease)->where('status', 'collected')->sum('gross_cents'),
+                0,
+            );
+
+            $violationTermination = [
+                'default_policy'   => $leaseRecord->early_termination_rent_policy ?? 'full_forfeit',
+                'deposit_held'     => number_format($heldDepositCents / 100, 2),
+                'has_deposit_held' => $heldDepositCents > 0,
+                'prepaid_rent'     => number_format($prepaidRentCents / 100, 2),
+                'has_prepaid_rent' => $prepaidRentCents > 0,
+                'terminate_url'    => route('member.leases.terminate-violation', $lease),
+            ];
+        }
+
         // Both lessee money flows (booking deposit + lease balance) now collect via a
         // Stripe Connect destination charge to the landowner, so both are gated on the
         // landowner being able to take charges. Resolve that once.
@@ -471,6 +496,7 @@ class MemberController extends Controller
             'access_info'    => $accessInfo,
             'deposit'        => $deposit,
             'landowner_deposit' => $landownerDeposit,
+            'violation_termination' => $violationTermination,
             'booking_deposit' => $bookingDeposit,
             'lease_payment'  => $leasePayment,
             'landowner_finance' => $landownerFinance,
@@ -819,6 +845,41 @@ class MemberController extends Controller
         }
 
         return back()->with('success', 'Forfeiture claim filed. The hunter will be notified and may contest it.');
+    }
+
+    /**
+     * Terminate an active lease for the hunter's violation of the agreement (lessor
+     * only). Forfeits the security deposit (a contestable claim) and forfeits/refunds
+     * prepaid rent per the lease's snapshotted policy — the landowner may override the
+     * rent disposition for this termination. Runs under db.system because it authors
+     * the system-owned security_deposits / lease_payments rows.
+     */
+    public function terminateForViolation(Request $request, string $lease, LeaseService $leaseService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessor_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'reason'           => 'required|string|max:2000',
+            'rent_disposition' => 'nullable|in:full_forfeit,prorated,full_refund',
+        ]);
+
+        try {
+            $leaseService->terminateForViolation(
+                $leaseRecord->id,
+                $validated['reason'],
+                $validated['rent_disposition'] ?? null,
+                $userId,
+            );
+        } catch (\RuntimeException | \InvalidArgumentException $e) {
+            return back()->withErrors(['terminate' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Lease terminated for violation. The deposit forfeiture has been filed and any prepaid-rent refund processed.');
     }
 
     /**

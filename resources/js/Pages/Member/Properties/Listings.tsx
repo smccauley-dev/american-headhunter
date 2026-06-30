@@ -19,6 +19,7 @@ interface Listing {
   deposit_percent: number | null
   booking_deposit_amount: number | null
   booking_deposit_percent: number | null
+  early_termination_rent_policy: 'full_forfeit' | 'prorated' | 'full_refund'
 }
 
 interface Props {
@@ -117,6 +118,7 @@ function ListingForm({ property, listing, listingTypes, statuses, visibilities, 
     deposit_percent:  listing?.deposit_percent != null ? String(listing.deposit_percent) : '',
     booking_deposit_amount:  listing?.booking_deposit_amount != null ? String(listing.booking_deposit_amount) : '',
     booking_deposit_percent: listing?.booking_deposit_percent != null ? String(listing.booking_deposit_percent) : '',
+    early_termination_rent_policy: listing?.early_termination_rent_policy ?? 'full_forfeit',
   })
 
   const isDayHunt = data.listing_type === 'day_hunt'
@@ -207,6 +209,13 @@ function ListingForm({ property, listing, listingTypes, statuses, visibilities, 
         </Field>
         <Field htmlFor="booking_deposit_percent" text="Booking Deposit (%)" error={errors.booking_deposit_percent} hint="As a percent of the total. Use instead of a flat amount.">
           <input id="booking_deposit_percent" type="number" min={0} max={100} value={data.booking_deposit_percent} onChange={e => setData('booking_deposit_percent', e.target.value)} style={input} />
+        </Field>
+        <Field htmlFor="early_termination_rent_policy" text="Prepaid Rent on Violation" error={errors.early_termination_rent_policy} hint="If you terminate a lease for the hunter's violation, the deposit is always forfeited. This sets what happens to prepaid rent.">
+          <select id="early_termination_rent_policy" value={data.early_termination_rent_policy} onChange={e => setData('early_termination_rent_policy', e.target.value as typeof data.early_termination_rent_policy)} style={input}>
+            <option value="full_forfeit">Forfeit all prepaid rent</option>
+            <option value="prorated">Refund the unused (future) portion</option>
+            <option value="full_refund">Refund all prepaid rent (deposit only)</option>
+          </select>
         </Field>
       </div>
 

@@ -27,6 +27,7 @@ class Lease extends BaseModelWithSoftDeletes
         'terminated_at',
         'termination_reason',
         'completion_deadline',
+        'early_termination_rent_policy',
     ];
 
     protected function casts(): array

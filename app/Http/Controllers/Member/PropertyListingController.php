@@ -199,6 +199,7 @@ class PropertyListingController extends Controller
             'deposit_percent'  => $l->deposit_percent,
             'booking_deposit_amount'  => $l->booking_deposit_amount !== null ? (float) $l->booking_deposit_amount : null,
             'booking_deposit_percent' => $l->booking_deposit_percent,
+            'early_termination_rent_policy' => $l->early_termination_rent_policy ?? 'full_forfeit',
         ];
     }
 
@@ -220,6 +221,7 @@ class PropertyListingController extends Controller
             'deposit_percent'  => 'nullable|integer|between:0,100',
             'booking_deposit_amount'  => 'nullable|numeric|min:0',
             'booking_deposit_percent' => 'nullable|integer|between:0,100',
+            'early_termination_rent_policy' => ['nullable', Rule::in(['full_forfeit', 'prorated', 'full_refund'])],
         ]);
     }
 

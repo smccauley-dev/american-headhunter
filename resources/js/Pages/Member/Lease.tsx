@@ -150,6 +150,14 @@ interface Props {
     release_url: string
     forfeit_url: string
   } | null
+  violation_termination: {
+    default_policy: 'full_forfeit' | 'prorated' | 'full_refund'
+    deposit_held: string
+    has_deposit_held: boolean
+    prepaid_rent: string
+    has_prepaid_rent: boolean
+    terminate_url: string
+  } | null
   damage_claims: {
     claims: {
       claim_type: string
@@ -880,6 +888,74 @@ function FileForfeitureClaimForm({ url, maxAmount }: { url: string; maxAmount: s
         <button type="button" onClick={() => { reset(); setOpen(false) }} style={btnGhost}>Cancel</button>
       </div>
     </form>
+  )
+}
+
+const RENT_DISPOSITION_OPTIONS: { value: 'full_forfeit' | 'prorated' | 'full_refund'; label: string; help: string }[] = [
+  { value: 'full_forfeit', label: 'Forfeit all prepaid rent', help: 'The hunter keeps none of the rent already paid.' },
+  { value: 'prorated', label: 'Refund the unused portion', help: 'Refund rent for the remaining (future) days of the term; keep the rest.' },
+  { value: 'full_refund', label: 'Refund all prepaid rent', help: 'Only the security deposit is forfeited; all rent is returned.' },
+]
+
+function TerminateForViolationSection({ data }: { data: NonNullable<Props['violation_termination']> }) {
+  const [open, setOpen] = useState(false)
+  const { data: form, setData, post, processing, errors, reset } = useForm<{ reason: string; rent_disposition: 'full_forfeit' | 'prorated' | 'full_refund' }>(
+    { reason: '', rent_disposition: data.default_policy },
+  )
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!confirm('Terminate this lease for a violation? This ends the lease now, files a deposit-forfeiture claim against the hunter, and applies the chosen prepaid-rent disposition. This can\'t be undone.')) return
+    post(data.terminate_url, { preserveScroll: true, onSuccess: () => { reset(); setOpen(false) } })
+  }
+
+  const labelStyle: React.CSSProperties = { display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: OLIVE, marginBottom: '5px' }
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: `1px solid ${FIELD_BORDER}`, fontFamily: 'var(--body)', fontSize: '15px', background: '#fff', boxSizing: 'border-box' }
+  const selectedHelp = RENT_DISPOSITION_OPTIONS.find(o => o.value === form.rent_disposition)?.help
+
+  return (
+    <Section title="Terminate for Violation">
+      <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: INK, marginBottom: '14px' }}>
+        End this lease for a breach of the agreement. The hunter forfeits the security deposit
+        {data.has_deposit_held ? ` (${'$'}${data.deposit_held} held)` : ''} as a claim they can contest, and
+        {data.has_prepaid_rent ? ` $${data.prepaid_rent} of prepaid rent` : ' any prepaid rent'} is handled per the
+        disposition you choose below.
+      </div>
+
+      {!open ? (
+        <button onClick={() => setOpen(true)} style={btnDark}>Terminate for Violation</button>
+      ) : (
+        <form onSubmit={submit} style={{ background: '#fff', border: `1px solid ${FIELD_BORDER}`, padding: '18px' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '.2em', textTransform: 'uppercase', color: '#9a3412', marginBottom: '12px', fontWeight: 600 }}>
+            Terminate Lease for Violation
+          </div>
+
+          <div style={{ marginBottom: '14px' }}>
+            <label style={labelStyle}>Prepaid rent *</label>
+            <select value={form.rent_disposition} onChange={e => setData('rent_disposition', e.target.value as typeof form.rent_disposition)} style={inputStyle}>
+              {RENT_DISPOSITION_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}{o.value === data.default_policy ? ' (lease default)' : ''}</option>
+              ))}
+            </select>
+            {selectedHelp && <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: TAN, marginTop: '4px' }}>{selectedHelp}</div>}
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>Reason for termination *</label>
+            <textarea value={form.reason} onChange={e => setData('reason', e.target.value)} rows={3} maxLength={2000} required placeholder="Describe the violation of the lease agreement." style={{ ...inputStyle, resize: 'vertical' }} />
+            {errors.reason && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.reason}</div>}
+            {errors.terminate && <div style={{ color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }}>{errors.terminate}</div>}
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button type="submit" disabled={processing} style={{ ...btnAccent, opacity: processing ? 0.7 : 1, cursor: processing ? 'not-allowed' : 'pointer' }}>
+              {processing ? 'Terminating…' : 'Terminate Lease'}
+            </button>
+            <button type="button" onClick={() => { reset(); setOpen(false) }} style={btnGhost}>Cancel</button>
+          </div>
+        </form>
+      )}
+    </Section>
   )
 }
 
@@ -1715,7 +1791,7 @@ function CommunicationsSection({ data, isLessor }: { data: Communications; isLes
   )
 }
 
-export default function Lease({ lease, property, access_info, deposit, landowner_deposit, booking_deposit, lease_payment, landowner_finance, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
+export default function Lease({ lease, property, access_info, deposit, landowner_deposit, violation_termination, booking_deposit, lease_payment, landowner_finance, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -2022,6 +2098,8 @@ export default function Lease({ lease, property, access_info, deposit, landowner
 
           {/* Security Deposit — lessor manages the held deposit: release or file a claim */}
           {is_lessor && landowner_deposit && <LandownerDepositSection data={landowner_deposit} />}
+
+          {is_lessor && violation_termination && <TerminateForViolationSection data={violation_termination} />}
 
           {/* Signing Status — shown when pending or not all signed */}
           {signers.length > 0 && (lease.status === 'pending_signatures' || !allSigned) && (
