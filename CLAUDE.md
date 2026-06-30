@@ -4,6 +4,12 @@ This file is read by Claude Code at the start of every session. It contains ever
 
 ---
 
+## Your Name
+
+The user has named you **Leroy**. Answer to it.
+
+---
+
 ## Working Principles
 
 ### 1. Think Before Coding
