@@ -95,22 +95,37 @@ export default function Dashboard({ name, leases, open_check_in }: Props) {
       <div style={{ minHeight: '100vh', background: '#F8F4EB' }}>
 
         {/* Topbar */}
-        <div style={{ background: '#0A1512', borderBottom: '1px solid #1a2e28' }}>
-          <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 16px', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.15em', textTransform: 'uppercase', color: '#C84C21', fontWeight: 700 }}>
-                American Headhunter
-              </span>
-              <span style={{ color: '#3a5a50', fontSize: '12px' }}>·</span>
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f' }}>
-                Member Portal
-              </span>
+        <div style={{ background: '#0A1512', borderBottom: '1px solid #b8934a' }}>
+          <div style={{ maxWidth: '1160px', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+
+            {/* Logo block */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ position: 'relative', width: '42px', height: '42px', flexShrink: 0, margin: '5px' }}>
+                {/* Registration mark corners */}
+                <div style={{ position: 'absolute', top: -5, left: -5, width: 9, height: 9, borderTop: '1.5px solid #a89874', borderLeft: '1.5px solid #a89874' }} />
+                <div style={{ position: 'absolute', bottom: -5, right: -5, width: 9, height: 9, borderBottom: '1.5px solid #a89874', borderRight: '1.5px solid #a89874' }} />
+                <div style={{ width: '42px', height: '42px', border: '1px solid #a89874', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0A1512' }}>
+                  <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '15px', fontWeight: 500, color: '#F4ECDC', letterSpacing: '.05em' }}>
+                    AH
+                  </span>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: '17px', fontWeight: 400, color: '#F4ECDC', letterSpacing: '.01em', lineHeight: 1.1 }}>
+                  American Headhunter
+                </div>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 600, letterSpacing: '.22em', textTransform: 'uppercase', color: '#6b9e8f', marginTop: '3px' }}>
+                  Member Portal
+                </div>
+              </div>
             </div>
+
+            {/* Right nav */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
               <NotificationBell />
               <button
                 onClick={handleSignOut}
-                style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}
+                style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#a89874', background: 'none', border: 'none', cursor: 'pointer' }}
               >
                 Sign Out
               </button>
