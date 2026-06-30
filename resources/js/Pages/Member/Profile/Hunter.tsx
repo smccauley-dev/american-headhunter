@@ -2,6 +2,7 @@ import { Head, router, usePage } from '@inertiajs/react'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { US_STATE_CODES, US_STATE_NAMES } from '@/lib/usStates'
 import FilePondUploader from '@/Components/FilePondUploader'
+import NotificationBell from '@/Components/Member/NotificationBell'
 import {
   EyeIcon,
   EyeSlashIcon,
@@ -995,12 +996,15 @@ export default function HunterProfile({ user, profile, photos, photo_tags, activ
             </div>
 
             {/* Right nav */}
-            <button
-              onClick={() => router.post('/logout')}
-              style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#a89874', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Sign Out
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+              <NotificationBell />
+              <button
+                onClick={() => router.post('/logout')}
+                style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#a89874', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
 
