@@ -341,6 +341,58 @@ class EarlyTerminationRequestTest extends TestCase
         $this->assertSame('pending', $request->status);
     }
 
+    public function test_approval_refunds_a_custom_prepaid_rent_amount(): void
+    {
+        // $1000 collected; the landowner returns a specific $400. The charge is
+        // partially refunded, never more than the budget.
+        $payment = $this->seedCollectedPayment(100000);
+        $spy     = $this->mockRentRefunds();
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        $this->service()->approveEarlyTermination($request->id, 'Returning a partial rent credit.', $this->lessorId, null, 'custom', 40000);
+
+        $this->assertSame([40000], $spy->rentRefunds);
+        $payment->refresh();
+        $this->assertSame('partially_refunded', $payment->status);
+    }
+
+    public function test_a_custom_rent_amount_is_capped_at_the_collected_rent(): void
+    {
+        // Asking for more than was collected refunds only what exists ($1000).
+        $payment = $this->seedCollectedPayment(100000);
+        $spy     = $this->mockRentRefunds();
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        $this->service()->approveEarlyTermination($request->id, 'Full goodwill refund.', $this->lessorId, null, 'custom', 150000);
+
+        $this->assertSame([null], $spy->rentRefunds); // whole charge → null amount
+        $payment->refresh();
+        $this->assertSame('refunded', $payment->status);
+    }
+
+    public function test_a_custom_rent_refund_without_a_note_is_rejected(): void
+    {
+        // A custom amount is a discretionary decision and must be documented.
+        $payment = $this->seedCollectedPayment(100000);
+        $this->app->instance(StripeService::class, Mockery::mock(StripeService::class));
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        try {
+            $this->service()->approveEarlyTermination($request->id, '   ', $this->lessorId, null, 'custom', 40000);
+            $this->fail('Expected an InvalidArgumentException when a custom rent refund has no note.');
+        } catch (\InvalidArgumentException $e) {
+            // expected
+        }
+
+        // Nothing moved: lease active, request pending, rent untouched.
+        $lease = DB::connection('lease')->table('leases')->where('id', $this->leaseId)->first();
+        $this->assertSame('active', $lease->status);
+        $request->refresh();
+        $this->assertSame('pending', $request->status);
+        $payment->refresh();
+        $this->assertSame('collected', $payment->status);
+    }
+
     public function test_only_the_lessor_may_decide(): void
     {
         $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);

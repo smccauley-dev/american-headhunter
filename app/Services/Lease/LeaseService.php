@@ -29,7 +29,9 @@ class LeaseService extends BaseService
     public const RENT_FORFEIT      = 'full_forfeit'; // hunter forfeits all prepaid rent
     public const RENT_PRORATED     = 'prorated';     // refund the unused (future) portion of the term
     public const RENT_FULL_REFUND  = 'full_refund';  // refund all prepaid rent (deposit still forfeited)
+    public const RENT_CUSTOM       = 'custom';       // landowner-entered amount (approval-time only; requires a note)
 
+    /** Selectable rent policies (the grandfathered/default set). RENT_CUSTOM is approval-time only. */
     public const RENT_POLICIES = [self::RENT_FORFEIT, self::RENT_PRORATED, self::RENT_FULL_REFUND];
 
     // ── Read ──────────────────────────────────────────────────────────────────
@@ -492,11 +494,12 @@ class LeaseService extends BaseService
     /**
      * Refund prepaid rent (collected lease payments) per the chosen disposition.
      * full_forfeit refunds nothing; full_refund the whole collected gross; prorated
-     * the unused (future) portion of the term. Refunds are applied charge-by-charge
-     * (each reverses its destination transfer + platform fee) until the budget is
-     * spent. Only untouched 'collected' charges are refunded — partials are left be.
+     * the unused (future) portion of the term; custom a landowner-entered amount
+     * (capped at the collected gross). Refunds are applied charge-by-charge (each
+     * reverses its destination transfer + platform fee) until the budget is spent.
+     * Only untouched 'collected' charges are refunded — partials are left be.
      */
-    private function refundPrepaidRent(Lease $lease, string $disposition, ?string $actorUserId): void
+    private function refundPrepaidRent(Lease $lease, string $disposition, ?string $actorUserId, ?int $customCents = null): void
     {
         if ($disposition === self::RENT_FORFEIT) {
             return;
@@ -509,9 +512,11 @@ class LeaseService extends BaseService
             return;
         }
 
-        $budget = $disposition === self::RENT_FULL_REFUND
-            ? $totalGross
-            : $this->unusedRentCents($lease, $totalGross);
+        $budget = match ($disposition) {
+            self::RENT_FULL_REFUND => $totalGross,
+            self::RENT_CUSTOM      => min(max(0, (int) $customCents), $totalGross),
+            default                => $this->unusedRentCents($lease, $totalGross), // prorated
+        };
         if ($budget <= 0) {
             return;
         }
@@ -617,7 +622,7 @@ class LeaseService extends BaseService
      *                                   not pending, or the lease is no longer active
      * @throws \InvalidArgumentException when the refund exceeds the held deposit
      */
-    public function approveEarlyTermination(string $requestId, ?string $note, string $deciderUserId, ?int $depositRefundCents = null, ?string $rentDisposition = null): void
+    public function approveEarlyTermination(string $requestId, ?string $note, string $deciderUserId, ?int $depositRefundCents = null, ?string $rentDisposition = null, ?int $rentRefundCents = null): void
     {
         $request = LeaseTerminationRequest::findOrFail($requestId);
         $lease   = $this->guardDecision($request, $deciderUserId);
@@ -629,10 +634,14 @@ class LeaseService extends BaseService
 
         // Prepaid rent is a second, separate pot from the deposit penalty. The
         // landowner chooses how much to return (defaults to the lease's snapshotted
-        // policy), settled by the same engine the violation path uses.
+        // policy), settled by the same engine the violation path uses. 'custom' is a
+        // free-form amount the landowner enters — it must be accompanied by a note.
         $disposition = $rentDisposition ?? $lease->early_termination_rent_policy ?? self::RENT_FORFEIT;
-        if (! in_array($disposition, self::RENT_POLICIES, true)) {
+        if (! in_array($disposition, [...self::RENT_POLICIES, self::RENT_CUSTOM], true)) {
             throw new \InvalidArgumentException("Invalid rent disposition: {$disposition}.");
+        }
+        if ($disposition === self::RENT_CUSTOM && trim((string) $note) === '') {
+            throw new \InvalidArgumentException('A note is required when refunding a custom rent amount.');
         }
 
         $request->update([
@@ -666,7 +675,7 @@ class LeaseService extends BaseService
 
         // Refund prepaid rent per the landowner's chosen disposition (reverses the
         // destination charge + platform fee), exactly as the violation path does.
-        rescue(fn () => $this->refundPrepaidRent($lease, $disposition, $deciderUserId));
+        rescue(fn () => $this->refundPrepaidRent($lease, $disposition, $deciderUserId, $rentRefundCents));
 
         // Free the reserved term so the listing returns to the market.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($lease->id));

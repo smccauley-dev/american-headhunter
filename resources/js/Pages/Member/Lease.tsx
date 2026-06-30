@@ -910,6 +910,18 @@ const RENT_DISPOSITION_OPTIONS: { value: 'full_forfeit' | 'prorated' | 'full_ref
   { value: 'full_refund', label: 'Refund all prepaid rent', help: 'Only the security deposit is forfeited; all rent is returned.' },
 ]
 
+type EtRentDisposition = 'full_forfeit' | 'prorated' | 'full_refund' | 'custom'
+
+// Early-termination approval adds a free-form 'custom' amount on top of the
+// standard policies. Proration stays bounded to the lease dates (whole amount
+// before the term starts, nothing once it ends).
+const ET_RENT_OPTIONS: { value: EtRentDisposition; label: string; help: string }[] = [
+  { value: 'full_forfeit', label: 'Forfeit all prepaid rent', help: 'The hunter keeps none of the rent already paid.' },
+  { value: 'prorated', label: 'Refund the unused portion', help: 'Refund rent for the remaining (future) days within the lease term; keep the rest. Before the term starts this is the full amount.' },
+  { value: 'full_refund', label: 'Refund all prepaid rent', help: 'Only the security deposit is forfeited; all rent is returned.' },
+  { value: 'custom', label: 'Custom amount…', help: 'Refund a specific amount you choose, up to the rent collected. A note explaining your decision is required.' },
+]
+
 function TerminateForViolationSection({ data }: { data: NonNullable<Props['violation_termination']> }) {
   const [open, setOpen] = useState(false)
   const { data: form, setData, post, processing, errors, reset } = useForm<{ reason: string; rent_disposition: 'full_forfeit' | 'prorated' | 'full_refund' }>(
@@ -989,29 +1001,41 @@ function EarlyTerminationSection({ data }: { data: NonNullable<Props['early_term
   }
 
   // Landowner — decide a pending request.
-  const decForm = useForm<{ decision: 'approve' | 'deny'; note: string; deposit_refund: string; rent_disposition: 'full_forfeit' | 'prorated' | 'full_refund' }>(
-    { decision: 'approve', note: '', deposit_refund: '', rent_disposition: data.default_rent_policy },
+  const decForm = useForm<{ decision: 'approve' | 'deny'; note: string; deposit_refund: string; rent_disposition: EtRentDisposition; rent_refund: string }>(
+    { decision: 'approve', note: '', deposit_refund: '', rent_disposition: data.default_rent_policy, rent_refund: '' },
   )
   const refundNum = parseFloat(decForm.data.deposit_refund || '0') || 0
   const keepNum = Math.max(0, data.deposit_held_cents / 100 - refundNum)
-  const rentHelp = RENT_DISPOSITION_OPTIONS.find(o => o.value === decForm.data.rent_disposition)?.help
+  const rentHelp = ET_RENT_OPTIONS.find(o => o.value === decForm.data.rent_disposition)?.help
+  const isCustomRent = decForm.data.rent_disposition === 'custom'
+  const rentMaxNum = parseFloat((data.prepaid_rent || '0').replace(/,/g, '')) || 0
+  const customRentNum = parseFloat(decForm.data.rent_refund || '0') || 0
+  // A note becomes mandatory once the landowner sets a custom rent refund.
+  const noteRequired = data.has_prepaid_rent && isCustomRent
   function decide(decision: 'approve' | 'deny') {
+    if (decision === 'approve' && noteRequired) {
+      if (!(customRentNum > 0)) { alert('Enter the custom rent refund amount.'); return }
+      if (customRentNum > rentMaxNum) { alert(`The refund can't exceed the $${data.prepaid_rent} of rent collected.`); return }
+      if (!decForm.data.note.trim()) { alert('A note is required when you set a custom rent refund.'); return }
+    }
     const refundLine = decision === 'approve' && data.has_deposit_held
       ? (refundNum > 0
           ? ` You will refund ${'$'}${refundNum.toFixed(2)} of the deposit to the hunter and keep ${'$'}${keepNum.toFixed(2)}.`
           : ' The hunter\'s security deposit is forfeited to you in full.')
       : ''
     const rentLine = decision === 'approve' && data.has_prepaid_rent && decForm.data.rent_disposition !== 'full_forfeit'
-      ? ` ${decForm.data.rent_disposition === 'full_refund' ? 'All' : 'The unused portion of'} the $${data.prepaid_rent} prepaid rent will be refunded.`
+      ? (isCustomRent
+          ? ` $${customRentNum.toFixed(2)} of the $${data.prepaid_rent} prepaid rent will be refunded.`
+          : ` ${decForm.data.rent_disposition === 'full_refund' ? 'All' : 'The unused portion of'} the $${data.prepaid_rent} prepaid rent will be refunded.`)
       : ''
     const msg = decision === 'approve'
       ? `Approve this early termination? The lease ends now.${refundLine}${rentLine} This can't be undone.`
       : 'Deny this early-termination request? The lease stays active.'
     if (!confirm(msg)) return
-    // Only send the refund amount + rent disposition on approval.
+    // Approval sends the refund amounts + rent disposition; denial sends only the note.
     decForm.transform(d => decision === 'approve'
       ? { ...d, decision }
-      : { decision, note: d.note, deposit_refund: '', rent_disposition: d.rent_disposition })
+      : { decision, note: d.note })
     decForm.post(data.decide_url, { preserveScroll: true, onSuccess: () => decForm.reset() })
   }
 
@@ -1087,16 +1111,31 @@ function EarlyTerminationSection({ data }: { data: NonNullable<Props['early_term
             <div style={{ marginBottom: '16px' }}>
               <label style={labelStyle}>Prepaid rent (${data.prepaid_rent} collected)</label>
               <select value={decForm.data.rent_disposition} onChange={e => decForm.setData('rent_disposition', e.target.value as typeof decForm.data.rent_disposition)} style={{ ...inputStyle, maxWidth: '320px' }}>
-                {RENT_DISPOSITION_OPTIONS.map(o => (
+                {ET_RENT_OPTIONS.map(o => (
                   <option key={o.value} value={o.value}>{o.label}{o.value === data.default_rent_policy ? ' (lease default)' : ''}</option>
                 ))}
               </select>
+              {isCustomRent && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                  <span style={{ fontFamily: 'var(--body)', fontSize: '15px', color: INK }}>$</span>
+                  <input
+                    type="number" min="0" max={rentMaxNum} step="0.01"
+                    value={decForm.data.rent_refund}
+                    onChange={e => decForm.setData('rent_refund', e.target.value)}
+                    placeholder="0.00"
+                    style={{ ...inputStyle, maxWidth: '160px' }}
+                  />
+                  <span style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE }}>of ${data.prepaid_rent} collected</span>
+                </div>
+              )}
               {rentHelp && <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: OLIVE, marginTop: '4px' }}>{rentHelp}</div>}
+              {decForm.errors.rent_refund && <div style={errStyle}>{decForm.errors.rent_refund}</div>}
             </div>
           )}
           <div style={{ marginBottom: '16px' }}>
-            <label style={labelStyle}>Note to the hunter (optional)</label>
-            <textarea value={decForm.data.note} onChange={e => decForm.setData('note', e.target.value)} rows={2} maxLength={2000} placeholder="Optional note explaining your decision." style={{ ...inputStyle, resize: 'vertical' }} />
+            <label style={labelStyle}>Note to the hunter {noteRequired ? '(mandatory)' : '(optional)'}</label>
+            <textarea value={decForm.data.note} onChange={e => decForm.setData('note', e.target.value)} rows={2} maxLength={2000} required={noteRequired} placeholder={noteRequired ? 'Explain the custom refund amount — required.' : 'Optional note explaining your decision.'} style={{ ...inputStyle, resize: 'vertical' }} />
+            {decForm.errors.note && <div style={errStyle}>{decForm.errors.note}</div>}
             {decForm.errors.early_termination && <div style={errStyle}>{decForm.errors.early_termination}</div>}
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>

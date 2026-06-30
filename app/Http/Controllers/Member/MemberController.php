@@ -968,9 +968,11 @@ class MemberController extends Controller
 
         $validated = $request->validate([
             'decision'         => 'required|in:approve,deny',
-            'note'             => 'nullable|string|max:2000',
+            // A note is mandatory when the landowner enters a custom rent refund.
+            'note'             => 'nullable|string|max:2000|required_if:rent_disposition,custom',
             'deposit_refund'   => 'nullable|numeric|min:0',
-            'rent_disposition' => 'nullable|in:full_forfeit,prorated,full_refund',
+            'rent_disposition' => 'nullable|in:full_forfeit,prorated,full_refund,custom',
+            'rent_refund'      => 'nullable|numeric|min:0|required_if:rent_disposition,custom',
         ]);
 
         $open = $leaseService->openTerminationRequest($leaseRecord->id);
@@ -983,9 +985,17 @@ class MemberController extends Controller
             ? (int) round(((float) $validated['deposit_refund']) * 100)
             : null;
 
+        // Custom prepaid-rent refund amount (dollars → cents). Only used when the
+        // landowner picked the 'custom' disposition; the service caps it at the
+        // collected rent.
+        $rentDisposition = $validated['rent_disposition'] ?? null;
+        $rentRefundCents = $rentDisposition === 'custom' && isset($validated['rent_refund'])
+            ? (int) round(((float) $validated['rent_refund']) * 100)
+            : null;
+
         try {
             if ($validated['decision'] === 'approve') {
-                $leaseService->approveEarlyTermination($open->id, $validated['note'] ?? null, $userId, $refundCents, $validated['rent_disposition'] ?? null);
+                $leaseService->approveEarlyTermination($open->id, $validated['note'] ?? null, $userId, $refundCents, $rentDisposition, $rentRefundCents);
             } else {
                 $leaseService->denyEarlyTermination($open->id, $validated['note'] ?? null, $userId);
             }
@@ -997,7 +1007,7 @@ class MemberController extends Controller
             return back()->with('success', 'Early-termination request denied. The lease remains active.');
         }
 
-        $rentNote = in_array($validated['rent_disposition'] ?? null, ['prorated', 'full_refund'], true)
+        $rentNote = in_array($rentDisposition, ['prorated', 'full_refund', 'custom'], true)
             ? ' Prepaid rent was refunded per your selection.'
             : '';
 
