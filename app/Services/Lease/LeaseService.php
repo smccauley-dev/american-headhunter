@@ -5,6 +5,7 @@ namespace App\Services\Lease;
 use App\Models\Lease\Club;
 use App\Models\Lease\ClubMember;
 use App\Models\Lease\Lease;
+use App\Models\Lease\LeaseTerminationRequest;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
 use App\Services\Property\PropertyService;
@@ -543,6 +544,190 @@ class LeaseService extends BaseService
         $usedDays  = floor($start->diffInDays($now));
 
         return (int) round($totalGross * (($totalDays - $usedDays) / $totalDays));
+    }
+
+    // ── Hunter-requested early termination ──────────────────────────────────────
+
+    /**
+     * A hunter asks to end their active lease early. Records a pending request the
+     * landowner must approve or deny — nothing terminates and no money moves yet.
+     * Only the lessee may ask, only on an active lease, and only one open request
+     * may exist at a time.
+     *
+     * @throws \RuntimeException when the lease is not active, the user is not the
+     *                           lessee, or an open request already exists
+     */
+    public function requestEarlyTermination(string $leaseId, string $reason, string $requesterUserId): LeaseTerminationRequest
+    {
+        $lease = Lease::findOrFail($leaseId);
+
+        if ($lease->status !== 'active') {
+            throw new \RuntimeException("Only an active lease can be ended early (status {$lease->status}).");
+        }
+        if ($lease->lessee_user_id !== $requesterUserId) {
+            throw new \RuntimeException('Only the hunter on the lease may request early termination.');
+        }
+        if ($this->openTerminationRequest($leaseId) !== null) {
+            throw new \RuntimeException('There is already a pending early-termination request for this lease.');
+        }
+
+        $request = LeaseTerminationRequest::create([
+            'lease_id'             => $leaseId,
+            'requested_by_user_id' => $requesterUserId,
+            'reason'               => $reason,
+            'status'               => 'pending',
+        ]);
+        $this->invalidate("lease_detail:{$leaseId}");
+
+        $this->auditService->log(
+            eventType:      'lease.early_termination_requested',
+            sourceDatabase: 'ah_lease',
+            tableName:      'lease_termination_requests',
+            recordId:       $request->id,
+            userId:         $requesterUserId,
+            actionSummary:  "Hunter requested early termination: {$reason}",
+        );
+
+        return $request;
+    }
+
+    /**
+     * The landowner approves a hunter's early-termination request: the lease is
+     * terminated and the hunter forfeits the security deposit as a non-contestable
+     * early-exit penalty (settled immediately, kept by the landowner, no Trust
+     * hit). Prepaid rent is left as-is — the configurable rent policy applies only
+     * to a violation termination. Only the lessor may approve, only while the
+     * request is pending and the lease still active.
+     *
+     * @throws \RuntimeException when the user is not the lessor, the request is not
+     *                           pending, or the lease is no longer active
+     */
+    public function approveEarlyTermination(string $requestId, ?string $note, string $deciderUserId): void
+    {
+        $request = LeaseTerminationRequest::findOrFail($requestId);
+        $lease   = $this->guardDecision($request, $deciderUserId);
+
+        $request->update([
+            'status'             => 'approved',
+            'decided_by_user_id' => $deciderUserId,
+            'decision_note'      => $note,
+            'decided_at'         => now(),
+        ]);
+
+        $lease->update([
+            'status'             => 'terminated',
+            'terminated_at'      => now(),
+            'termination_reason' => 'Early termination requested by hunter — approved by landowner',
+        ]);
+        $this->invalidate("lease_detail:{$lease->id}");
+
+        $this->auditService->log(
+            eventType:      'lease.early_termination_approved',
+            sourceDatabase: 'ah_lease',
+            tableName:      'lease_termination_requests',
+            recordId:       $requestId,
+            userId:         $deciderUserId,
+            actionSummary:  'Hunter early-termination request approved; lease terminated',
+            newValues:      ['lease_id' => $lease->id, 'status' => 'approved'],
+        );
+
+        // Hunter forfeits the deposit as a non-contestable early-exit penalty: an
+        // immediate keep-for-landowner settlement with no Trust hit.
+        rescue(fn () => $this->forfeitDepositForEarlyExit($lease->id, $deciderUserId));
+
+        // Free the reserved term so the listing returns to the market.
+        rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($lease->id));
+    }
+
+    /**
+     * The landowner denies a hunter's early-termination request. The lease is
+     * untouched and the hunter remains bound by it.
+     *
+     * @throws \RuntimeException when the user is not the lessor or the request is
+     *                           not pending
+     */
+    public function denyEarlyTermination(string $requestId, ?string $note, string $deciderUserId): void
+    {
+        $request = LeaseTerminationRequest::findOrFail($requestId);
+        $lease   = $this->guardDecision($request, $deciderUserId);
+
+        $request->update([
+            'status'             => 'denied',
+            'decided_by_user_id' => $deciderUserId,
+            'decision_note'      => $note,
+            'decided_at'         => now(),
+        ]);
+        $this->invalidate("lease_detail:{$lease->id}");
+
+        $this->auditService->log(
+            eventType:      'lease.early_termination_denied',
+            sourceDatabase: 'ah_lease',
+            tableName:      'lease_termination_requests',
+            recordId:       $requestId,
+            userId:         $deciderUserId,
+            actionSummary:  'Hunter early-termination request denied',
+            newValues:      ['lease_id' => $lease->id, 'status' => 'denied'],
+        );
+    }
+
+    /** The open (pending) early-termination request for a lease, if any. */
+    public function openTerminationRequest(string $leaseId): ?LeaseTerminationRequest
+    {
+        return LeaseTerminationRequest::where('lease_id', $leaseId)
+            ->where('status', 'pending')
+            ->latest('created_at')
+            ->first();
+    }
+
+    /**
+     * Shared guards for a landowner decision: the request must be pending, the
+     * actor must be the lease's lessor, and the lease must still be active.
+     * Returns the lease for the caller to act on.
+     */
+    private function guardDecision(LeaseTerminationRequest $request, string $deciderUserId): Lease
+    {
+        if ($request->status !== 'pending') {
+            throw new \RuntimeException("This request has already been {$request->status}.");
+        }
+
+        $lease = Lease::findOrFail($request->lease_id);
+        if ($lease->lessor_user_id !== $deciderUserId) {
+            throw new \RuntimeException('Only the landowner on the lease may decide this request.');
+        }
+        if ($lease->status !== 'active') {
+            throw new \RuntimeException("The lease is no longer active (status {$lease->status}).");
+        }
+
+        return $lease;
+    }
+
+    /**
+     * Forfeit the held deposit as a non-contestable early-exit penalty: settled
+     * immediately and kept by the landowner, no Trust hit (FAULT_LANDOWNER_INITIATED
+     * is the existing immediate-settle path). No-op when nothing is held or a claim
+     * already exists.
+     */
+    private function forfeitDepositForEarlyExit(string $leaseId, ?string $actorUserId): void
+    {
+        $deposits = app(\App\Services\Billing\SecurityDepositService::class);
+        $deposit  = $deposits->forLease($leaseId);
+        if (! $deposit || $deposit->status !== 'held' || $deposit->forfeit_fault !== null) {
+            return;
+        }
+
+        $remaining = $deposit->remainingCents();
+        if ($remaining <= 0) {
+            return;
+        }
+
+        $deposits->forfeit(
+            $deposit->id,
+            $remaining,
+            'Early termination requested by hunter — deposit forfeited as early-exit penalty',
+            $actorUserId,
+            \App\Services\Billing\SecurityDepositService::FAULT_LANDOWNER_INITIATED,
+            'other',
+        );
     }
 
     public function expire(string $leaseId, ?string $actorUserId = null): void

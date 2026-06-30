@@ -158,6 +158,15 @@ interface Props {
     has_prepaid_rent: boolean
     terminate_url: string
   } | null
+  early_termination: {
+    pending: { reason: string; requested_at: string | null } | null
+    deposit_held: string
+    has_deposit_held: boolean
+    can_request: boolean
+    request_url: string
+    can_decide: boolean
+    decide_url: string
+  } | null
   damage_claims: {
     claims: {
       claim_type: string
@@ -954,6 +963,95 @@ function TerminateForViolationSection({ data }: { data: NonNullable<Props['viola
             <button type="button" onClick={() => { reset(); setOpen(false) }} style={btnGhost}>Cancel</button>
           </div>
         </form>
+      )}
+    </Section>
+  )
+}
+
+function EarlyTerminationSection({ data }: { data: NonNullable<Props['early_termination']> }) {
+  const labelStyle: React.CSSProperties = { display: 'block', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: OLIVE, marginBottom: '5px' }
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: `1px solid ${FIELD_BORDER}`, fontFamily: 'var(--body)', fontSize: '15px', background: '#fff', boxSizing: 'border-box' }
+  const intro: React.CSSProperties = { fontFamily: 'var(--body)', fontSize: '14px', color: INK, marginBottom: '14px' }
+  const quote: React.CSSProperties = { fontFamily: 'var(--body)', fontSize: '14px', color: INK, fontStyle: 'italic', borderLeft: `3px solid ${FIELD_BORDER}`, paddingLeft: '12px', margin: '0 0 14px' }
+  const errStyle: React.CSSProperties = { color: '#b91c1c', fontFamily: 'var(--body)', fontSize: '13px', marginTop: '4px' }
+
+  // Hunter — open a request.
+  const reqForm = useForm<{ reason: string }>({ reason: '' })
+  const [reqOpen, setReqOpen] = useState(false)
+  function submitRequest(e: React.FormEvent) {
+    e.preventDefault()
+    if (!confirm('Request to end this lease early? If the landowner approves, the lease ends immediately and you forfeit your security deposit as an early-exit penalty.')) return
+    reqForm.post(data.request_url, { preserveScroll: true, onSuccess: () => { reqForm.reset(); setReqOpen(false) } })
+  }
+
+  // Landowner — decide a pending request.
+  const decForm = useForm<{ decision: 'approve' | 'deny'; note: string }>({ decision: 'approve', note: '' })
+  function decide(decision: 'approve' | 'deny') {
+    const msg = decision === 'approve'
+      ? 'Approve this early termination? The lease ends now and the hunter\'s security deposit is forfeited to you. This can\'t be undone.'
+      : 'Deny this early-termination request? The lease stays active.'
+    if (!confirm(msg)) return
+    decForm.transform(d => ({ ...d, decision }))
+    decForm.post(data.decide_url, { preserveScroll: true, onSuccess: () => decForm.reset() })
+  }
+
+  return (
+    <Section title="Early Termination">
+      {data.can_request && (
+        <>
+          <div style={intro}>
+            Need to end your lease early? Send the landowner a request. If they approve, the lease ends
+            immediately and you forfeit your security deposit{data.has_deposit_held ? ` (${'$'}${data.deposit_held} held)` : ''} as
+            an early-exit penalty. Prepaid rent is not affected.
+          </div>
+          {!reqOpen ? (
+            <button onClick={() => setReqOpen(true)} style={btnDark}>Request Early Termination</button>
+          ) : (
+            <form onSubmit={submitRequest} style={{ background: '#fff', border: `1px solid ${FIELD_BORDER}`, padding: '18px' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>Why do you need to end the lease early? *</label>
+                <textarea value={reqForm.data.reason} onChange={e => reqForm.setData('reason', e.target.value)} rows={3} maxLength={2000} required placeholder="Explain your reason — the landowner will review it." style={{ ...inputStyle, resize: 'vertical' }} />
+                {reqForm.errors.reason && <div style={errStyle}>{reqForm.errors.reason}</div>}
+                {reqForm.errors.early_termination && <div style={errStyle}>{reqForm.errors.early_termination}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button type="submit" disabled={reqForm.processing} style={{ ...btnAccent, opacity: reqForm.processing ? 0.7 : 1, cursor: reqForm.processing ? 'not-allowed' : 'pointer' }}>
+                  {reqForm.processing ? 'Sending…' : 'Send Request'}
+                </button>
+                <button type="button" onClick={() => { reqForm.reset(); setReqOpen(false) }} style={btnGhost}>Cancel</button>
+              </div>
+            </form>
+          )}
+        </>
+      )}
+
+      {data.pending && !data.can_decide && !data.can_request && (
+        <div style={intro}>
+          Your early-termination request is awaiting the landowner's decision.
+          <div style={{ ...quote, marginTop: '10px' }}>“{data.pending.reason}”{data.pending.requested_at ? ` — requested ${data.pending.requested_at}` : ''}</div>
+        </div>
+      )}
+
+      {data.can_decide && data.pending && (
+        <>
+          <div style={intro}>
+            The hunter has asked to end this lease early. Approving ends the lease now and forfeits their
+            security deposit{data.has_deposit_held ? ` (${'$'}${data.deposit_held} held)` : ''} to you as an
+            early-exit penalty. Denying keeps the lease active.
+          </div>
+          <div style={quote}>“{data.pending.reason}”{data.pending.requested_at ? ` — requested ${data.pending.requested_at}` : ''}</div>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>Note to the hunter (optional)</label>
+            <textarea value={decForm.data.note} onChange={e => decForm.setData('note', e.target.value)} rows={2} maxLength={2000} placeholder="Optional note explaining your decision." style={{ ...inputStyle, resize: 'vertical' }} />
+            {decForm.errors.early_termination && <div style={errStyle}>{decForm.errors.early_termination}</div>}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button type="button" onClick={() => decide('approve')} disabled={decForm.processing} style={{ ...btnAccent, opacity: decForm.processing ? 0.7 : 1, cursor: decForm.processing ? 'not-allowed' : 'pointer' }}>
+              {decForm.processing ? 'Working…' : 'Approve & Terminate'}
+            </button>
+            <button type="button" onClick={() => decide('deny')} disabled={decForm.processing} style={btnGhost}>Deny</button>
+          </div>
+        </>
       )}
     </Section>
   )
@@ -1791,7 +1889,7 @@ function CommunicationsSection({ data, isLessor }: { data: Communications; isLes
   )
 }
 
-export default function Lease({ lease, property, access_info, deposit, landowner_deposit, violation_termination, booking_deposit, lease_payment, landowner_finance, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
+export default function Lease({ lease, property, access_info, deposit, landowner_deposit, violation_termination, early_termination, booking_deposit, lease_payment, landowner_finance, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -2100,6 +2198,7 @@ export default function Lease({ lease, property, access_info, deposit, landowner
           {is_lessor && landowner_deposit && <LandownerDepositSection data={landowner_deposit} />}
 
           {is_lessor && violation_termination && <TerminateForViolationSection data={violation_termination} />}
+          {early_termination && <EarlyTerminationSection data={early_termination} />}
 
           {/* Signing Status — shown when pending or not all signed */}
           {signers.length > 0 && (lease.status === 'pending_signatures' || !allSigned) && (

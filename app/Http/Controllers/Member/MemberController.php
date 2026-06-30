@@ -7,6 +7,7 @@ use App\Enums\LeaseDocumentTag;
 use App\Http\Controllers\Controller;
 use App\Models\Identity\User;
 use App\Models\Lease\Lease;
+use App\Models\Lease\LeaseTerminationRequest;
 use App\Services\Documents\DocumentService;
 use App\Services\Incidents\DamageClaimService;
 use App\Services\Incidents\DisputeService;
@@ -321,6 +322,38 @@ class MemberController extends Controller
             ];
         }
 
+        // Hunter-requested early termination. The lessee asks to end the lease early;
+        // the landowner approves (lease terminates, deposit forfeited as a
+        // non-contestable early-exit penalty kept by the landowner) or denies it.
+        // Surfaced to both parties while the lease is active or a request is open.
+        $earlyTermination = null;
+        $isLessee = $leaseRecord->lessee_user_id === $userId;
+        $openRequest = rescue(
+            fn () => LeaseTerminationRequest::where('lease_id', $lease)
+                ->where('status', 'pending')
+                ->latest('created_at')
+                ->first(),
+            null,
+        );
+        if (($isLessee || $isLessor) && ($leaseRecord->status === 'active' || $openRequest)) {
+            $etHeldCents = isset($existingDeposit) && $existingDeposit && $existingDeposit->status === 'held'
+                ? $existingDeposit->remainingCents()
+                : 0;
+
+            $earlyTermination = [
+                'pending' => $openRequest ? [
+                    'reason'       => $openRequest->reason,
+                    'requested_at' => $openRequest->created_at?->format('F j, Y'),
+                ] : null,
+                'deposit_held'     => number_format($etHeldCents / 100, 2),
+                'has_deposit_held' => $etHeldCents > 0,
+                'can_request'      => $isLessee && $leaseRecord->status === 'active' && ! $openRequest,
+                'request_url'      => route('member.leases.early-termination', $lease),
+                'can_decide'       => $isLessor && $openRequest !== null && $leaseRecord->status === 'active',
+                'decide_url'       => route('member.leases.early-termination.decide', $lease),
+            ];
+        }
+
         // Both lessee money flows (booking deposit + lease balance) now collect via a
         // Stripe Connect destination charge to the landowner, so both are gated on the
         // landowner being able to take charges. Resolve that once.
@@ -497,6 +530,7 @@ class MemberController extends Controller
             'deposit'        => $deposit,
             'landowner_deposit' => $landownerDeposit,
             'violation_termination' => $violationTermination,
+            'early_termination' => $earlyTermination,
             'booking_deposit' => $bookingDeposit,
             'lease_payment'  => $leasePayment,
             'landowner_finance' => $landownerFinance,
@@ -880,6 +914,73 @@ class MemberController extends Controller
         }
 
         return back()->with('success', 'Lease terminated for violation. The deposit forfeiture has been filed and any prepaid-rent refund processed.');
+    }
+
+    /**
+     * The hunter (lessee) requests to end their active lease early. Records a pending
+     * request for the landowner to act on — nothing terminates and no money moves yet.
+     * Runs under db.system (the request row is system-authored).
+     */
+    public function requestEarlyTermination(Request $request, string $lease, LeaseService $leaseService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessee_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'reason' => 'required|string|max:2000',
+        ]);
+
+        try {
+            $leaseService->requestEarlyTermination($leaseRecord->id, $validated['reason'], $userId);
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['early_termination' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Early-termination request sent to the landowner.');
+    }
+
+    /**
+     * The landowner (lessor) approves or denies the hunter's pending early-termination
+     * request. On approval the lease is terminated and the hunter forfeits the deposit
+     * as a non-contestable early-exit penalty (kept by the landowner). Runs under
+     * db.system because approval authors the system-owned security_deposits row.
+     */
+    public function decideEarlyTermination(Request $request, string $lease, LeaseService $leaseService): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $leaseRecord = Lease::where('id', $lease)
+            ->where('lessor_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'decision' => 'required|in:approve,deny',
+            'note'     => 'nullable|string|max:2000',
+        ]);
+
+        $open = $leaseService->openTerminationRequest($leaseRecord->id);
+        if (! $open) {
+            return back()->withErrors(['early_termination' => 'There is no pending early-termination request for this lease.']);
+        }
+
+        try {
+            if ($validated['decision'] === 'approve') {
+                $leaseService->approveEarlyTermination($open->id, $validated['note'] ?? null, $userId);
+            } else {
+                $leaseService->denyEarlyTermination($open->id, $validated['note'] ?? null, $userId);
+            }
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['early_termination' => $e->getMessage()]);
+        }
+
+        return back()->with('success', $validated['decision'] === 'approve'
+            ? 'Early termination approved. The lease has been terminated and the deposit forfeited to you.'
+            : 'Early-termination request denied. The lease remains active.');
     }
 
     /**
