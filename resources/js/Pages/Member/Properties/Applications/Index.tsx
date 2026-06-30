@@ -11,6 +11,8 @@ interface AppRow {
   hunters: number
   submitted_at: string | null
   has_lease: boolean
+  lease_status: string | null
+  lease_status_label: string | null
 }
 
 interface Props {
@@ -32,6 +34,24 @@ function StatusPill({ status, label }: { status: string; label: string }) {
   return (
     <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '3px 9px', border: `1px solid ${color}`, color }}>
       {label}
+    </span>
+  )
+}
+
+const LEASE_STATUS_COLOR: Record<string, string> = {
+  active: '#6b7856',             // sage — healthy
+  pending_signatures: '#b8934a', // gold — in progress
+  pending_payment: '#b8934a',
+  expired: '#a89874',            // tan — aged out
+  terminated: '#8a3216',         // clay — ended early
+  cancelled: '#722814',          // deep rust
+}
+
+function LeaseStatusBadge({ status, label }: { status: string; label: string }) {
+  const bg = LEASE_STATUS_COLOR[status] ?? INK
+  return (
+    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '2px 7px', background: bg, color: '#F4ECDC' }}>
+      Lease · {label}
     </span>
   )
 }
@@ -66,9 +86,11 @@ export default function ApplicationsIndex({ property, applications }: Props) {
                       <span style={{ fontFamily: 'var(--display)', fontSize: '18px', color: INK }}>{a.applicant_name}</span>
                       <StatusPill status={a.status} label={a.status_label} />
                       {a.has_lease && (
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '2px 7px', background: INK, color: '#F4ECDC' }}>
-                          Lease created
-                        </span>
+                        a.lease_status && a.lease_status_label
+                          ? <LeaseStatusBadge status={a.lease_status} label={a.lease_status_label} />
+                          : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '8px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '2px 7px', background: INK, color: '#F4ECDC' }}>
+                              Lease created
+                            </span>
                       )}
                     </div>
                     <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: '#6b5e50', lineHeight: 1.7 }}>

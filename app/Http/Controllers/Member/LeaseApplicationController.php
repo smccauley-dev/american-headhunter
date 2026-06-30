@@ -56,6 +56,15 @@ class LeaseApplicationController extends Controller
         'expired'      => 'Expired',
     ];
 
+    private const LEASE_STATUS_LABELS = [
+        'pending_signatures' => 'Awaiting Signatures',
+        'pending_payment'    => 'Awaiting Payment',
+        'active'             => 'Active',
+        'expired'            => 'Expired',
+        'terminated'         => 'Terminated',
+        'cancelled'          => 'Cancelled',
+    ];
+
     public function index(string $property): Response
     {
         $record = $this->authorizeManage($property);
@@ -65,18 +74,26 @@ class LeaseApplicationController extends Controller
         // Resolve applicant names in one cross-DB read under ah_system (SEC-047).
         $names = $this->resolveApplicantNames($applications->pluck('applicant_user_id'));
 
-        $rows = $applications->map(fn (LeaseApplication $a) => [
-            'id'             => $a->id,
-            'ref'            => 'AH-' . strtoupper(substr($a->id, 0, 8)),
-            'status'         => $a->status,
-            'status_label'   => self::STATUS_LABELS[$a->status] ?? ucfirst($a->status),
-            'applicant_name' => $names[$a->applicant_user_id] ?? '—',
-            'type'           => $a->application_type === 'club' ? 'Club' : 'Individual',
-            'listing_title'  => $a->property_title_snapshot ?: $record->title,
-            'hunters'        => (int) $a->desired_hunters,
-            'submitted_at'   => $a->created_at?->format('M j, Y'),
-            'has_lease'      => $a->lease()->exists(),
-        ])->values()->all();
+        $rows = $applications->map(function (LeaseApplication $a) use ($names, $record) {
+            $lease = $a->lease()->first();
+
+            return [
+                'id'                 => $a->id,
+                'ref'                => 'AH-' . strtoupper(substr($a->id, 0, 8)),
+                'status'             => $a->status,
+                'status_label'       => self::STATUS_LABELS[$a->status] ?? ucfirst($a->status),
+                'applicant_name'     => $names[$a->applicant_user_id] ?? '—',
+                'type'               => $a->application_type === 'club' ? 'Club' : 'Individual',
+                'listing_title'      => $a->property_title_snapshot ?: $record->title,
+                'hunters'            => (int) $a->desired_hunters,
+                'submitted_at'       => $a->created_at?->format('M j, Y'),
+                'has_lease'          => $lease !== null,
+                'lease_status'       => $lease?->status,
+                'lease_status_label' => $lease
+                    ? (self::LEASE_STATUS_LABELS[$lease->status] ?? ucfirst(str_replace('_', ' ', $lease->status)))
+                    : null,
+            ];
+        })->values()->all();
 
         return Inertia::render('Member/Properties/Applications/Index', [
             'property' => $this->propertyHead($record),
