@@ -14,6 +14,7 @@ use App\Http\Controllers\Member\PayoutController;
 use App\Http\Controllers\Member\ProfileController;
 use App\Http\Controllers\Member\PropertyController as MemberPropertyController;
 use App\Http\Controllers\Member\PropertyDetailController as MemberPropertyDetailController;
+use App\Http\Controllers\Member\PropertyLeaseController as MemberPropertyLeaseController;
 use App\Http\Controllers\Member\PropertyListingController as MemberPropertyListingController;
 use App\Http\Controllers\Member\PropertyManagerController as MemberPropertyManagerController;
 use App\Http\Controllers\Member\PropertyPhotoController as MemberPropertyPhotoController;
@@ -278,6 +279,9 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/properties/{property}/applications/{application}/message', [MemberLeaseApplicationController::class, 'message'])->name('properties.applications.message');
     Route::post('/properties/{property}/applications/{application}/approve', [MemberLeaseApplicationController::class, 'approve'])->name('properties.applications.approve');
     Route::post('/properties/{property}/applications/{application}/reject',  [MemberLeaseApplicationController::class, 'reject'])->name('properties.applications.reject');
+
+    // All leases (past + current) written against a property.
+    Route::get('/properties/{property}/leases', [MemberPropertyLeaseController::class, 'index'])->name('properties.leases.index');
 
     // Team tab: managers (grant/revoke). The check-in log + all other tabs are
     // served by the details hub (PropertyDetailController::edit).

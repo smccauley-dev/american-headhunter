@@ -122,6 +122,12 @@ export default function PropertyForm({ property, states, statuses, ownership = n
             >
               Lease Applications →
             </a>
+            <a
+              href={`/member/properties/${property.id}/leases`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '11px 26px', background: 'transparent', color: INK, border: `1px solid ${TAN}`, textDecoration: 'none' }}
+            >
+              Leases →
+            </a>
           </div>
         </Section>
       )}
