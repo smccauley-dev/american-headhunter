@@ -456,6 +456,7 @@ class ProcessStripeWebhookTest extends TestCase
             'payment_intent' => $pi,
             'currency'       => 'usd',
             'amount_total'   => 7500,
+            'payment_status' => 'paid',
             'metadata'       => [
                 'purpose'       => 'security_deposit',
                 'lease_id'      => $leaseId,
@@ -497,6 +498,7 @@ class ProcessStripeWebhookTest extends TestCase
             'payment_intent' => $pi,
             'currency'       => 'usd',
             'amount_total'   => 30000,
+            'payment_status' => 'paid',
             'metadata'       => [
                 'purpose'        => 'booking_fee',
                 'application_id' => $applicationId,
@@ -532,6 +534,7 @@ class ProcessStripeWebhookTest extends TestCase
             'payment_intent' => $pi,
             'currency'       => 'usd',
             'amount_total'   => 100300,
+            'payment_status' => 'paid',
             'metadata'       => [
                 'purpose'               => 'lease_payment',
                 'lease_id'              => $leaseId,

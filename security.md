@@ -1091,6 +1091,72 @@ When a security-deposit forfeiture is upheld (`confirmForfeitFault`), the forfei
 
 ---
 
+## SEC-058 — Payment Bypass: Success-Return Reconcilers Author Paid Rows Without Verifying `payment_status` (Unpaid Checkout Session Replay)
+
+| Field | Detail |
+|---|---|
+| **Severity** | High (payment bypass / financial integrity) |
+| **Status** | **FIXED (2026-06-30)** — `payment_status` gate added to all three payment-mode reconcilers; regression tests green (83 passed) |
+| **Found** | 2026-06-30 |
+| **File** | `app/Services/Billing/{LeasePaymentService,SecurityDepositService,BookingDepositService}.php` (the `record*FromCheckout` methods) + the `db.system` success-return routes (`MemberController::depositReturn` / `leasePaymentReturn`, `ApplyController::bookingFeeReturn`) |
+
+**Description:**
+The three payment-mode Checkout reconcilers — `LeasePaymentService::recordCollectedFromCheckout`, `SecurityDepositService::recordHeldFromCheckout`, `BookingDepositService::recordPaidFromCheckout` — author a *paid* billing row (`collected` / `held`) from a Stripe Checkout Session payload, keyed only on `metadata.purpose`, the presence of `metadata.lease_id`/`application_id`, the presence of `session.payment_intent`, and idempotency on that PaymentIntent id. **None of them check `session.payment_status`.** In Stripe's `payment` mode the PaymentIntent id is populated on the session at *creation* (before any payment), and `payment_status` stays `'unpaid'` until the charge succeeds — so "has a payment_intent" does **not** imply "was paid."
+
+These reconcilers are reachable two ways: (1) the signed `checkout.session.completed` **webhook** — safe, Stripe only fires it on completion; and (2) the **`db.system` success-return routes**, which retrieve the session by an `?session_id=` query param the user supplies. A member who starts a Checkout obtains their own session id from the Stripe Checkout URL (`https://checkout.stripe.com/c/pay/cs_test_…`), can **abandon payment**, then GET the return route (`/member/leases/{lease}/lease-payment/return?session_id=cs_…`, `/…/deposit/return`, or `/apply/status/{application}/booking-fee/return`). The metadata `lease_id`/`application_id` matches (it's their own session), so the guard passes and the reconciler runs under `ah_system` (BYPASSRLS) and writes the paid row — **with no money collected.** The best-effort `chargeAndTransferForPaymentIntent` / `chargeIdForPaymentIntent` calls simply return nulls (no charge exists) under `rescue`, so the write still succeeds.
+
+**Impact (per flow):**
+- **Lease payment** — a `lease_payments` row is written `collected`; `balanceDueCents` drops by the gross, and `activateIfFullyPaid` can promote a signed `pending_payment` lease to `active` (unlocking check-in, gate QR, stand map) — a free lease settlement.
+- **Security deposit** — a `security_deposits` row is written `held` and mirrored to `leases.deposit_paid`; the landowner believes the deposit is secured when no money exists. A later `release`/`forfeit` then refunds/transfers against a non-existent charge.
+- **Booking fee** — the most severe: `recordPaidFromCheckout` calls `ApplicationService::onBookingFeePaid`, which on a win **creates the lease + reservation + signing request**. An applicant can win the spot and obtain a lease without ever paying the booking fee.
+
+Authenticated-only and requires the user to grab their own `cs_…` id, so not wormable — but it is a direct, repeatable payment bypass with real financial/state consequences, hence High (the booking-fee → free-lease variant trends Critical).
+
+**Root cause:** The reconcilers were written to be shared verbatim by the trusted webhook and the user-reachable success-return, but only the webhook carries the implicit "this session completed/was paid" guarantee. Trusting the success redirect (a classic Stripe anti-pattern — "never fulfill on the redirect without verifying server-side") was carried into a path where the session id is attacker-supplied. The subscription reconciler (`MembershipCheckoutService::recordSubscriptionFromCheckout`) is *not* affected: it requires `session.subscription`, which Stripe only populates once the subscription is actually created (payment succeeded / trial started).
+
+**Fix applied (2026-06-30):** Each payment-mode reconciler now gates on payment having actually happened — immediately after the `purpose` match, `recordCollectedFromCheckout` / `recordHeldFromCheckout` / `recordPaidFromCheckout` require `in_array($session['payment_status'] ?? null, ['paid', 'no_payment_required'], true)` before authoring the row; otherwise they `Log::warning` with the session id only (correlation id — no amount/card data) and return null. The booking-fee path therefore never even consults the win/lose orchestration (`onBookingFeePaid`) for an unpaid session, so no lease is created. The guard covers **both** entry points: the signed webhook (a completed card session is already `'paid'`, so that path is unchanged) and the user-reachable `db.system` success-return. Regression: each service test gained a `record_*_rejects_an_unpaid_session` case asserting an `unpaid` payload authors no row (and, for booking fee, that `onBookingFeePaid` is never called); the existing happy-path/webhook fixtures were corrected to carry `payment_status => 'paid'` as real Stripe payloads do. Full affected suite green (83 passed): `LeasePaymentServiceTest`, `SecurityDepositServiceTest`, `BookingDepositServiceTest`, `ProcessStripeWebhookTest`, `LeasePendingPaymentTest`, `PayLeaseBalanceTest`. Defense-in-depth follow-ups (not required for the fix, noted only): scope the success-return lease/application lookup to the current user, and only honor a `session_id` the platform recorded against this user's own initiated checkout.
+
+---
+
+## SEC-059 — IDOR on Public Boundary API: `boundary()` Returns Geometry for Non-Active / Draft / Deleted Properties (the Endpoint SEC-002 Missed)
+
+| Field | Detail |
+|---|---|
+| **Severity** | Medium (unauthenticated location-data disclosure; boundary sibling of SEC-002 / SEC-025) |
+| **Status** | **FIXED (2026-06-30)** — `boundary()` now applies the SEC-002 active-status/`deleted_at` 404 guard before serving geometry; regression tests green (14 passed) |
+| **Found** | 2026-06-30 |
+| **File** | `app/Http/Controllers/Api/PropertyController.php` (`boundary()`); routed unauthenticated at `routes/api.php` `GET /properties/{id}/boundary` |
+
+**Description:**
+`Api\PropertyController::boundary($id)` calls `GeospatialService::getPropertyBoundaryGeoJson($id)` and returns the parcel boundary GeoJSON (polygon geometry + `area_acres` + `source`) **without any `status`/`deleted_at` visibility check**. The service queries `property_boundaries` (DB 13) by `property_id` alone — no join to the property's status, no RLS on that path — so it resolves a boundary for a property in *any* state: `draft`, `suspended`, `archived`, or soft-deleted.
+
+The endpoint is mounted on the **unauthenticated** legacy route group (`Route::prefix('properties')->middleware('throttle:public-api')`), so `GET /properties/{uuid}/boundary` is reachable with no token — only a per-IP throttle. A caller who knows or obtains a property UUID retrieves its precise parcel outline regardless of whether the property is publicly listed.
+
+This is the **same vulnerability class as SEC-002** ("draft properties accessible by UUID on the public API"), on the **sibling endpoint that the SEC-002 fix did not touch**. SEC-002 added the `status !== 'active' → 404` guard to `show()` (and `findBySlug()`), but `boundary()` — in the same controller, on the same unauthenticated route group — was never gated. It is also the JSON-geometry analogue of **SEC-025** (the public boundary-map *image* route, which *is* correctly gated to `p.status = 'active'`): the boundary **image** of a non-active property is private, but the boundary **polygon** of the same property is not.
+
+**Impact:**
+Unauthenticated disclosure of precise parcel boundaries (exact location/extent + acreage) for properties the owner has **not** made public — a property still being set up as a draft, one suspended/archived by the owner or staff, or a soft-deleted one. The platform deliberately treats boundary geometry as access-controlled (SEC-024 GPS handling, SEC-025 boundary-image gating, the lessee-only `Api\PropertyMapController`/`PropertyContactController`), so this is a least-privilege/location-privacy leak, not a payment/PII exposure. Not enumerable by brute force (128-bit UUID), but property UUIDs leak through ordinary channels (Inertia payloads, shared preview links, browser history, logs, a former-lessee who saw the property while active). For an *active* property the boundary image is already public, so the practical exposure is the **non-active** set.
+
+**Root cause:**
+`getPropertyBoundaryGeoJson()` is intentionally unrestricted (admin/internal callers need full visibility), exactly like `PropertyService::find()` in SEC-002. The public-facing controller is responsible for applying the visibility filter before returning, and `boundary()` — unlike its neighbor `show()` — does not. The SEC-002 audit fixed the data-returning endpoints it enumerated (`show`, `findBySlug`) but did not extend the gate to the geometry endpoint.
+
+**Recommended fix (small, mirrors SEC-002):**
+In `boundary()`, resolve the property first and apply the identical guard before serving geometry:
+```php
+$property = $this->propertyService->find($id);
+if (! $property || $property->status !== 'active' || $property->deleted_at !== null) {
+    return response()->json(['error' => 'Not found'], 404);
+}
+$geoJson = $this->geospatialService->getPropertyBoundaryGeoJson($id);
+```
+This closes the unauthenticated legacy route and keeps the authenticated `v1` route consistent with `show()`. If an active *lessee* must read the boundary of a property that later went non-active, additionally allow `LeaseService::userHasActiveLeaseForProperty()` (the gate already used by `Api\PropertyMapController`) — but the active-status check alone matches the existing SEC-002/SEC-025 contract and is the minimal fix.
+
+**Verification:**
+- `GET /properties/{uuid-of-draft}/boundary` → 404; `GET /properties/{uuid-of-soft-deleted}/boundary` → 404; `GET /properties/{uuid-of-active}/boundary` → 200.
+- `tests/Feature/Api/PropertyDetailTest.php` — `test_boundary_endpoint_returns_404_for_draft_property_with_boundary`, `..._for_soft_deleted_property_with_boundary`, `..._for_unknown_property_uuid`, alongside the existing active-with-boundary 200 case. Suite green (14 passed).
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -1110,6 +1176,8 @@ When a security-deposit forfeiture is upheld (`confirmForfeitFault`), the forfei
 | SEC-056 | RLS context-injection middleware eagerly opens all 14 databases per request → connection-slot exhaustion; the connection that loses the race has its context silently skipped (warning-logged, request continues), so that DB's RLS reads return zero rows — intermittent, load-dependent. Surfaced as a paid security deposit rendering "Pay Deposit" (the held row default-denied). | Medium | **FIXED (2026-06-25)** — lazy injection via `RlsContext` + `ConnectionEstablished` listener (only opens databases a request uses; re-applies on reconnect); fail-loud instead of swallowing; regression tests green (51 passed) | — |
 | SEC-055 | `stripe_accounts` shipped without RLS → any authenticated user could read/forge a landowner's Connect account + `payouts_enabled` flag | High (latent) | **FIXED (2026-06-25)** — RLS enabled, SELECT-only `TO ah_runtime` (own row + staff), no write policy (system-authored); regression test green (6 passed) | — |
 | SEC-057 | Forfeiture reversal left the landowner overpaid — exoneration restored Trust only, never reversed the disbursing Connect transfer or refunded the hunter ("manual reconciliation" that was never built) | Medium | **FIXED (2026-06-29)** — `reverseForfeitFault` now reverses the payout transfer + refunds the hunter (best-effort, manual-recon flagged on Stripe failure); regression tests green | — |
+| SEC-058 | Payment bypass — payment-mode success-return reconcilers (lease payment / security deposit / booking fee) author paid rows from an attacker-supplied `session_id` without checking `payment_status`; an unpaid-session replay fakes a paid lease balance / held deposit / won booking fee (free lease) | High | **FIXED (2026-06-30)** — `payment_status in ('paid','no_payment_required')` gate added to all three `record*FromCheckout` methods (covers webhook + return); webhook path unaffected; regression tests green (83 passed) | — |
+| SEC-059 | IDOR on public API — `Api\PropertyController::boundary()` serves parcel boundary GeoJSON + acreage for **any** property UUID with no `status`/`deleted_at` gate, reachable unauthenticated on the legacy `GET /properties/{id}/boundary` route; the geometry sibling of SEC-002 that the SEC-002 fix never touched (and the JSON analogue of the SEC-025 boundary-image gate) — leaks precise location/extent of draft/suspended/archived/soft-deleted properties | Medium | **FIXED (2026-06-30)** — `boundary()` now applies the same active-status/`deleted_at` 404 guard as `show()` before serving geometry; regression tests green (14 passed) | — |
 
 ---
 

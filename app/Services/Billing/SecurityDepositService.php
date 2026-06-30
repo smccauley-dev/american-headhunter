@@ -175,6 +175,18 @@ class SecurityDepositService extends BaseService
             return null;
         }
 
+        // Only a genuinely paid session may author a held row. The signed webhook
+        // fires only on completion, but the db.system success-return takes a
+        // user-supplied session_id — without this gate an abandoned (unpaid) session
+        // could be replayed to fake a held deposit (SEC-058). In payment mode the
+        // PaymentIntent id is present before payment, so it can't stand in for this.
+        // 'no_payment_required' covers any future $0 deposit.
+        $paymentStatus = $session['payment_status'] ?? null;
+        if (! in_array($paymentStatus, ['paid', 'no_payment_required'], true)) {
+            Log::warning('SecurityDeposit: ignoring non-paid checkout session', ['session_id' => $session['id'] ?? null, 'payment_status' => $paymentStatus]);
+            return null;
+        }
+
         $leaseId         = $meta['lease_id'] ?? null;
         $paymentIntentId = $session['payment_intent'] ?? null;
         if (! $leaseId || ! $paymentIntentId) {

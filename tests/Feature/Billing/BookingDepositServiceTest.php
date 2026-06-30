@@ -190,6 +190,7 @@ class BookingDepositServiceTest extends TestCase
         return [
             'mode'           => 'payment',
             'payment_intent' => $pi,
+            'payment_status' => 'paid',
             'currency'       => 'usd',
             'amount_total'   => $amount,
             'metadata'       => [
@@ -283,6 +284,27 @@ class BookingDepositServiceTest extends TestCase
             'mode'     => 'payment',
             'metadata' => ['purpose' => 'security_deposit'],
         ]));
+    }
+
+    /**
+     * SEC-058: an unpaid (abandoned) Checkout session — replayable through the
+     * user-supplied session_id on the db.system booking-fee success-return — must NOT
+     * author a held fee, because authoring it wins the spot and creates the lease. The
+     * win/lose orchestration must never even be consulted. In payment mode the
+     * PaymentIntent id is present before payment, so only payment_status gates this.
+     */
+    public function test_record_paid_rejects_an_unpaid_session(): void
+    {
+        $applications = Mockery::mock(ApplicationService::class);
+        $applications->shouldNotReceive('onBookingFeePaid');
+        $this->app->instance(ApplicationService::class, $applications);
+
+        $pi      = 'pi_' . Str::random(14);
+        $payload = $this->checkoutPayload((string) Str::uuid(), $pi);
+        $payload['payment_status'] = 'unpaid';
+
+        $this->assertNull($this->service()->recordPaidFromCheckout($payload));
+        $this->assertSame(0, BookingDeposit::where('stripe_payment_intent_id', $pi)->count());
     }
 
     // ── disburseForLease / forfeitForLease (route to landowner) ───────────────────
