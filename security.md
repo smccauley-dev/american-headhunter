@@ -1091,6 +1091,33 @@ When a security-deposit forfeiture is upheld (`confirmForfeitFault`), the forfei
 
 ---
 
+## SEC-058 — Payment Bypass: Success-Return Reconcilers Author Paid Rows Without Verifying `payment_status` (Unpaid Checkout Session Replay)
+
+| Field | Detail |
+|---|---|
+| **Severity** | High (payment bypass / financial integrity) |
+| **Status** | **FIXED (2026-06-30)** — `payment_status` gate added to all three payment-mode reconcilers; regression tests green (83 passed) |
+| **Found** | 2026-06-30 |
+| **File** | `app/Services/Billing/{LeasePaymentService,SecurityDepositService,BookingDepositService}.php` (the `record*FromCheckout` methods) + the `db.system` success-return routes (`MemberController::depositReturn` / `leasePaymentReturn`, `ApplyController::bookingFeeReturn`) |
+
+**Description:**
+The three payment-mode Checkout reconcilers — `LeasePaymentService::recordCollectedFromCheckout`, `SecurityDepositService::recordHeldFromCheckout`, `BookingDepositService::recordPaidFromCheckout` — author a *paid* billing row (`collected` / `held`) from a Stripe Checkout Session payload, keyed only on `metadata.purpose`, the presence of `metadata.lease_id`/`application_id`, the presence of `session.payment_intent`, and idempotency on that PaymentIntent id. **None of them check `session.payment_status`.** In Stripe's `payment` mode the PaymentIntent id is populated on the session at *creation* (before any payment), and `payment_status` stays `'unpaid'` until the charge succeeds — so "has a payment_intent" does **not** imply "was paid."
+
+These reconcilers are reachable two ways: (1) the signed `checkout.session.completed` **webhook** — safe, Stripe only fires it on completion; and (2) the **`db.system` success-return routes**, which retrieve the session by an `?session_id=` query param the user supplies. A member who starts a Checkout obtains their own session id from the Stripe Checkout URL (`https://checkout.stripe.com/c/pay/cs_test_…`), can **abandon payment**, then GET the return route (`/member/leases/{lease}/lease-payment/return?session_id=cs_…`, `/…/deposit/return`, or `/apply/status/{application}/booking-fee/return`). The metadata `lease_id`/`application_id` matches (it's their own session), so the guard passes and the reconciler runs under `ah_system` (BYPASSRLS) and writes the paid row — **with no money collected.** The best-effort `chargeAndTransferForPaymentIntent` / `chargeIdForPaymentIntent` calls simply return nulls (no charge exists) under `rescue`, so the write still succeeds.
+
+**Impact (per flow):**
+- **Lease payment** — a `lease_payments` row is written `collected`; `balanceDueCents` drops by the gross, and `activateIfFullyPaid` can promote a signed `pending_payment` lease to `active` (unlocking check-in, gate QR, stand map) — a free lease settlement.
+- **Security deposit** — a `security_deposits` row is written `held` and mirrored to `leases.deposit_paid`; the landowner believes the deposit is secured when no money exists. A later `release`/`forfeit` then refunds/transfers against a non-existent charge.
+- **Booking fee** — the most severe: `recordPaidFromCheckout` calls `ApplicationService::onBookingFeePaid`, which on a win **creates the lease + reservation + signing request**. An applicant can win the spot and obtain a lease without ever paying the booking fee.
+
+Authenticated-only and requires the user to grab their own `cs_…` id, so not wormable — but it is a direct, repeatable payment bypass with real financial/state consequences, hence High (the booking-fee → free-lease variant trends Critical).
+
+**Root cause:** The reconcilers were written to be shared verbatim by the trusted webhook and the user-reachable success-return, but only the webhook carries the implicit "this session completed/was paid" guarantee. Trusting the success redirect (a classic Stripe anti-pattern — "never fulfill on the redirect without verifying server-side") was carried into a path where the session id is attacker-supplied. The subscription reconciler (`MembershipCheckoutService::recordSubscriptionFromCheckout`) is *not* affected: it requires `session.subscription`, which Stripe only populates once the subscription is actually created (payment succeeded / trial started).
+
+**Fix applied (2026-06-30):** Each payment-mode reconciler now gates on payment having actually happened — immediately after the `purpose` match, `recordCollectedFromCheckout` / `recordHeldFromCheckout` / `recordPaidFromCheckout` require `in_array($session['payment_status'] ?? null, ['paid', 'no_payment_required'], true)` before authoring the row; otherwise they `Log::warning` with the session id only (correlation id — no amount/card data) and return null. The booking-fee path therefore never even consults the win/lose orchestration (`onBookingFeePaid`) for an unpaid session, so no lease is created. The guard covers **both** entry points: the signed webhook (a completed card session is already `'paid'`, so that path is unchanged) and the user-reachable `db.system` success-return. Regression: each service test gained a `record_*_rejects_an_unpaid_session` case asserting an `unpaid` payload authors no row (and, for booking fee, that `onBookingFeePaid` is never called); the existing happy-path/webhook fixtures were corrected to carry `payment_status => 'paid'` as real Stripe payloads do. Full affected suite green (83 passed): `LeasePaymentServiceTest`, `SecurityDepositServiceTest`, `BookingDepositServiceTest`, `ProcessStripeWebhookTest`, `LeasePendingPaymentTest`, `PayLeaseBalanceTest`. Defense-in-depth follow-ups (not required for the fix, noted only): scope the success-return lease/application lookup to the current user, and only honor a `session_id` the platform recorded against this user's own initiated checkout.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -1110,6 +1137,7 @@ When a security-deposit forfeiture is upheld (`confirmForfeitFault`), the forfei
 | SEC-056 | RLS context-injection middleware eagerly opens all 14 databases per request → connection-slot exhaustion; the connection that loses the race has its context silently skipped (warning-logged, request continues), so that DB's RLS reads return zero rows — intermittent, load-dependent. Surfaced as a paid security deposit rendering "Pay Deposit" (the held row default-denied). | Medium | **FIXED (2026-06-25)** — lazy injection via `RlsContext` + `ConnectionEstablished` listener (only opens databases a request uses; re-applies on reconnect); fail-loud instead of swallowing; regression tests green (51 passed) | — |
 | SEC-055 | `stripe_accounts` shipped without RLS → any authenticated user could read/forge a landowner's Connect account + `payouts_enabled` flag | High (latent) | **FIXED (2026-06-25)** — RLS enabled, SELECT-only `TO ah_runtime` (own row + staff), no write policy (system-authored); regression test green (6 passed) | — |
 | SEC-057 | Forfeiture reversal left the landowner overpaid — exoneration restored Trust only, never reversed the disbursing Connect transfer or refunded the hunter ("manual reconciliation" that was never built) | Medium | **FIXED (2026-06-29)** — `reverseForfeitFault` now reverses the payout transfer + refunds the hunter (best-effort, manual-recon flagged on Stripe failure); regression tests green | — |
+| SEC-058 | Payment bypass — payment-mode success-return reconcilers (lease payment / security deposit / booking fee) author paid rows from an attacker-supplied `session_id` without checking `payment_status`; an unpaid-session replay fakes a paid lease balance / held deposit / won booking fee (free lease) | High | **FIXED (2026-06-30)** — `payment_status in ('paid','no_payment_required')` gate added to all three `record*FromCheckout` methods (covers webhook + return); webhook path unaffected; regression tests green (83 passed) | — |
 
 ---
 

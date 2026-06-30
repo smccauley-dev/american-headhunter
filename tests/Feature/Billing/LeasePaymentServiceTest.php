@@ -204,6 +204,7 @@ class LeasePaymentServiceTest extends TestCase
         return [
             'mode'           => 'payment',
             'payment_intent' => $pi,
+            'payment_status' => 'paid',
             'currency'       => 'usd',
             'metadata'       => [
                 'purpose'               => 'lease_payment',
@@ -269,6 +270,23 @@ class LeasePaymentServiceTest extends TestCase
             'mode'     => 'payment',
             'metadata' => ['purpose' => 'booking_deposit'],
         ]));
+    }
+
+    /**
+     * SEC-058: an unpaid (abandoned) Checkout session — replayable through the
+     * user-supplied session_id on the db.system success-return — must NOT author a
+     * collected lease payment (and so must not reduce the balance or activate the
+     * lease). In payment mode the PaymentIntent id is present before payment, so only
+     * payment_status gates this.
+     */
+    public function test_record_collected_rejects_an_unpaid_session(): void
+    {
+        $pi      = 'pi_' . Str::random(14);
+        $payload = $this->checkoutPayload((string) Str::uuid(), $pi);
+        $payload['payment_status'] = 'unpaid';
+
+        $this->assertNull($this->service()->recordCollectedFromCheckout($payload));
+        $this->assertSame(0, LeasePayment::where('stripe_payment_intent_id', $pi)->count());
     }
 
     // ── refund ──────────────────────────────────────────────────────────────────

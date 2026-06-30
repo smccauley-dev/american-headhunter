@@ -151,6 +151,18 @@ class BookingDepositService extends BaseService
             return null;
         }
 
+        // Only a genuinely paid session may author a held fee — and authoring it wins
+        // the spot (creates the lease). The signed webhook fires only on completion,
+        // but the db.system success-return takes a user-supplied session_id — without
+        // this gate an abandoned (unpaid) session could be replayed to win a lease
+        // without paying (SEC-058). In payment mode the PaymentIntent id is present
+        // before payment, so it can't stand in for this.
+        $paymentStatus = $session['payment_status'] ?? null;
+        if (! in_array($paymentStatus, ['paid', 'no_payment_required'], true)) {
+            Log::warning('BookingFee: ignoring non-paid checkout session', ['session_id' => $session['id'] ?? null, 'payment_status' => $paymentStatus]);
+            return null;
+        }
+
         $applicationId   = $meta['application_id'] ?? null;
         $paymentIntentId = $session['payment_intent'] ?? null;
         if (! $applicationId || ! $paymentIntentId) {

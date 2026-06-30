@@ -137,6 +137,7 @@ class LeasePendingPaymentTest extends TestCase
         // recomputed balance hits zero and the lease should flip to active.
         app(LeasePaymentService::class)->recordCollectedFromCheckout([
             'payment_intent' => 'pi_test_' . Str::lower(Str::random(16)),
+            'payment_status' => 'paid',
             'currency'       => 'usd',
             'amount_total'   => 100000,
             'metadata'       => [
