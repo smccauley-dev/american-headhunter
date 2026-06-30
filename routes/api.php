@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DropboxSignWebhookController;
 use App\Http\Controllers\Api\LeaseSigningController;
 use App\Http\Controllers\Api\MfaController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PropertyContactController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\PropertyMapController;
@@ -68,6 +69,18 @@ Route::prefix('v1/leases')
         Route::get('/{id}/signature-status', [LeaseSigningController::class, 'signatureStatus']);
         Route::get('/{id}/contract',        [LeaseSigningController::class, 'contract'])
             ->name('api.leases.contract.download');
+    });
+
+// Notification center — mobile API parity with the member portal "bell".
+// Reads + mark-read run as the Sanctum member (ah_runtime); RLS scopes every
+// query to the caller. No db.system — creation is system-authored elsewhere.
+Route::prefix('v1/notifications')
+    ->middleware(['auth:sanctum', 'abilities:hunter:read', 'throttle:api'])
+    ->group(function () {
+        Route::get('/',              [NotificationController::class, 'index']);
+        Route::get('/unread-count',  [NotificationController::class, 'unreadCount']);
+        Route::post('/read-all',     [NotificationController::class, 'markAllRead']);
+        Route::post('/{notification}/read', [NotificationController::class, 'markRead']);
     });
 
 // MFA enrollment management — requires active hunter token

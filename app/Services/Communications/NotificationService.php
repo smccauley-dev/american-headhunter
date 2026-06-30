@@ -4,6 +4,7 @@ namespace App\Services\Communications;
 
 use App\Models\Communications\Notification;
 use App\Services\BaseService;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -80,6 +81,22 @@ class NotificationService extends BaseService
             ->get()
             ->map(fn (Notification $n) => $this->shape($n))
             ->all();
+    }
+
+    /**
+     * The member's in-app notifications, paginated (for the mobile API). Each
+     * item is shaped like recentForUser(); `$perPage` is clamped to a sane range.
+     */
+    public function paginateForUser(string $userId, int $perPage = 20): LengthAwarePaginator
+    {
+        $paginator = Notification::where('user_id', $userId)
+            ->where('channel', 'in_app')
+            ->orderByDesc('created_at')
+            ->paginate(min(max($perPage, 1), 50));
+
+        $paginator->getCollection()->transform(fn (Notification $n) => $this->shape($n));
+
+        return $paginator;
     }
 
     /** Mark one of the member's notifications read (no-op if not theirs/unknown). */
