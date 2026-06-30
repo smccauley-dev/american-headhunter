@@ -1964,6 +1964,15 @@ export default function Lease({ lease, property, access_info, deposit, landowner
 
         <div style={{ maxWidth: '1160px', margin: '0 auto', padding: '32px 24px 80px' }}>
 
+          {/* Back link — landowners return to the property's lease list; the
+              lessee (hunter) returns to their own My Leases dashboard. */}
+          <a
+            href={is_lessor && property?.id ? `/member/properties/${property.id}/leases` : '/member'}
+            style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, textDecoration: 'none', display: 'inline-block', marginBottom: '18px' }}
+          >
+            {is_lessor && property?.id ? '← Back to Leases' : '← Back to My Leases'}
+          </a>
+
           {/* Header — dark field-record plate */}
           <div style={{ position: 'relative', background: INK, boxShadow: `6px 6px 0 ${BRASS}`, marginBottom: '24px' }}>
             <div style={{ position: 'absolute', inset: 6, border: `1px dashed ${TAN}`, pointerEvents: 'none' }} />
