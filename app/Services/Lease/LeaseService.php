@@ -78,16 +78,22 @@ class LeaseService extends BaseService
     }
 
     /**
-     * Lease summaries for a lessee's portal — active and awaiting-signature
-     * leases, each assembled with its property (DB 2) via the service layer.
-     * Shared by the member dashboard overview and the profile "My Leases" tab.
+     * Lease summaries for a lessee's portal — every lease the user holds,
+     * including terminated/expired/cancelled ones kept for historical lookup,
+     * each assembled with its property (DB 2) via the service layer. Current
+     * leases sort ahead of historical ones. Shared by the member dashboard
+     * overview and the profile "My Leases" tab.
      * Not cached: a freshly signed lease must appear immediately.
      */
     public function getLeaseSummariesForLessee(string $userId): array
     {
-        $leases = Lease::whereIn('status', ['active', 'pending_signatures', 'pending_payment'])
-            ->where('lessee_user_id', $userId)
+        // Every lease the user holds — including terminated/expired/cancelled ones,
+        // which stay visible for historical lookup. Current leases (active /
+        // awaiting signature / awaiting payment) sort above historical ones so the
+        // first page always shows what's live; newest-first within each group.
+        $leases = Lease::where('lessee_user_id', $userId)
             ->whereNull('deleted_at')
+            ->orderByRaw("CASE WHEN status IN ('active', 'pending_signatures', 'pending_payment') THEN 0 ELSE 1 END")
             ->orderByDesc('start_date')
             ->get();
 

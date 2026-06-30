@@ -419,7 +419,7 @@ interface ActivityEvent {
 
 interface LeaseSummary {
   id: string
-  status: 'active' | 'pending_signatures'
+  status: 'active' | 'pending_signatures' | 'pending_payment' | 'terminated' | 'expired' | 'cancelled'
   needs_my_signature: boolean
   start_date: string | null
   end_date: string | null
@@ -1614,23 +1614,85 @@ function LeasesTab({ leases }: { leases: LeaseSummary[] }) {
     )
   }
 
+  return <PaginatedLeases leases={leases} />
+}
+
+const LEASES_PER_PAGE = 5
+
+function PaginatedLeases({ leases }: { leases: LeaseSummary[] }) {
+  const [page, setPage] = useState(0)
+  const pageCount = Math.ceil(leases.length / LEASES_PER_PAGE)
+  const safePage = Math.min(page, pageCount - 1)
+  const visible = leases.slice(safePage * LEASES_PER_PAGE, safePage * LEASES_PER_PAGE + LEASES_PER_PAGE)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {leases.map(lease => (
+      {visible.map(lease => (
         <ProfileLeaseCard key={lease.id} lease={lease} />
       ))}
+
+      {pageCount > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
+          <button
+            type="button"
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={safePage === 0}
+            style={pagerBtnStyle(safePage === 0)}
+          >
+            ← Newer
+          </button>
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', letterSpacing: '.1em', color: '#a89874' }}>
+            {safePage + 1} / {pageCount}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
+            disabled={safePage >= pageCount - 1}
+            style={pagerBtnStyle(safePage >= pageCount - 1)}
+          >
+            Older →
+          </button>
+        </div>
+      )}
     </div>
   )
 }
+
+function pagerBtnStyle(disabled: boolean): React.CSSProperties {
+  return {
+    fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase',
+    padding: '8px 18px', background: 'transparent', color: disabled ? '#c2b48f' : 'var(--ah-ink)',
+    border: '1px solid #d4c9b0', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.55 : 1,
+  }
+}
+
+// Header badge colourways on the dark (ink) strip: green = live, brass =
+// awaiting action, terra = terminated, muted = expired/cancelled (history).
+const LEASE_BADGE = {
+  green: { background: 'rgba(74,124,89,0.2)',  color: '#7bbd8e', border: '1px solid rgba(74,124,89,0.5)' },
+  brass: { background: 'rgba(184,147,74,0.18)', color: '#d8b15e', border: '1px solid rgba(184,147,74,0.5)' },
+  terra: { background: 'rgba(200,76,33,0.18)',  color: '#e0905f', border: '1px solid rgba(200,76,33,0.5)' },
+  muted: { background: 'rgba(150,140,124,0.16)', color: '#b6ab98', border: '1px solid rgba(150,140,124,0.4)' },
+} as const
 
 function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
   const pending = lease.status === 'pending_signatures'
   const needsMySignature = pending && lease.needs_my_signature
   const awaitingCountersign = pending && !lease.needs_my_signature
+  const isHistorical = lease.status === 'terminated' || lease.status === 'expired' || lease.status === 'cancelled'
   const expiringSoon = lease.days_until_expiry !== null && lease.days_until_expiry <= 30 && lease.days_until_expiry > 0
 
+  const badge =
+    needsMySignature ? { label: 'Signature Required', ...LEASE_BADGE.brass }
+    : awaitingCountersign ? { label: 'Awaiting Landowner', ...LEASE_BADGE.brass }
+    : lease.status === 'pending_payment' ? { label: 'Payment Required', ...LEASE_BADGE.brass }
+    : lease.status === 'terminated' ? { label: 'Terminated', ...LEASE_BADGE.terra }
+    : lease.status === 'expired' ? { label: 'Expired', ...LEASE_BADGE.muted }
+    : lease.status === 'cancelled' ? { label: 'Cancelled', ...LEASE_BADGE.muted }
+    : { label: 'Active', ...LEASE_BADGE.green }
+
   return (
-    <div style={{ border: '1px solid #d4c9b0', background: '#FBF7EE' }}>
+    <div style={{ border: '1px solid #d4c9b0', background: '#FBF7EE', opacity: isHistorical ? 0.72 : 1 }}>
       {/* Dark header strip */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', background: 'var(--ah-ink)' }}>
         <div>
@@ -1647,11 +1709,11 @@ function ProfileLeaseCard({ lease }: { lease: LeaseSummary }) {
         <span style={{
           fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase',
           padding: '4px 10px', borderRadius: '2px',
-          background: pending ? 'rgba(184,147,74,0.18)' : 'rgba(74,124,89,0.2)',
-          color: pending ? '#d8b15e' : '#7bbd8e',
-          border: pending ? '1px solid rgba(184,147,74,0.5)' : '1px solid rgba(74,124,89,0.5)',
+          background: badge.background,
+          color: badge.color,
+          border: badge.border,
         }}>
-          {needsMySignature ? 'Signature Required' : awaitingCountersign ? 'Awaiting Landowner' : 'Active'}
+          {badge.label}
         </span>
       </div>
 

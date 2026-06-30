@@ -134,4 +134,60 @@ class LeaseSummariesTest extends TestCase
         $this->assertSame('active', $lease['status']);
         $this->assertFalse($lease['needs_my_signature']);
     }
+
+    public function test_terminated_lease_is_still_returned_for_historical_lookup(): void
+    {
+        // A terminated lease must remain in the lessee's summaries so it can be
+        // looked up after the fact — it is not filtered out by status.
+        DB::connection('lease')->table('leases')
+            ->where('id', $this->leaseId)
+            ->update(['status' => 'terminated']);
+
+        $lease = $this->summary();
+
+        $this->assertSame('terminated', $lease['status']);
+    }
+
+    public function test_current_leases_sort_ahead_of_historical_ones(): void
+    {
+        // Setup lease is terminated (historical) with an early start date; a
+        // newer active lease must still come first because current outranks
+        // historical regardless of date.
+        DB::connection('lease')->table('leases')
+            ->where('id', $this->leaseId)
+            ->update(['status' => 'terminated', 'start_date' => '2026-01-01']);
+
+        $activeAppId   = (string) Str::uuid();
+        $activeLeaseId = (string) Str::uuid();
+        DB::connection('lease')->table('lease_applications')->insert([
+            'id'                => $activeAppId,
+            'listing_id'        => (string) Str::uuid(),
+            'applicant_user_id' => $this->userId,
+            'application_type'  => 'individual',
+            'status'            => 'approved',
+        ]);
+        DB::connection('lease')->table('leases')->insert([
+            'id'             => $activeLeaseId,
+            'application_id' => $activeAppId,
+            'property_id'    => (string) Str::uuid(),
+            'listing_id'     => (string) Str::uuid(),
+            'lessee_user_id' => $this->userId,
+            'lessor_user_id' => $this->lessorUserId,
+            'status'         => 'active',
+            'start_date'     => '2026-09-01',
+            'end_date'       => '2026-12-31',
+            'total_price'    => '3000.00',
+            'deposit_paid'   => '0.00',
+        ]);
+
+        try {
+            $summaries = app(LeaseService::class)->getLeaseSummariesForLessee($this->userId);
+
+            $this->assertSame($activeLeaseId, $summaries[0]['id'], 'Active lease should sort first.');
+            $this->assertSame($this->leaseId, $summaries[1]['id'], 'Terminated lease should sort after.');
+        } finally {
+            DB::connection('lease')->table('leases')->where('id', $activeLeaseId)->delete();
+            DB::connection('lease')->table('lease_applications')->where('id', $activeAppId)->delete();
+        }
+    }
 }
