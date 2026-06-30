@@ -278,6 +278,26 @@ const FIELD_BORDER = '#d4c9b0'
 const OLIVE  = '#4a5440'
 const BRASS  = '#b8934a'
 
+// The booking fee's final resting state, for the lessee card badge. 'held'/
+// 'collected' sit on the platform; 'disbursed' was released to the landowner
+// when the lease activated; 'forfeited'/'refunded' are terminal outcomes. The
+// badge must reflect the real status — never hardcode "Held".
+function bookingFeeBadge(status: string | null): { label: string; bg: string; fg: string; border: string; check: boolean } | null {
+  switch (status) {
+    case 'held':
+    case 'collected':
+      return { label: 'Held', bg: OLIVE, fg: '#F4ECDC', border: OLIVE, check: true }
+    case 'disbursed':
+      return { label: 'Released', bg: OLIVE, fg: '#F4ECDC', border: OLIVE, check: true }
+    case 'forfeited':
+      return { label: 'Forfeited', bg: 'transparent', fg: BRASS, border: FIELD_BORDER, check: false }
+    case 'refunded':
+      return { label: 'Refunded', bg: 'transparent', fg: TAN, border: FIELD_BORDER, check: false }
+    default:
+      return null
+  }
+}
+
 const themeVars = {
   '--ah-accent': ACCENT,
   '--ah-paper': PAPER,
@@ -2030,6 +2050,8 @@ export default function Lease({ lease, property, access_info, deposit, landowner
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
   const allSigned   = signers.every(s => s.status === 'signed')
+  const leaseEnded  = lease.status === 'terminated' || lease.status === 'expired' || lease.status === 'cancelled'
+  const bookingBadge = booking_deposit ? bookingFeeBadge(booking_deposit.status) : null
   const [payingDeposit, setPayingDeposit] = useState(false)
   const [payingLease, setPayingLease] = useState(false)
 
@@ -2241,23 +2263,29 @@ export default function Lease({ lease, property, access_info, deposit, landowner
                   </div>
                   <div style={{ fontFamily: 'var(--body)', fontSize: '22px', fontWeight: 700, color: INK }}>${booking_deposit.amount}</div>
                   <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: booking_deposit.paid ? OLIVE : TAN, marginTop: '4px' }}>
-                    {booking_deposit.paid
-                      ? `Paid to claim your spot — credited toward your total. Remaining balance $${booking_deposit.remaining_balance}.`
-                      : 'Booking fee for this lease.'}
+                    {booking_deposit.status === 'refunded'
+                      ? 'This booking fee was refunded to you.'
+                      : booking_deposit.status === 'forfeited'
+                        ? 'Paid to claim your spot — forfeited at the end of the lease.'
+                        : booking_deposit.paid
+                          ? `Paid to claim your spot — credited toward your total.${leaseEnded ? '' : ` Remaining balance $${booking_deposit.remaining_balance}.`}`
+                          : 'Booking fee for this lease.'}
                   </div>
                 </div>
 
-                {booking_deposit.paid && (
+                {bookingBadge && (
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 18px',
-                    background: OLIVE, border: `1px solid ${OLIVE}`,
+                    background: bookingBadge.bg, border: `1px solid ${bookingBadge.border}`,
                     fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '.08em',
-                    textTransform: 'uppercase', color: '#F4ECDC',
+                    textTransform: 'uppercase', color: bookingBadge.fg,
                   }}>
-                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path d="M13.5 4.5 6.5 11.5 3 8" stroke="#F4ECDC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    Held
+                    {bookingBadge.check && (
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M13.5 4.5 6.5 11.5 3 8" stroke="#F4ECDC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                    {bookingBadge.label}
                   </span>
                 )}
               </div>
