@@ -108,9 +108,27 @@ class NotificationService extends BaseService
             'type'       => $n->type,
             'title'      => $n->title,
             'body'       => $n->body,
-            'action_url' => $n->action_url,
+            'action_url' => $this->safeActionUrl($n->action_url),
             'read'       => $n->read_at !== null,
             'created_at' => $n->created_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Only ever hand the client a same-origin, relative click-through. The front
+     * end navigates straight to action_url, so anything else (an absolute URL, a
+     * scheme, or a protocol-relative `//host`) would be an open-redirect vector.
+     * action_url is system-authored today, but this is the single chokepoint that
+     * feeds every consumer (the web bell now, the mobile API later), so it is
+     * sanitized here rather than trusting each caller.
+     */
+    private function safeActionUrl(?string $url): ?string
+    {
+        if ($url === null || $url === '') {
+            return null;
+        }
+
+        // Must start with a single "/" (relative path), never "//" (protocol-relative).
+        return preg_match('#^/(?!/)#', $url) === 1 ? $url : null;
     }
 }

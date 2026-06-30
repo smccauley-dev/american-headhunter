@@ -84,6 +84,23 @@ class NotificationServiceTest extends TestCase
         $this->assertNull(Notification::find($theirs->id)->read_at);
     }
 
+    public function test_recent_strips_non_relative_action_urls(): void
+    {
+        // System-authored today, but the front end navigates straight to
+        // action_url — anything that isn't a same-origin relative path is dropped.
+        DB::connection('communications')->table('notifications')->insert([
+            ['id' => (string) Str::uuid(), 'user_id' => $this->userId, 'type' => 'a', 'channel' => 'in_app', 'title' => 'rel',  'body' => 'b', 'action_url' => '/member/leases/abc', 'created_at' => now()],
+            ['id' => (string) Str::uuid(), 'user_id' => $this->userId, 'type' => 'b', 'channel' => 'in_app', 'title' => 'abs',  'body' => 'b', 'action_url' => 'https://evil.example/phish', 'created_at' => now()->subSecond()],
+            ['id' => (string) Str::uuid(), 'user_id' => $this->userId, 'type' => 'c', 'channel' => 'in_app', 'title' => 'pr',   'body' => 'b', 'action_url' => '//evil.example/phish', 'created_at' => now()->subSeconds(2)],
+        ]);
+
+        $byTitle = collect($this->service()->recentForUser($this->userId))->keyBy('title');
+
+        $this->assertSame('/member/leases/abc', $byTitle['rel']['action_url']);
+        $this->assertNull($byTitle['abs']['action_url']);
+        $this->assertNull($byTitle['pr']['action_url']);
+    }
+
     public function test_mark_all_read_clears_every_unread_for_the_user(): void
     {
         $this->service()->notify($this->userId, 'a', 'A', 'b');
