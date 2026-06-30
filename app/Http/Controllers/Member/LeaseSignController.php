@@ -18,10 +18,15 @@ class LeaseSignController extends Controller
     {
         $userId = session('auth.user_id');
 
+        // Either party to the lease may sign here — signers can sign in any order,
+        // so the landowner reaches this page to countersign after the hunter (or
+        // before). Scoping to the lessee alone would 404 the landowner.
         $leaseRecord = Lease::where('id', $lease)
-            ->where('lessee_user_id', $userId)
+            ->where(fn ($q) => $q->where('lessee_user_id', $userId)->orWhere('lessor_user_id', $userId))
             ->whereNull('deleted_at')
             ->firstOrFail();
+
+        $isLessee = $leaseRecord->lessee_user_id === $userId;
 
         // Once the lease has moved past signing (already signed/active/cancelled),
         // there's nothing to sign — send the member to their lease page rather
@@ -52,7 +57,9 @@ class LeaseSignController extends Controller
             'request_id'     => $esigRequest->id,
             'signers'        => $signerList,
             'already_signed' => $signer->status === 'signed',
-            'deposit'        => $this->buildDepositProps($leaseRecord, $depositService),
+            // The pay-then-sign deposit gate is the lessee's obligation only — the
+            // landowner countersigns with no deposit step.
+            'deposit'        => $isLessee ? $this->buildDepositProps($leaseRecord, $depositService) : null,
         ]);
     }
 
@@ -60,19 +67,20 @@ class LeaseSignController extends Controller
     {
         $userId = session('auth.user_id');
 
+        // Either party may sign (see show()) — scope to lessee OR lessor.
         $leaseRecord = Lease::where('id', $lease)
-            ->where('lessee_user_id', $userId)
+            ->where(fn ($q) => $q->where('lessee_user_id', $userId)->orWhere('lessor_user_id', $userId))
             ->whereNull('deleted_at')
             ->firstOrFail();
 
         abort_unless($leaseRecord->status === 'pending_signatures', 410);
 
-        // Pay-then-sign gate: the lessee's signature is the one that activates the
-        // lease, so a refundable deposit (when the listing requires one) must be held
-        // before they can sign. This is the real enforcement — the UI mirror is
-        // advisory. Only the lessee reaches this controller (lessee-scoped query),
-        // so the landowner's counter-signature is never gated on a deposit.
-        if (! $this->depositSatisfied($leaseRecord, $depositService)) {
+        $isLessee = $leaseRecord->lessee_user_id === $userId;
+
+        // Pay-then-sign gate: a refundable deposit (when the listing requires one)
+        // must be held before signing. This obligation is the lessee's only — the
+        // landowner's counter-signature is never gated on a deposit.
+        if ($isLessee && ! $this->depositSatisfied($leaseRecord, $depositService)) {
             return redirect()->route('member.leases.sign', $lease)
                 ->with('error', 'Please pay your refundable security deposit before signing.');
         }
@@ -107,7 +115,7 @@ class LeaseSignController extends Controller
         }
 
         return redirect()->route('member.leases.sign', $lease)
-            ->with('success', 'Signed successfully. Your lease will become active once the landowner countersigns.');
+            ->with('success', 'Signed successfully. Your lease will become active once all parties have signed.');
     }
 
     /** Download the fully-executed lease PDF (any lease status, both parties). */
