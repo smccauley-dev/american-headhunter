@@ -617,7 +617,7 @@ class LeaseService extends BaseService
      *                                   not pending, or the lease is no longer active
      * @throws \InvalidArgumentException when the refund exceeds the held deposit
      */
-    public function approveEarlyTermination(string $requestId, ?string $note, string $deciderUserId, ?int $depositRefundCents = null): void
+    public function approveEarlyTermination(string $requestId, ?string $note, string $deciderUserId, ?int $depositRefundCents = null, ?string $rentDisposition = null): void
     {
         $request = LeaseTerminationRequest::findOrFail($requestId);
         $lease   = $this->guardDecision($request, $deciderUserId);
@@ -625,6 +625,14 @@ class LeaseService extends BaseService
         $refundCents = max(0, $depositRefundCents ?? 0);
         if ($refundCents > 0 && $refundCents > $this->heldDepositRemainingCents($lease->id)) {
             throw new \InvalidArgumentException('The deposit refund cannot exceed the held deposit.');
+        }
+
+        // Prepaid rent is a second, separate pot from the deposit penalty. The
+        // landowner chooses how much to return (defaults to the lease's snapshotted
+        // policy), settled by the same engine the violation path uses.
+        $disposition = $rentDisposition ?? $lease->early_termination_rent_policy ?? self::RENT_FORFEIT;
+        if (! in_array($disposition, self::RENT_POLICIES, true)) {
+            throw new \InvalidArgumentException("Invalid rent disposition: {$disposition}.");
         }
 
         $request->update([
@@ -647,14 +655,18 @@ class LeaseService extends BaseService
             tableName:      'lease_termination_requests',
             recordId:       $requestId,
             userId:         $deciderUserId,
-            actionSummary:  'Hunter early-termination request approved; lease terminated',
-            newValues:      ['lease_id' => $lease->id, 'status' => 'approved'],
+            actionSummary:  "Hunter early-termination request approved; lease terminated ({$disposition} prepaid rent)",
+            newValues:      ['lease_id' => $lease->id, 'status' => 'approved', 'rent_disposition' => $disposition],
         );
 
         // Hunter forfeits the deposit as a non-contestable early-exit penalty: an
         // immediate keep-for-landowner settlement with no Trust hit. The landowner
         // may return part or all of it ($refundCents) as goodwill.
         rescue(fn () => $this->forfeitDepositForEarlyExit($lease->id, $deciderUserId, $refundCents));
+
+        // Refund prepaid rent per the landowner's chosen disposition (reverses the
+        // destination charge + platform fee), exactly as the violation path does.
+        rescue(fn () => $this->refundPrepaidRent($lease, $disposition, $deciderUserId));
 
         // Free the reserved term so the listing returns to the market.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($lease->id));

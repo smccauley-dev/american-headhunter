@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Lease;
 
+use App\Models\Billing\LeasePayment;
 use App\Models\Billing\SecurityDeposit;
 use App\Models\Lease\LeaseTerminationRequest;
 use App\Services\Billing\StripeService;
@@ -30,6 +31,7 @@ class EarlyTerminationRequestTest extends TestCase
     private string $lesseeId;
     private string $lessorId;
     private ?string $depositId = null;
+    /** @var array<int,string> */ private array $paymentIds = [];
 
     protected function setUp(): void
     {
@@ -66,6 +68,9 @@ class EarlyTerminationRequestTest extends TestCase
     protected function tearDown(): void
     {
         DB::connection('lease')->table('lease_termination_requests')->where('lease_id', $this->leaseId)->delete();
+        if ($this->paymentIds) {
+            DB::connection('billing')->table('lease_payments')->whereIn('id', $this->paymentIds)->delete();
+        }
         if ($this->depositId) {
             DB::connection('billing')->table('security_deposits')->where('id', $this->depositId)->delete();
         }
@@ -91,9 +96,48 @@ class EarlyTerminationRequestTest extends TestCase
         return $deposit;
     }
 
+    private function seedCollectedPayment(int $grossCents = 100000): LeasePayment
+    {
+        $payment = LeasePayment::create([
+            'lease_id'                 => $this->leaseId,
+            'payer_user_id'            => $this->lesseeId,
+            'payee_user_id'            => $this->lessorId,
+            'stripe_account_id'        => 'acct_' . Str::random(10),
+            'gross_cents'              => $grossCents,
+            'surcharge_cents'          => 0,
+            'application_fee_cents'    => 0,
+            'net_cents'                => $grossCents,
+            'currency'                 => 'USD',
+            'status'                   => 'collected',
+            'stripe_payment_intent_id' => 'pi_' . Str::random(12),
+            'paid_at'                  => now(),
+        ]);
+        $this->paymentIds[] = $payment->id;
+
+        return $payment;
+    }
+
     private function service(): LeaseService
     {
         return app(LeaseService::class);
+    }
+
+    /** Bind a Stripe mock that records every prepaid-rent refund amount it is asked for. */
+    private function mockRentRefunds(): \stdClass
+    {
+        $spy = new \stdClass();
+        $spy->rentRefunds = [];
+
+        $stripe = Mockery::mock(StripeService::class);
+        $stripe->shouldReceive('refundDestinationCharge')
+            ->andReturnUsing(function (string $pi, ?int $amount = null) use ($spy) {
+                $spy->rentRefunds[] = $amount;
+
+                return Mockery::mock(Refund::class);
+            });
+        $this->app->instance(StripeService::class, $stripe);
+
+        return $spy;
     }
 
     /** Bind a Stripe mock that records every deposit-refund amount it is asked for. */
@@ -220,6 +264,72 @@ class EarlyTerminationRequestTest extends TestCase
         try {
             $this->service()->approveEarlyTermination($request->id, null, $this->lessorId, 60000);
             $this->fail('Expected an InvalidArgumentException for an over-large refund.');
+        } catch (\InvalidArgumentException $e) {
+            // expected
+        }
+
+        // Nothing moved: the lease is still active and the request still pending.
+        $lease = DB::connection('lease')->table('leases')->where('id', $this->leaseId)->first();
+        $this->assertSame('active', $lease->status);
+        $request->refresh();
+        $this->assertSame('pending', $request->status);
+    }
+
+    public function test_approval_refunds_all_prepaid_rent_when_chosen(): void
+    {
+        // Deposit kept as the early-exit penalty; the landowner separately chooses to
+        // return all prepaid rent — the lease total, not just the deposit.
+        $payment = $this->seedCollectedPayment(100000);
+        $spy     = $this->mockRentRefunds();
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        $this->service()->approveEarlyTermination($request->id, null, $this->lessorId, null, 'full_refund');
+
+        $this->assertSame([null], $spy->rentRefunds); // null amount = refund the whole charge
+        $payment->refresh();
+        $this->assertSame('refunded', $payment->status);
+
+        $lease = DB::connection('lease')->table('leases')->where('id', $this->leaseId)->first();
+        $this->assertSame('terminated', $lease->status);
+    }
+
+    public function test_approval_defaults_to_the_lease_rent_policy(): void
+    {
+        DB::connection('lease')->table('leases')->where('id', $this->leaseId)
+            ->update(['early_termination_rent_policy' => 'full_refund']);
+        $payment = $this->seedCollectedPayment(100000);
+        $spy     = $this->mockRentRefunds();
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        // No disposition passed — falls back to the lease's snapshotted policy.
+        $this->service()->approveEarlyTermination($request->id, null, $this->lessorId);
+
+        $this->assertSame([null], $spy->rentRefunds);
+        $payment->refresh();
+        $this->assertSame('refunded', $payment->status);
+    }
+
+    public function test_approval_forfeits_prepaid_rent_by_default(): void
+    {
+        // Lease has no policy → defaults to full_forfeit; a full mock throws on any
+        // Stripe call, proving no rent refund is attempted.
+        $payment = $this->seedCollectedPayment(100000);
+        $this->app->instance(StripeService::class, Mockery::mock(StripeService::class));
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        $this->service()->approveEarlyTermination($request->id, null, $this->lessorId);
+
+        $payment->refresh();
+        $this->assertSame('collected', $payment->status); // rent untouched
+    }
+
+    public function test_an_invalid_rent_disposition_is_rejected(): void
+    {
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        try {
+            $this->service()->approveEarlyTermination($request->id, null, $this->lessorId, null, 'bogus_policy');
+            $this->fail('Expected an InvalidArgumentException for an unknown rent disposition.');
         } catch (\InvalidArgumentException $e) {
             // expected
         }

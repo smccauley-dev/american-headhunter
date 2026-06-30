@@ -339,15 +339,22 @@ class MemberController extends Controller
             $etHeldCents = isset($existingDeposit) && $existingDeposit && $existingDeposit->status === 'held'
                 ? $existingDeposit->remainingCents()
                 : 0;
+            $etPrepaidCents = (int) rescue(
+                fn () => $leasePaymentService->collectedFor($lease)->where('status', 'collected')->sum('gross_cents'),
+                0,
+            );
 
             $earlyTermination = [
                 'pending' => $openRequest ? [
                     'reason'       => $openRequest->reason,
                     'requested_at' => $openRequest->created_at?->format('F j, Y'),
                 ] : null,
-                'deposit_held'       => number_format($etHeldCents / 100, 2),
-                'deposit_held_cents' => $etHeldCents,
-                'has_deposit_held'   => $etHeldCents > 0,
+                'deposit_held'        => number_format($etHeldCents / 100, 2),
+                'deposit_held_cents'  => $etHeldCents,
+                'has_deposit_held'    => $etHeldCents > 0,
+                'prepaid_rent'        => number_format($etPrepaidCents / 100, 2),
+                'has_prepaid_rent'    => $etPrepaidCents > 0,
+                'default_rent_policy' => $leaseRecord->early_termination_rent_policy ?? 'full_forfeit',
                 'can_request'      => $isLessee && $leaseRecord->status === 'active' && ! $openRequest,
                 'request_url'      => route('member.leases.early-termination', $lease),
                 'can_decide'       => $isLessor && $openRequest !== null && $leaseRecord->status === 'active',
@@ -960,9 +967,10 @@ class MemberController extends Controller
             ->firstOrFail();
 
         $validated = $request->validate([
-            'decision'       => 'required|in:approve,deny',
-            'note'           => 'nullable|string|max:2000',
-            'deposit_refund' => 'nullable|numeric|min:0',
+            'decision'         => 'required|in:approve,deny',
+            'note'             => 'nullable|string|max:2000',
+            'deposit_refund'   => 'nullable|numeric|min:0',
+            'rent_disposition' => 'nullable|in:full_forfeit,prorated,full_refund',
         ]);
 
         $open = $leaseService->openTerminationRequest($leaseRecord->id);
@@ -977,7 +985,7 @@ class MemberController extends Controller
 
         try {
             if ($validated['decision'] === 'approve') {
-                $leaseService->approveEarlyTermination($open->id, $validated['note'] ?? null, $userId, $refundCents);
+                $leaseService->approveEarlyTermination($open->id, $validated['note'] ?? null, $userId, $refundCents, $validated['rent_disposition'] ?? null);
             } else {
                 $leaseService->denyEarlyTermination($open->id, $validated['note'] ?? null, $userId);
             }
@@ -989,9 +997,13 @@ class MemberController extends Controller
             return back()->with('success', 'Early-termination request denied. The lease remains active.');
         }
 
-        return back()->with('success', $refundCents
+        $rentNote = in_array($validated['rent_disposition'] ?? null, ['prorated', 'full_refund'], true)
+            ? ' Prepaid rent was refunded per your selection.'
+            : '';
+
+        return back()->with('success', ($refundCents
             ? 'Early termination approved. The lease has been terminated and the deposit settled with your chosen refund to the hunter.'
-            : 'Early termination approved. The lease has been terminated and the deposit forfeited to you.');
+            : 'Early termination approved. The lease has been terminated and the deposit forfeited to you.') . $rentNote);
     }
 
     /**

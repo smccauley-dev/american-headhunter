@@ -163,6 +163,9 @@ interface Props {
     deposit_held: string
     deposit_held_cents: number
     has_deposit_held: boolean
+    prepaid_rent: string
+    has_prepaid_rent: boolean
+    default_rent_policy: 'full_forfeit' | 'prorated' | 'full_refund'
     can_request: boolean
     request_url: string
     can_decide: boolean
@@ -986,23 +989,29 @@ function EarlyTerminationSection({ data }: { data: NonNullable<Props['early_term
   }
 
   // Landowner — decide a pending request.
-  const decForm = useForm<{ decision: 'approve' | 'deny'; note: string; deposit_refund: string }>({ decision: 'approve', note: '', deposit_refund: '' })
+  const decForm = useForm<{ decision: 'approve' | 'deny'; note: string; deposit_refund: string; rent_disposition: 'full_forfeit' | 'prorated' | 'full_refund' }>(
+    { decision: 'approve', note: '', deposit_refund: '', rent_disposition: data.default_rent_policy },
+  )
   const refundNum = parseFloat(decForm.data.deposit_refund || '0') || 0
   const keepNum = Math.max(0, data.deposit_held_cents / 100 - refundNum)
+  const rentHelp = RENT_DISPOSITION_OPTIONS.find(o => o.value === decForm.data.rent_disposition)?.help
   function decide(decision: 'approve' | 'deny') {
     const refundLine = decision === 'approve' && data.has_deposit_held
       ? (refundNum > 0
           ? ` You will refund ${'$'}${refundNum.toFixed(2)} of the deposit to the hunter and keep ${'$'}${keepNum.toFixed(2)}.`
           : ' The hunter\'s security deposit is forfeited to you in full.')
       : ''
+    const rentLine = decision === 'approve' && data.has_prepaid_rent && decForm.data.rent_disposition !== 'full_forfeit'
+      ? ` ${decForm.data.rent_disposition === 'full_refund' ? 'All' : 'The unused portion of'} the $${data.prepaid_rent} prepaid rent will be refunded.`
+      : ''
     const msg = decision === 'approve'
-      ? `Approve this early termination? The lease ends now.${refundLine} This can't be undone.`
+      ? `Approve this early termination? The lease ends now.${refundLine}${rentLine} This can't be undone.`
       : 'Deny this early-termination request? The lease stays active.'
     if (!confirm(msg)) return
-    // Only send the refund amount on approval.
+    // Only send the refund amount + rent disposition on approval.
     decForm.transform(d => decision === 'approve'
       ? { ...d, decision }
-      : { decision, note: d.note, deposit_refund: '' })
+      : { decision, note: d.note, deposit_refund: '', rent_disposition: d.rent_disposition })
     decForm.post(data.decide_url, { preserveScroll: true, onSuccess: () => decForm.reset() })
   }
 
@@ -1049,7 +1058,8 @@ function EarlyTerminationSection({ data }: { data: NonNullable<Props['early_term
             The hunter has asked to end this lease early. Approving ends the lease now and forfeits their
             security deposit{data.has_deposit_held ? ` (${'$'}${data.deposit_held} held)` : ''} to you as an
             early-exit penalty{data.has_deposit_held ? ' — though you may return some or all of it below as goodwill' : ''}.
-            Denying keeps the lease active.
+            {data.has_prepaid_rent ? ` Their $${data.prepaid_rent} of prepaid rent is handled separately, per the disposition you choose below.` : ''}
+            {' '}Denying keeps the lease active.
           </div>
           <div style={quote}>“{data.pending.reason}”{data.pending.requested_at ? ` — requested ${data.pending.requested_at}` : ''}</div>
           {data.has_deposit_held && (
@@ -1071,6 +1081,17 @@ function EarlyTerminationSection({ data }: { data: NonNullable<Props['early_term
               <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: OLIVE, marginTop: '4px' }}>
                 Leave blank to keep the full deposit. Enter the full amount to waive the penalty entirely.
               </div>
+            </div>
+          )}
+          {data.has_prepaid_rent && (
+            <div style={{ marginBottom: '16px' }}>
+              <label style={labelStyle}>Prepaid rent (${data.prepaid_rent} collected)</label>
+              <select value={decForm.data.rent_disposition} onChange={e => decForm.setData('rent_disposition', e.target.value as typeof decForm.data.rent_disposition)} style={{ ...inputStyle, maxWidth: '320px' }}>
+                {RENT_DISPOSITION_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}{o.value === data.default_rent_policy ? ' (lease default)' : ''}</option>
+                ))}
+              </select>
+              {rentHelp && <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: OLIVE, marginTop: '4px' }}>{rentHelp}</div>}
             </div>
           )}
           <div style={{ marginBottom: '16px' }}>
