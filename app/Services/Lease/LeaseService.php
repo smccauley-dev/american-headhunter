@@ -367,6 +367,9 @@ class LeaseService extends BaseService
 
         // Free any day-hunt dates this lease held so they become bookable again.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
+
+        // Close any open check-in so a forgotten hunter is no longer "in the field".
+        rescue(fn () => app(CheckInService::class)->closeOpenForLease($leaseId));
     }
 
     public function terminate(string $leaseId, string $reason, ?string $actorUserId = null): void
@@ -390,6 +393,9 @@ class LeaseService extends BaseService
 
         // Free any day-hunt dates this lease held so they become bookable again.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
+
+        // Close any open check-in so a forgotten hunter is no longer "in the field".
+        rescue(fn () => app(CheckInService::class)->closeOpenForLease($leaseId));
     }
 
     /**
@@ -450,6 +456,9 @@ class LeaseService extends BaseService
 
         // Free the reserved term so the listing returns to the market.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
+
+        // Close any open check-in so a forgotten hunter is no longer "in the field".
+        rescue(fn () => app(CheckInService::class)->closeOpenForLease($leaseId));
     }
 
     /**
@@ -649,6 +658,9 @@ class LeaseService extends BaseService
 
         // Free the reserved term so the listing returns to the market.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($lease->id));
+
+        // Close any open check-in so a forgotten hunter is no longer "in the field".
+        rescue(fn () => app(CheckInService::class)->closeOpenForLease($lease->id));
     }
 
     /**
@@ -789,5 +801,8 @@ class LeaseService extends BaseService
         // Free any reserved dates so an exclusive listing returns to the market
         // and a day-hunt's dates become bookable again.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
+
+        // Close any open check-in so a forgotten hunter is no longer "in the field".
+        rescue(fn () => app(CheckInService::class)->closeOpenForLease($leaseId));
     }
 }

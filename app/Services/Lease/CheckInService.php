@@ -98,14 +98,57 @@ class CheckInService extends BaseService
     /**
      * The user's currently-open check-in across any lease, or null. The member
      * dashboard shows this so the hunter always knows they are "in the field".
+     *
+     * Only counts check-ins on a still-active lease. A check-in left open on a
+     * lease that has since terminated/expired is no longer "in the field" — the
+     * lease transition closes it (see closeOpenForLease), but this guard also
+     * hides any historical stragglers without needing a data backfill.
      */
     public function getOpenForUser(string $userId): ?CheckIn
     {
+        $activeLeaseIds = Lease::on('lease')
+            ->where('lessee_user_id', $userId)
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->pluck('id');
+
+        $hunterLeaseIds = LeaseHunter::on('lease')
+            ->where('user_id', $userId)
+            ->where('is_approved', true)
+            ->whereNull('deleted_at')
+            ->pluck('lease_id');
+
+        $eligibleLeaseIds = $activeLeaseIds->merge(
+            Lease::on('lease')
+                ->whereIn('id', $hunterLeaseIds)
+                ->where('status', 'active')
+                ->whereNull('deleted_at')
+                ->pluck('id')
+        )->unique();
+
+        if ($eligibleLeaseIds->isEmpty()) {
+            return null;
+        }
+
         return CheckIn::on('lease')
             ->where('user_id', $userId)
+            ->whereIn('lease_id', $eligibleLeaseIds)
             ->whereNull('checked_out_at')
             ->latest('checked_in_at')
             ->first();
+    }
+
+    /**
+     * Close every open check-in on a lease. Called when a lease leaves the active
+     * state (terminated / expired / cancelled) so a hunter who forgot to check out
+     * is no longer shown "in the field". Returns the number of records closed.
+     */
+    public function closeOpenForLease(string $leaseId): int
+    {
+        return CheckIn::on('lease')
+            ->where('lease_id', $leaseId)
+            ->whereNull('checked_out_at')
+            ->update(['checked_out_at' => now()]);
     }
 
     /**
