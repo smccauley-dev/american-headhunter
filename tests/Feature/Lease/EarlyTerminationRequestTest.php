@@ -4,9 +4,12 @@ namespace Tests\Feature\Lease;
 
 use App\Models\Billing\SecurityDeposit;
 use App\Models\Lease\LeaseTerminationRequest;
+use App\Services\Billing\StripeService;
 use App\Services\Lease\LeaseService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Mockery;
+use Stripe\Refund;
 use Tests\TestCase;
 
 /**
@@ -93,6 +96,24 @@ class EarlyTerminationRequestTest extends TestCase
         return app(LeaseService::class);
     }
 
+    /** Bind a Stripe mock that records every deposit-refund amount it is asked for. */
+    private function mockStripeRefunds(): \stdClass
+    {
+        $spy = new \stdClass();
+        $spy->refunds = [];
+
+        $stripe = Mockery::mock(StripeService::class);
+        $stripe->shouldReceive('refundPaymentIntent')
+            ->andReturnUsing(function (string $pi, ?int $amount = null, ?string $note = null) use ($spy) {
+                $spy->refunds[] = $amount;
+
+                return Refund::constructFrom(['id' => 're_' . Str::random(12)]);
+            });
+        $this->app->instance(StripeService::class, $stripe);
+
+        return $spy;
+    }
+
     public function test_the_hunter_can_request_early_termination(): void
     {
         $request = $this->service()->requestEarlyTermination($this->leaseId, 'Job relocation out of state', $this->lesseeId);
@@ -152,6 +173,62 @@ class EarlyTerminationRequestTest extends TestCase
         $this->assertSame('forfeited', $deposit->status);                  // settled immediately
         $this->assertNull($deposit->forfeit_trust_status);                 // no Trust hit
         $this->assertSame(50000, (int) $deposit->forfeited_amount_cents);
+    }
+
+    public function test_landowner_can_refund_part_of_the_deposit_on_approval(): void
+    {
+        $spy     = $this->mockStripeRefunds();
+        $deposit = $this->seedHeldDeposit(50000);
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        // Keep $300, return $200 to the hunter.
+        $this->service()->approveEarlyTermination($request->id, null, $this->lessorId, 20000);
+
+        $deposit->refresh();
+        $this->assertSame('landowner_initiated', $deposit->forfeit_fault);
+        $this->assertSame('partially_released', $deposit->status);
+        $this->assertNull($deposit->forfeit_trust_status);
+        $this->assertSame(30000, (int) $deposit->forfeited_amount_cents); // kept
+        $this->assertSame(20000, (int) $deposit->refunded_amount_cents);  // returned
+        $this->assertSame([20000], $spy->refunds);
+    }
+
+    public function test_landowner_can_refund_the_whole_deposit_on_approval(): void
+    {
+        $spy     = $this->mockStripeRefunds();
+        $deposit = $this->seedHeldDeposit(50000);
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        // Waive the penalty entirely — return the full $500.
+        $this->service()->approveEarlyTermination($request->id, null, $this->lessorId, 50000);
+
+        $lease = DB::connection('lease')->table('leases')->where('id', $this->leaseId)->first();
+        $this->assertSame('terminated', $lease->status);
+
+        $deposit->refresh();
+        $this->assertSame('released', $deposit->status);
+        $this->assertNull($deposit->forfeit_fault);                       // no forfeiture filed
+        $this->assertSame(50000, (int) $deposit->refunded_amount_cents);
+        $this->assertSame([50000], $spy->refunds);
+    }
+
+    public function test_a_refund_exceeding_the_held_deposit_is_rejected(): void
+    {
+        $this->seedHeldDeposit(50000);
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        try {
+            $this->service()->approveEarlyTermination($request->id, null, $this->lessorId, 60000);
+            $this->fail('Expected an InvalidArgumentException for an over-large refund.');
+        } catch (\InvalidArgumentException $e) {
+            // expected
+        }
+
+        // Nothing moved: the lease is still active and the request still pending.
+        $lease = DB::connection('lease')->table('leases')->where('id', $this->leaseId)->first();
+        $this->assertSame('active', $lease->status);
+        $request->refresh();
+        $this->assertSame('pending', $request->status);
     }
 
     public function test_only_the_lessor_may_decide(): void

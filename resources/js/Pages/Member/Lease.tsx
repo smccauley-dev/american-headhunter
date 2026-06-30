@@ -161,6 +161,7 @@ interface Props {
   early_termination: {
     pending: { reason: string; requested_at: string | null } | null
     deposit_held: string
+    deposit_held_cents: number
     has_deposit_held: boolean
     can_request: boolean
     request_url: string
@@ -985,13 +986,23 @@ function EarlyTerminationSection({ data }: { data: NonNullable<Props['early_term
   }
 
   // Landowner — decide a pending request.
-  const decForm = useForm<{ decision: 'approve' | 'deny'; note: string }>({ decision: 'approve', note: '' })
+  const decForm = useForm<{ decision: 'approve' | 'deny'; note: string; deposit_refund: string }>({ decision: 'approve', note: '', deposit_refund: '' })
+  const refundNum = parseFloat(decForm.data.deposit_refund || '0') || 0
+  const keepNum = Math.max(0, data.deposit_held_cents / 100 - refundNum)
   function decide(decision: 'approve' | 'deny') {
+    const refundLine = decision === 'approve' && data.has_deposit_held
+      ? (refundNum > 0
+          ? ` You will refund ${'$'}${refundNum.toFixed(2)} of the deposit to the hunter and keep ${'$'}${keepNum.toFixed(2)}.`
+          : ' The hunter\'s security deposit is forfeited to you in full.')
+      : ''
     const msg = decision === 'approve'
-      ? 'Approve this early termination? The lease ends now and the hunter\'s security deposit is forfeited to you. This can\'t be undone.'
+      ? `Approve this early termination? The lease ends now.${refundLine} This can't be undone.`
       : 'Deny this early-termination request? The lease stays active.'
     if (!confirm(msg)) return
-    decForm.transform(d => ({ ...d, decision }))
+    // Only send the refund amount on approval.
+    decForm.transform(d => decision === 'approve'
+      ? { ...d, decision }
+      : { decision, note: d.note, deposit_refund: '' })
     decForm.post(data.decide_url, { preserveScroll: true, onSuccess: () => decForm.reset() })
   }
 
@@ -1037,9 +1048,31 @@ function EarlyTerminationSection({ data }: { data: NonNullable<Props['early_term
           <div style={intro}>
             The hunter has asked to end this lease early. Approving ends the lease now and forfeits their
             security deposit{data.has_deposit_held ? ` (${'$'}${data.deposit_held} held)` : ''} to you as an
-            early-exit penalty. Denying keeps the lease active.
+            early-exit penalty{data.has_deposit_held ? ' — though you may return some or all of it below as goodwill' : ''}.
+            Denying keeps the lease active.
           </div>
           <div style={quote}>“{data.pending.reason}”{data.pending.requested_at ? ` — requested ${data.pending.requested_at}` : ''}</div>
+          {data.has_deposit_held && (
+            <div style={{ marginBottom: '16px' }}>
+              <label style={labelStyle}>Refund to hunter (optional)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontFamily: 'var(--body)', fontSize: '15px', color: INK }}>$</span>
+                <input
+                  type="number" min="0" max={data.deposit_held_cents / 100} step="0.01"
+                  value={decForm.data.deposit_refund}
+                  onChange={e => decForm.setData('deposit_refund', e.target.value)}
+                  placeholder="0.00"
+                  style={{ ...inputStyle, maxWidth: '160px' }}
+                />
+                <span style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE }}>
+                  of ${data.deposit_held} held{refundNum > 0 ? ` · you keep $${keepNum.toFixed(2)}` : ''}
+                </span>
+              </div>
+              <div style={{ fontFamily: 'var(--body)', fontSize: '12px', color: OLIVE, marginTop: '4px' }}>
+                Leave blank to keep the full deposit. Enter the full amount to waive the penalty entirely.
+              </div>
+            </div>
+          )}
           <div style={{ marginBottom: '16px' }}>
             <label style={labelStyle}>Note to the hunter (optional)</label>
             <textarea value={decForm.data.note} onChange={e => decForm.setData('note', e.target.value)} rows={2} maxLength={2000} placeholder="Optional note explaining your decision." style={{ ...inputStyle, resize: 'vertical' }} />

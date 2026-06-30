@@ -345,8 +345,9 @@ class MemberController extends Controller
                     'reason'       => $openRequest->reason,
                     'requested_at' => $openRequest->created_at?->format('F j, Y'),
                 ] : null,
-                'deposit_held'     => number_format($etHeldCents / 100, 2),
-                'has_deposit_held' => $etHeldCents > 0,
+                'deposit_held'       => number_format($etHeldCents / 100, 2),
+                'deposit_held_cents' => $etHeldCents,
+                'has_deposit_held'   => $etHeldCents > 0,
                 'can_request'      => $isLessee && $leaseRecord->status === 'active' && ! $openRequest,
                 'request_url'      => route('member.leases.early-termination', $lease),
                 'can_decide'       => $isLessor && $openRequest !== null && $leaseRecord->status === 'active',
@@ -959,8 +960,9 @@ class MemberController extends Controller
             ->firstOrFail();
 
         $validated = $request->validate([
-            'decision' => 'required|in:approve,deny',
-            'note'     => 'nullable|string|max:2000',
+            'decision'       => 'required|in:approve,deny',
+            'note'           => 'nullable|string|max:2000',
+            'deposit_refund' => 'nullable|numeric|min:0',
         ]);
 
         $open = $leaseService->openTerminationRequest($leaseRecord->id);
@@ -968,19 +970,28 @@ class MemberController extends Controller
             return back()->withErrors(['early_termination' => 'There is no pending early-termination request for this lease.']);
         }
 
+        // Optional goodwill refund of the held deposit on approval (dollars → cents).
+        $refundCents = isset($validated['deposit_refund'])
+            ? (int) round(((float) $validated['deposit_refund']) * 100)
+            : null;
+
         try {
             if ($validated['decision'] === 'approve') {
-                $leaseService->approveEarlyTermination($open->id, $validated['note'] ?? null, $userId);
+                $leaseService->approveEarlyTermination($open->id, $validated['note'] ?? null, $userId, $refundCents);
             } else {
                 $leaseService->denyEarlyTermination($open->id, $validated['note'] ?? null, $userId);
             }
-        } catch (\RuntimeException $e) {
+        } catch (\RuntimeException | \InvalidArgumentException $e) {
             return back()->withErrors(['early_termination' => $e->getMessage()]);
         }
 
-        return back()->with('success', $validated['decision'] === 'approve'
-            ? 'Early termination approved. The lease has been terminated and the deposit forfeited to you.'
-            : 'Early-termination request denied. The lease remains active.');
+        if ($validated['decision'] !== 'approve') {
+            return back()->with('success', 'Early-termination request denied. The lease remains active.');
+        }
+
+        return back()->with('success', $refundCents
+            ? 'Early termination approved. The lease has been terminated and the deposit settled with your chosen refund to the hunter.'
+            : 'Early termination approved. The lease has been terminated and the deposit forfeited to you.');
     }
 
     /**

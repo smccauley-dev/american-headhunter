@@ -594,18 +594,29 @@ class LeaseService extends BaseService
     /**
      * The landowner approves a hunter's early-termination request: the lease is
      * terminated and the hunter forfeits the security deposit as a non-contestable
-     * early-exit penalty (settled immediately, kept by the landowner, no Trust
-     * hit). Prepaid rent is left as-is — the configurable rent policy applies only
-     * to a violation termination. Only the lessor may approve, only while the
-     * request is pending and the lease still active.
+     * early-exit penalty (settled immediately, kept by the landowner, no Trust hit).
      *
-     * @throws \RuntimeException when the user is not the lessor, the request is not
-     *                           pending, or the lease is no longer active
+     * The landowner may soften that penalty by returning some of the deposit:
+     * $depositRefundCents (0..held remaining) is refunded to the hunter and the rest
+     * kept. Null or 0 keeps the whole deposit (the default); a value equal to the
+     * held balance refunds it in full (no penalty). Prepaid rent is left as-is — the
+     * configurable rent policy applies only to a violation termination. Only the
+     * lessor may approve, only while the request is pending and the lease still
+     * active.
+     *
+     * @throws \RuntimeException         when the user is not the lessor, the request is
+     *                                   not pending, or the lease is no longer active
+     * @throws \InvalidArgumentException when the refund exceeds the held deposit
      */
-    public function approveEarlyTermination(string $requestId, ?string $note, string $deciderUserId): void
+    public function approveEarlyTermination(string $requestId, ?string $note, string $deciderUserId, ?int $depositRefundCents = null): void
     {
         $request = LeaseTerminationRequest::findOrFail($requestId);
         $lease   = $this->guardDecision($request, $deciderUserId);
+
+        $refundCents = max(0, $depositRefundCents ?? 0);
+        if ($refundCents > 0 && $refundCents > $this->heldDepositRemainingCents($lease->id)) {
+            throw new \InvalidArgumentException('The deposit refund cannot exceed the held deposit.');
+        }
 
         $request->update([
             'status'             => 'approved',
@@ -632,8 +643,9 @@ class LeaseService extends BaseService
         );
 
         // Hunter forfeits the deposit as a non-contestable early-exit penalty: an
-        // immediate keep-for-landowner settlement with no Trust hit.
-        rescue(fn () => $this->forfeitDepositForEarlyExit($lease->id, $deciderUserId));
+        // immediate keep-for-landowner settlement with no Trust hit. The landowner
+        // may return part or all of it ($refundCents) as goodwill.
+        rescue(fn () => $this->forfeitDepositForEarlyExit($lease->id, $deciderUserId, $refundCents));
 
         // Free the reserved term so the listing returns to the market.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($lease->id));
@@ -701,13 +713,31 @@ class LeaseService extends BaseService
         return $lease;
     }
 
+    /** The remaining balance of the lease's held, unclaimed deposit (0 when none). */
+    private function heldDepositRemainingCents(string $leaseId): int
+    {
+        $deposit = app(\App\Services\Billing\SecurityDepositService::class)->forLease($leaseId);
+        if (! $deposit || $deposit->status !== 'held' || $deposit->forfeit_fault !== null) {
+            return 0;
+        }
+
+        return $deposit->remainingCents();
+    }
+
     /**
-     * Forfeit the held deposit as a non-contestable early-exit penalty: settled
-     * immediately and kept by the landowner, no Trust hit (FAULT_LANDOWNER_INITIATED
-     * is the existing immediate-settle path). No-op when nothing is held or a claim
-     * already exists.
+     * Settle the held deposit on an approved early exit. The hunter forfeits it as a
+     * non-contestable early-exit penalty (FAULT_LANDOWNER_INITIATED — immediate
+     * keep-for-landowner, no Trust hit), less any goodwill refund the landowner chose:
+     *
+     *  - $refundCents <= 0          → keep the whole deposit (the default).
+     *  - 0 < $refundCents < held    → keep the difference, refund the rest (a partial
+     *                                 forfeit settles 'keep' and auto-returns the
+     *                                 remainder to the hunter).
+     *  - $refundCents >= held       → refund the deposit in full, no penalty (release).
+     *
+     * No-op when nothing is held or a claim already exists.
      */
-    private function forfeitDepositForEarlyExit(string $leaseId, ?string $actorUserId): void
+    private function forfeitDepositForEarlyExit(string $leaseId, ?string $actorUserId, int $refundCents = 0): void
     {
         $deposits = app(\App\Services\Billing\SecurityDepositService::class);
         $deposit  = $deposits->forLease($leaseId);
@@ -720,9 +750,20 @@ class LeaseService extends BaseService
             return;
         }
 
+        $refundCents = min(max(0, $refundCents), $remaining);
+
+        // Full goodwill refund: return everything, no forfeiture.
+        if ($refundCents >= $remaining) {
+            $deposits->release($deposit->id, $actorUserId, 'Early termination approved — deposit refunded to hunter');
+
+            return;
+        }
+
+        // Keep the rest as the early-exit penalty; a partial forfeit settles 'keep'
+        // and refunds any remainder ($refundCents) to the hunter automatically.
         $deposits->forfeit(
             $deposit->id,
-            $remaining,
+            $remaining - $refundCents,
             'Early termination requested by hunter — deposit forfeited as early-exit penalty',
             $actorUserId,
             \App\Services\Billing\SecurityDepositService::FAULT_LANDOWNER_INITIATED,
