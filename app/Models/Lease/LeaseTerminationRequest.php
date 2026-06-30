@@ -24,12 +24,16 @@ class LeaseTerminationRequest extends BaseModelWithSoftDeletes
         'decided_by_user_id',
         'decision_note',
         'decided_at',
+        'deposit_refunded_cents',
+        'rent_refunded_cents',
     ];
 
     protected function casts(): array
     {
         return array_merge(parent::casts(), [
-            'decided_at' => 'datetime',
+            'decided_at'             => 'datetime',
+            'deposit_refunded_cents' => 'integer',
+            'rent_refunded_cents'    => 'integer',
         ]);
     }
 

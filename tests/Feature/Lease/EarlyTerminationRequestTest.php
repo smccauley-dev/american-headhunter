@@ -2,12 +2,14 @@
 
 namespace Tests\Feature\Lease;
 
+use App\Jobs\Lease\SendLeaseTerminationDecisionEmail;
 use App\Models\Billing\LeasePayment;
 use App\Models\Billing\SecurityDeposit;
 use App\Models\Lease\LeaseTerminationRequest;
 use App\Services\Billing\StripeService;
 use App\Services\Lease\LeaseService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Mockery;
 use Stripe\Refund;
@@ -391,6 +393,37 @@ class EarlyTerminationRequestTest extends TestCase
         $this->assertSame('pending', $request->status);
         $payment->refresh();
         $this->assertSame('collected', $payment->status);
+    }
+
+    public function test_approval_persists_refunded_amounts_and_emails_the_hunter(): void
+    {
+        Queue::fake();
+        $this->seedCollectedPayment(100000);
+        $this->mockRentRefunds();
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        $this->service()->approveEarlyTermination($request->id, 'Returning a partial credit.', $this->lessorId, null, 'custom', 40000);
+
+        // Refunded amounts are snapshotted on the request for the hunter's banner.
+        $request->refresh();
+        $this->assertSame(0, (int) $request->deposit_refunded_cents);
+        $this->assertSame(40000, (int) $request->rent_refunded_cents);
+
+        Queue::assertPushed(SendLeaseTerminationDecisionEmail::class, fn ($job) =>
+            $job->decision === 'approved'
+            && $job->recipientUserId === $this->lesseeId
+            && $job->rentRefundedCents === 40000);
+    }
+
+    public function test_denial_emails_the_hunter(): void
+    {
+        Queue::fake();
+        $request = $this->service()->requestEarlyTermination($this->leaseId, 'Relocating', $this->lesseeId);
+
+        $this->service()->denyEarlyTermination($request->id, 'Not this season.', $this->lessorId);
+
+        Queue::assertPushed(SendLeaseTerminationDecisionEmail::class, fn ($job) =>
+            $job->decision === 'denied' && $job->recipientUserId === $this->lesseeId);
     }
 
     public function test_only_the_lessor_may_decide(): void

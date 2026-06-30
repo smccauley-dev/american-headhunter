@@ -6,6 +6,7 @@ use App\Models\Lease\Club;
 use App\Models\Lease\ClubMember;
 use App\Models\Lease\Lease;
 use App\Models\Lease\LeaseTerminationRequest;
+use App\Jobs\Lease\SendLeaseTerminationDecisionEmail;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
 use App\Services\Property\PropertyService;
@@ -499,17 +500,17 @@ class LeaseService extends BaseService
      * reverses its destination transfer + platform fee) until the budget is spent.
      * Only untouched 'collected' charges are refunded — partials are left be.
      */
-    private function refundPrepaidRent(Lease $lease, string $disposition, ?string $actorUserId, ?int $customCents = null): void
+    private function refundPrepaidRent(Lease $lease, string $disposition, ?string $actorUserId, ?int $customCents = null): int
     {
         if ($disposition === self::RENT_FORFEIT) {
-            return;
+            return 0;
         }
 
         $payments   = app(\App\Services\Billing\LeasePaymentService::class);
         $refundable = $payments->collectedFor($lease->id)->where('status', 'collected');
         $totalGross = (int) $refundable->sum('gross_cents');
         if ($totalGross <= 0) {
-            return;
+            return 0;
         }
 
         $budget = match ($disposition) {
@@ -518,9 +519,10 @@ class LeaseService extends BaseService
             default                => $this->unusedRentCents($lease, $totalGross), // prorated
         };
         if ($budget <= 0) {
-            return;
+            return 0;
         }
 
+        $refunded = 0;
         foreach ($refundable as $payment) {
             if ($budget <= 0) {
                 break;
@@ -528,8 +530,11 @@ class LeaseService extends BaseService
             $gross  = (int) $payment->gross_cents;
             $amount = min($budget, $gross);
             $payments->refund($payment, $amount >= $gross ? null : $amount, $actorUserId);
-            $budget -= $amount;
+            $budget   -= $amount;
+            $refunded += $amount;
         }
+
+        return $refunded;
     }
 
     /**
@@ -675,13 +680,25 @@ class LeaseService extends BaseService
 
         // Refund prepaid rent per the landowner's chosen disposition (reverses the
         // destination charge + platform fee), exactly as the violation path does.
-        rescue(fn () => $this->refundPrepaidRent($lease, $disposition, $deciderUserId, $rentRefundCents));
+        $rentRefundedCents = (int) rescue(fn () => $this->refundPrepaidRent($lease, $disposition, $deciderUserId, $rentRefundCents), 0);
+
+        // Snapshot what the hunter is owed so their lease page can show the outcome
+        // after the fact (lease_payments tracks only a refund status, not amounts).
+        $request->update([
+            'deposit_refunded_cents' => $refundCents,
+            'rent_refunded_cents'    => $rentRefundedCents,
+        ]);
 
         // Free the reserved term so the listing returns to the market.
         rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($lease->id));
 
         // Close any open check-in so a forgotten hunter is no longer "in the field".
         rescue(fn () => app(CheckInService::class)->closeOpenForLease($lease->id));
+
+        // Tell the hunter (email) their request was approved and what was refunded.
+        rescue(fn () => SendLeaseTerminationDecisionEmail::dispatch(
+            $lease->id, $lease->lessee_user_id, 'approved', $refundCents, $rentRefundedCents, $note,
+        ));
     }
 
     /**
@@ -713,6 +730,11 @@ class LeaseService extends BaseService
             actionSummary:  'Hunter early-termination request denied',
             newValues:      ['lease_id' => $lease->id, 'status' => 'denied'],
         );
+
+        // Tell the hunter (email) their request was denied and the lease stands.
+        rescue(fn () => SendLeaseTerminationDecisionEmail::dispatch(
+            $lease->id, $lease->lessee_user_id, 'denied', 0, 0, $note,
+        ));
     }
 
     /** The open (pending) early-termination request for a lease, if any. */

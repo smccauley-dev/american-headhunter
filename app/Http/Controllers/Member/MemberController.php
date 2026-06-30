@@ -335,7 +335,17 @@ class MemberController extends Controller
                 ->first(),
             null,
         );
-        if (($isLessee || $isLessor) && ($leaseRecord->status === 'active' || $openRequest)) {
+        // The hunter's most recent DECIDED request — drives the outcome banner on
+        // their lease page after the landowner approves/denies (suppressed while a
+        // newer request is pending). Lessee-only; the landowner has their own panel.
+        $decidedRequest = ($isLessee && ! $openRequest) ? rescue(
+            fn () => LeaseTerminationRequest::where('lease_id', $lease)
+                ->whereIn('status', ['approved', 'denied'])
+                ->latest('decided_at')
+                ->first(),
+            null,
+        ) : null;
+        if (($isLessee || $isLessor) && ($leaseRecord->status === 'active' || $openRequest || $decidedRequest)) {
             $etHeldCents = isset($existingDeposit) && $existingDeposit && $existingDeposit->status === 'held'
                 ? $existingDeposit->remainingCents()
                 : 0;
@@ -348,6 +358,15 @@ class MemberController extends Controller
                 'pending' => $openRequest ? [
                     'reason'       => $openRequest->reason,
                     'requested_at' => $openRequest->created_at?->format('F j, Y'),
+                ] : null,
+                // Outcome banner for the hunter once the landowner has decided.
+                'decision' => $decidedRequest ? [
+                    'status'           => $decidedRequest->status,
+                    'decided_at'       => $decidedRequest->decided_at?->format('F j, Y'),
+                    'note'             => $decidedRequest->decision_note,
+                    'deposit_refunded' => number_format((int) $decidedRequest->deposit_refunded_cents / 100, 2),
+                    'rent_refunded'    => number_format((int) $decidedRequest->rent_refunded_cents / 100, 2),
+                    'has_refund'       => ((int) $decidedRequest->deposit_refunded_cents + (int) $decidedRequest->rent_refunded_cents) > 0,
                 ] : null,
                 'deposit_held'        => number_format($etHeldCents / 100, 2),
                 'deposit_held_cents'  => $etHeldCents,

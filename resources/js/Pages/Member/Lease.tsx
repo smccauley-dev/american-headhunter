@@ -160,6 +160,14 @@ interface Props {
   } | null
   early_termination: {
     pending: { reason: string; requested_at: string | null } | null
+    decision: {
+      status: 'approved' | 'denied'
+      decided_at: string | null
+      note: string | null
+      deposit_refunded: string
+      rent_refunded: string
+      has_refund: boolean
+    } | null
     deposit_held: string
     deposit_held_cents: number
     has_deposit_held: boolean
@@ -1039,8 +1047,42 @@ function EarlyTerminationSection({ data }: { data: NonNullable<Props['early_term
     decForm.post(data.decide_url, { preserveScroll: true, onSuccess: () => decForm.reset() })
   }
 
+  // Outcome banner (hunter view) once the landowner has decided.
+  const dec = data.decision
+  const rentRef = dec ? parseFloat((dec.rent_refunded || '0').replace(/,/g, '')) || 0 : 0
+  const depRef = dec ? parseFloat((dec.deposit_refunded || '0').replace(/,/g, '')) || 0 : 0
+  const refundParts: string[] = []
+  if (rentRef > 0) refundParts.push(`$${dec!.rent_refunded} of prepaid rent`)
+  if (depRef > 0) refundParts.push(`$${dec!.deposit_refunded} of your security deposit`)
+  const approved = dec?.status === 'approved'
+  const bannerAccent = approved ? '#2f7a3f' : '#b45309'
+
   return (
     <Section title="Early Termination">
+      {dec && (
+        <div style={{ background: '#fff', border: `1px solid ${FIELD_BORDER}`, borderLeft: `4px solid ${bannerAccent}`, padding: '14px 16px', marginBottom: '16px' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: bannerAccent, marginBottom: '6px' }}>
+            {approved ? 'Request approved' : 'Request denied'}
+          </div>
+          <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: INK }}>
+            {approved
+              ? `Your early-termination request was approved${dec.decided_at ? ` on ${dec.decided_at}` : ''}. This lease has been terminated.`
+              : `Your early-termination request was declined${dec.decided_at ? ` on ${dec.decided_at}` : ''}. Your lease remains active${data.can_request ? ' — you can submit a new request below' : ''}.`}
+          </div>
+          {approved && (
+            <div style={{ fontFamily: 'var(--body)', fontSize: '14px', color: INK, marginTop: '6px' }}>
+              {dec.has_refund && refundParts.length > 0
+                ? `${refundParts.join(' and ')} ${refundParts.length > 1 ? 'were' : 'was'} refunded to the card you paid with.`
+                : 'Your security deposit was forfeited as the early-exit penalty.'}
+            </div>
+          )}
+          {dec.note && (
+            <div style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, fontStyle: 'italic', marginTop: '8px' }}>
+              Landowner's note: “{dec.note}”
+            </div>
+          )}
+        </div>
+      )}
       {data.can_request && (
         <>
           <div style={intro}>
