@@ -17,6 +17,7 @@ class HarvestQuota extends BaseModel
         'season_year',
         'max_harvest',
         'current_harvest',
+        'alert_threshold_notified',
     ];
 
     protected function casts(): array
@@ -25,6 +26,7 @@ class HarvestQuota extends BaseModel
             'season_year' => 'integer',
             'max_harvest' => 'integer',
             'current_harvest' => 'integer',
+            'alert_threshold_notified' => 'integer',
         ]);
     }
 

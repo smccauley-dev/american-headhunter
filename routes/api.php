@@ -108,6 +108,8 @@ Route::prefix('v1')
         Route::get('/harvests/{harvest}', [HarvestController::class, 'show'])->middleware('abilities:hunter:read');
         Route::post('/leases/{lease}/harvests', [HarvestController::class, 'store'])
             ->middleware(['abilities:hunter:harvest', 'throttle:30,1']);
+        Route::post('/harvests/{harvest}/photos', [HarvestController::class, 'storePhoto'])
+            ->middleware(['abilities:hunter:harvest', 'throttle:30,1']);
         Route::get('/leases/{lease}/quota', [HarvestController::class, 'quota'])->middleware('abilities:hunter:read');
 
         // CWD reference data (offline cache + ack prompt)

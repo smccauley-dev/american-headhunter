@@ -2,10 +2,13 @@
 
 namespace App\Services\Wildlife;
 
+use App\Models\Documents\Document;
 use App\Models\Wildlife\HarvestLog;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
+use App\Services\Documents\DocumentService;
 use App\Services\Property\GeospatialService;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -34,6 +37,7 @@ class HarvestService extends BaseService
         private readonly CwdService $cwd,
         private readonly GeospatialService $geo,
         private readonly AuditService $audit,
+        private readonly DocumentService $documents,
     ) {}
 
     /**
@@ -150,9 +154,10 @@ class HarvestService extends BaseService
             actionSummary: "Logged harvest of {$speciesCode} on lease ".strtoupper(substr($leaseId, 0, 8)),
         );
 
-        // NOTE: harvest-photo virus scan + AI trophy scoring dispatch in Phase 6.4
-        // (ScanHarvestPhoto / ScoreHarvestPhoto jobs). field_photos are not servable
-        // until those jobs mark the documents ready.
+        // Field photos are attached after the fact via attachFieldPhoto(): each is
+        // EXIF-stripped and handed to DocumentService, which virus-scans it (the
+        // existing ScanDocumentForViruses job) before it becomes servable. A fresh
+        // harvest is created with no photos.
 
         return $harvest;
     }
@@ -187,5 +192,84 @@ class HarvestService extends BaseService
         $this->access->assertRecordAccess($userId, $harvest->user_id, $harvest->lease_id, $harvest->property_id);
 
         return $harvest;
+    }
+
+    /**
+     * Attach a field photo to a harvest the caller may access.
+     *
+     * The photo is untrusted input and is handled defensively:
+     *   1. standing is re-enforced (findForUser 404s an unrelated caller).
+     *   2. the image is re-encoded through GD, which drops all embedded metadata
+     *      — critically the EXIF GPS tag, which would otherwise leak the precise
+     *      harvest location the platform deliberately keeps only in DB 13 (SEC-024).
+     *   3. the sanitized bytes go to DocumentService, which stores them in
+     *      'processing' and queues the existing ScanDocumentForViruses job. The
+     *      document id is appended to field_photos, but the photo is not servable
+     *      until the scan marks it 'ready'.
+     */
+    public function attachFieldPhoto(string $userId, string $harvestId, UploadedFile $file): Document
+    {
+        $harvest = $this->findForUser($userId, $harvestId);
+
+        [$bytes, $mimeType, $filename] = $this->sanitizeImage($file);
+
+        $document = $this->documents->storeRawBytes($bytes, $userId, 'photo', $filename, $mimeType);
+
+        $harvest->field_photos = array_values(array_merge($harvest->field_photos ?? [], [$document->id]));
+        $harvest->save();
+
+        $this->audit->log(
+            eventType: 'harvest.photo_attached',
+            sourceDatabase: 'wildlife',
+            tableName: 'harvest_logs',
+            recordId: $harvestId,
+            userId: $userId,
+            actionSummary: 'Attached a field photo to harvest '.strtoupper(substr($harvestId, 0, 8)),
+        );
+
+        return $document;
+    }
+
+    /**
+     * Re-encode an uploaded image through GD to strip all metadata (notably the
+     * EXIF GPS tag — SEC-024), preserving the original format. Returns
+     * [bytes, mimeType, filename].
+     *
+     * @return array{0:string,1:string,2:string}
+     */
+    private function sanitizeImage(UploadedFile $file): array
+    {
+        $raw = (string) file_get_contents($file->getRealPath());
+        $image = @imagecreatefromstring($raw);
+
+        if ($image === false) {
+            abort(422, 'The photo could not be read as a valid image.');
+        }
+
+        $type = getimagesizefromstring($raw)[2] ?? IMAGETYPE_JPEG;
+        $base = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME) ?: 'harvest-photo';
+
+        ob_start();
+        switch ($type) {
+            case IMAGETYPE_PNG:
+                imagesavealpha($image, true);
+                imagepng($image);
+                $mimeType = 'image/png';
+                $ext = 'png';
+                break;
+            case IMAGETYPE_WEBP:
+                imagewebp($image);
+                $mimeType = 'image/webp';
+                $ext = 'webp';
+                break;
+            default:
+                imagejpeg($image, null, 90);
+                $mimeType = 'image/jpeg';
+                $ext = 'jpg';
+        }
+        $bytes = (string) ob_get_clean();
+        imagedestroy($image);
+
+        return [$bytes, $mimeType, "{$base}.{$ext}"];
     }
 }
