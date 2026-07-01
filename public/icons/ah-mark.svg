@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="American Headhunter">
+  <rect width="512" height="512" rx="96" fill="#0a1512"/>
+  <g fill="none" stroke="#c84c21" stroke-width="26" stroke-linecap="square">
+    <path d="M120 132 v40 h-40 M392 132 v40 h40 M120 380 v-40 h-40 M392 380 v-40 h40"/>
+  </g>
+  <text x="256" y="322" font-family="'JetBrains Mono', Menlo, monospace" font-size="200"
+        font-weight="700" text-anchor="middle" fill="#faf7f2">AH</text>
+</svg>

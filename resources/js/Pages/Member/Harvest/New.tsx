@@ -1,5 +1,7 @@
 import { Head, useForm } from '@inertiajs/react'
 import { useState } from 'react'
+import { useOfflineSubmit } from '@/offline/useOfflineSubmit'
+import { useOnline } from '@/offline/useOnline'
 
 interface Option { value: string; label: string }
 interface LeaseOption { id: string; property_title: string; end_date: string | null }
@@ -65,8 +67,16 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
     )
   }
 
+  const { queue } = useOfflineSubmit('harvest', index_url)
+  const online = useOnline()
+
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (!navigator.onLine) {
+      const label = species.find(s => s.value === data.species_code)?.label ?? 'Harvest'
+      void queue(store_url, { ...data }, label)
+      return
+    }
     post(store_url)
   }
 
@@ -97,6 +107,12 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
             </div>
           ) : (
             <form onSubmit={submit} style={{ background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+
+              {!online && (
+                <div style={{ background: '#fef6ee', border: '1px solid #f0c9a8', borderRadius: '3px', padding: '11px 14px', fontFamily: MONO, fontSize: '11px', color: '#9a4a1e', lineHeight: 1.5 }}>
+                  You're offline. This harvest will be saved on your device and synced when you're back on signal. Quota and CWD-zone checks run at sync — if either blocks it, you'll see it flagged in your pending list.
+                </div>
+              )}
 
               <div>
                 <label style={labelStyle}>Lease / Property</label>
@@ -194,7 +210,7 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
                 <button type="submit" disabled={processing} style={{ flex: 1, padding: '14px', background: BLAZE, color: '#fff', border: 'none', borderRadius: '3px', fontFamily: MONO, fontSize: '13px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', cursor: processing ? 'not-allowed' : 'pointer', opacity: processing ? 0.7 : 1 }}>
-                  {processing ? 'Logging…' : 'Log Harvest'}
+                  {processing ? 'Logging…' : online ? 'Log Harvest' : 'Save Offline'}
                 </button>
                 <a href={index_url} style={{ padding: '14px 18px', color: INK, border: '1px solid #d4c9b0', borderRadius: '3px', fontFamily: MONO, fontSize: '13px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
                   Cancel

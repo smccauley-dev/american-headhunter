@@ -1,0 +1,18 @@
+{
+  "name": "American Headhunter",
+  "short_name": "Headhunter",
+  "description": "Lease management and field logging for hunters and landowners.",
+  "start_url": "/member",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#faf7f2",
+  "theme_color": "#0a1512",
+  "icons": [
+    {
+      "src": "/icons/ah-mark.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}
