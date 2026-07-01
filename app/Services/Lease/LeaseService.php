@@ -63,18 +63,25 @@ class LeaseService extends BaseService
         );
     }
 
+    /**
+     * A member's active leases as lessee. Not cached: it is a single indexed
+     * lookup on leases, and a freshly signed lease must appear immediately —
+     * there is no invalidation hook for a per-user active-lease key. Caching an
+     * Eloquent Collection here also round-trips as __PHP_Incomplete_Class on a
+     * warm Valkey read (cache.serializable_classes=false), so it must not cache.
+     */
     public function getActiveLeasesForLessee(string $userId): Collection
     {
-        return $this->cache("lease:lessee:{$userId}:active", function () use ($userId) {
-            return Lease::active()->where('lessee_user_id', $userId)->get();
-        }, 5);
+        return Lease::active()->where('lessee_user_id', $userId)->get();
     }
 
+    /**
+     * A landowner's active leases as lessor. Not cached — same reasoning as
+     * getActiveLeasesForLessee().
+     */
     public function getActiveLeasesForLessor(string $userId): Collection
     {
-        return $this->cache("lease:lessor:{$userId}:active", function () use ($userId) {
-            return Lease::active()->where('lessor_user_id', $userId)->get();
-        }, 5);
+        return Lease::active()->where('lessor_user_id', $userId)->get();
     }
 
     /**
