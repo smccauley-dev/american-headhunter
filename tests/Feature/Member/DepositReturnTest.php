@@ -57,6 +57,7 @@ class DepositReturnTest extends TestCase
         return [
             'mode'           => 'payment',
             'payment_intent' => $pi,
+            'payment_status' => 'paid',
             'currency'       => 'usd',
             'amount_total'   => 50000,
             'metadata'       => [
