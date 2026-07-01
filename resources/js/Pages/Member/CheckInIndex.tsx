@@ -7,6 +7,7 @@ interface LeaseRow {
   property_title: string
   end_date: string | null
   checked_in_at: string | null
+  qr_url: string | null
 }
 
 interface Props {
@@ -39,6 +40,8 @@ export default function CheckInIndex({ leases, check_in_url, check_out_url }: Pr
   // Per-lease busy state so one card's request never freezes the others.
   const [busyId, setBusyId] = useState<string | null>(null)
   const [locatingId, setLocatingId] = useState<string | null>(null)
+  // The lease whose gate QR is being shown in the modal, if any.
+  const [qrLease, setQrLease] = useState<LeaseRow | null>(null)
 
   function withPosition(cb: (coords: { lat: number; lng: number } | null) => void) {
     if (!navigator.geolocation) {
@@ -148,6 +151,14 @@ export default function CheckInIndex({ leases, check_in_url, check_out_url }: Pr
                           {busy ? 'Checking Out…' : 'Check Out'}
                         </button>
                       )}
+                      {lease.qr_url && (
+                        <button
+                          onClick={() => setQrLease(lease)}
+                          style={{ padding: '13px 16px', background: '#fff', color: INK, border: '1px solid #d4c9b0', borderRadius: '3px', fontFamily: MONO, fontSize: '11px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Show Gate QR
+                        </button>
+                      )}
                       <a
                         href={`/member/leases/${lease.lease_id}`}
                         style={{ fontFamily: MONO, fontSize: '11px', letterSpacing: '.08em', textTransform: 'uppercase', color: '#6b5e50', textDecoration: 'none', whiteSpace: 'nowrap' }}
@@ -161,6 +172,35 @@ export default function CheckInIndex({ leases, check_in_url, check_out_url }: Pr
             </div>
           )}
         </div>
+
+        {qrLease && qrLease.qr_url && (
+          <div
+            onClick={() => setQrLease(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(10,21,18,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', zIndex: 50 }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{ background: '#fff', border: `1px solid ${'#b8934a'}`, borderRadius: '4px', maxWidth: '360px', width: '100%', overflow: 'hidden' }}
+            >
+              <div style={{ padding: '18px 24px', background: INK, borderBottom: '1px solid #b8934a' }}>
+                <div style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874' }}>Gate Check-In QR</div>
+                <div style={{ fontFamily: DISPLAY, fontSize: '19px', color: '#F4ECDC', marginTop: '4px' }}>{qrLease.property_title}</div>
+              </div>
+              <div style={{ padding: '24px', textAlign: 'center' }}>
+                <img src={qrLease.qr_url} alt={`Gate check-in QR for ${qrLease.property_title}`} style={{ width: '240px', height: '240px', display: 'block', margin: '0 auto' }} />
+                <p style={{ fontSize: '12px', color: '#6b5e50', lineHeight: 1.5, margin: '16px 0 0' }}>
+                  Post this at the gate. Scanning it opens the check-in page for anyone with an active lease on the property.
+                </p>
+                <button
+                  onClick={() => setQrLease(null)}
+                  style={{ marginTop: '18px', padding: '11px 22px', background: '#0A1512', color: '#F4ECDC', border: 'none', borderRadius: '3px', fontFamily: MONO, fontSize: '11px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', cursor: 'pointer' }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

@@ -94,16 +94,22 @@ class CheckInController extends Controller
         Request $request,
         CheckInService $checkInService,
         PropertyService $propertyService,
+        DocumentService $documentService,
     ): InertiaResponse {
         $userId = $request->session()->get('auth.user_id');
 
         $leases = $checkInService->eligibleLeasesForUser($userId);
 
-        // Resolve property titles cross-DB (DB 2) once per property.
+        // Resolve property titles (cross-DB, DB 2) and the gate-QR PNG url once
+        // per property — one QR is shared across a property's leases.
         $titles = [];
+        $qrUrls = [];
         foreach ($leases->pluck('property_id')->unique() as $propertyId) {
             $property = rescue(fn () => $propertyService->find($propertyId), null);
             $titles[$propertyId] = $property?->title ?? 'Property';
+
+            $qrCode = rescue(fn () => $documentService->getOrCreateCheckInQrForProperty($propertyId), null);
+            $qrUrls[$propertyId] = $qrCode ? route('checkin.qr.png', $qrCode->token) : null;
         }
 
         $rows = $leases->map(fn (Lease $lease) => [
@@ -111,6 +117,7 @@ class CheckInController extends Controller
             'property_title' => $titles[$lease->property_id] ?? 'Property',
             'end_date'       => $lease->end_date?->format('F j, Y'),
             'checked_in_at'  => $checkInService->getOpenForUserLease($lease->id, $userId)?->checked_in_at?->toIso8601String(),
+            'qr_url'         => $qrUrls[$lease->property_id] ?? null,
         ])->values()->all();
 
         return Inertia::render('Member/CheckInIndex', [
