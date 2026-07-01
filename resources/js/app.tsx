@@ -1,6 +1,11 @@
 import { createInertiaApp } from '@inertiajs/react';
 import { createRoot } from 'react-dom/client';
 import '../css/app.css';
+import { initOfflineSync } from './offline/queue';
+import { registerServiceWorker } from './offline/registerServiceWorker';
+
+registerServiceWorker();
+initOfflineSync();
 
 createInertiaApp({
     resolve: (name) => {

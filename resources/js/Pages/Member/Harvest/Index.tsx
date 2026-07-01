@@ -1,4 +1,5 @@
 import { Head, router, usePage } from '@inertiajs/react'
+import OfflineQueueBanner from '@/Components/Member/OfflineQueueBanner'
 
 interface Harvest {
   id: string
@@ -61,6 +62,8 @@ export default function HarvestIndex({ harvests, new_url, quota_url }: Props) {
               {flash.error}
             </div>
           )}
+
+          <OfflineQueueBanner />
 
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '24px', gap: '12px', flexWrap: 'wrap' }}>

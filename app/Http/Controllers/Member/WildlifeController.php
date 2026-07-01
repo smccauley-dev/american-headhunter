@@ -13,6 +13,7 @@ use App\Services\Wildlife\FishingHarvestService;
 use App\Services\Wildlife\HarvestService;
 use App\Services\Wildlife\QuotaService;
 use App\Services\Wildlife\SightingService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -32,6 +33,13 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  * Inertia reserves HTTP 409 for its own asset-version reload, so those statuses
  * must never reach the Inertia client — `harvestStore` catches them and turns
  * them into a flash error / a validation error that reveals the CWD ack prompt.
+ *
+ * Offline sync (6.3d): the same store endpoints serve the offline write queue.
+ * When the request wants JSON (the queue flush sets `Accept: application/json`)
+ * the store returns a plain JSON result with a real status code — 201 fresh /
+ * 200 idempotent replay (dedup on the client-minted `local_record_id`), and the
+ * 409/422/403 bubble as genuine statuses the flush can act on — instead of the
+ * Inertia redirect it gives a browser form post.
  */
 class WildlifeController extends Controller
 {
@@ -131,7 +139,7 @@ class WildlifeController extends Controller
     }
 
     /** Log a harvest against a lease the member has standing on. */
-    public function harvestStore(Request $request, HarvestService $harvests): RedirectResponse
+    public function harvestStore(Request $request, HarvestService $harvests): RedirectResponse|JsonResponse
     {
         $userId = session('auth.user_id');
 
@@ -150,11 +158,18 @@ class WildlifeController extends Controller
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
             'cwd_acknowledged' => ['nullable', 'boolean'],
+            'local_record_id' => ['nullable', 'uuid'],
         ]);
 
         try {
-            $harvests->log($userId, $data['lease_id'], $data);
+            $harvest = $harvests->log($userId, $data['lease_id'], $data);
         } catch (HttpException $e) {
+            // The offline-sync flush wants the real status code (409 quota / 422 CWD
+            // / 403 standing) so it can decide to drop, prompt, or stop retrying.
+            if ($request->expectsJson()) {
+                return response()->json(['message' => $e->getMessage()], $e->getStatusCode());
+            }
+
             return match ($e->getStatusCode()) {
                 // Full quota — a plain conflict the member can't resolve here.
                 409 => back()->withInput()->with('error', $e->getMessage()),
@@ -165,6 +180,10 @@ class WildlifeController extends Controller
                 // No standing on the lease — a genuine deny.
                 default => throw $e,
             };
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json(['id' => $harvest->id], $harvest->wasRecentlyCreated ? 201 : 200);
         }
 
         return redirect()->route('member.harvest.index')->with('success', 'Harvest logged.');
@@ -236,7 +255,7 @@ class WildlifeController extends Controller
     }
 
     /** Log a sighting against a lease the member has standing on. */
-    public function sightingStore(Request $request, SightingService $sightings): RedirectResponse
+    public function sightingStore(Request $request, SightingService $sightings): RedirectResponse|JsonResponse
     {
         $userId = session('auth.user_id');
 
@@ -250,11 +269,17 @@ class WildlifeController extends Controller
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
+            'local_record_id' => ['nullable', 'uuid'],
         ]);
 
         // Standing (403) is the only guard on this write — no quota or CWD — so a
-        // failure here is a genuine deny and is allowed to surface as a 403.
-        $sightings->log($userId, $data['lease_id'], $data);
+        // failure here is a genuine deny. It bubbles as a 403 (JSON for the offline
+        // flush, an Inertia error page for a browser post).
+        $sighting = $sightings->log($userId, $data['lease_id'], $data);
+
+        if ($request->expectsJson()) {
+            return response()->json(['id' => $sighting->id], $sighting->wasRecentlyCreated ? 201 : 200);
+        }
 
         return redirect()->route('member.sighting.index')->with('success', 'Sighting logged.');
     }
@@ -299,7 +324,7 @@ class WildlifeController extends Controller
     }
 
     /** Log a fishing catch against a lease the member has standing on. */
-    public function fishingStore(Request $request, FishingHarvestService $fishing): RedirectResponse
+    public function fishingStore(Request $request, FishingHarvestService $fishing): RedirectResponse|JsonResponse
     {
         $userId = session('auth.user_id');
 
@@ -316,10 +341,15 @@ class WildlifeController extends Controller
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
+            'local_record_id' => ['nullable', 'uuid'],
         ]);
 
         // Standing (403) is the only guard — no quota or CWD on a fishing catch.
-        $fishing->log($userId, $data['lease_id'], $data);
+        $catch = $fishing->log($userId, $data['lease_id'], $data);
+
+        if ($request->expectsJson()) {
+            return response()->json(['id' => $catch->id], $catch->wasRecentlyCreated ? 201 : 200);
+        }
 
         return redirect()->route('member.fishing.index')->with('success', 'Catch logged.');
     }

@@ -1,4 +1,5 @@
 import { Head, router, usePage } from '@inertiajs/react'
+import OfflineQueueBanner from '@/Components/Member/OfflineQueueBanner'
 
 interface Catch {
   id: string
@@ -62,6 +63,8 @@ export default function FishingIndex({ catches, new_url, harvest_url }: Props) {
               {flash.error}
             </div>
           )}
+
+          <OfflineQueueBanner />
 
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '24px', gap: '12px', flexWrap: 'wrap' }}>
