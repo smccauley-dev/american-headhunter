@@ -66,14 +66,14 @@ class LeaseService extends BaseService
     public function getActiveLeasesForLessee(string $userId): Collection
     {
         return $this->cache("lease:lessee:{$userId}:active", function () use ($userId) {
-            return Lease::scopeActive()->where('lessee_user_id', $userId)->get();
+            return Lease::active()->where('lessee_user_id', $userId)->get();
         }, 5);
     }
 
     public function getActiveLeasesForLessor(string $userId): Collection
     {
         return $this->cache("lease:lessor:{$userId}:active", function () use ($userId) {
-            return Lease::scopeActive()->where('lessor_user_id', $userId)->get();
+            return Lease::active()->where('lessor_user_id', $userId)->get();
         }, 5);
     }
 
