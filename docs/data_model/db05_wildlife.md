@@ -16,6 +16,10 @@ All property and lease references are cross-DB UUID columns. Geospatial location
 
 Route all reporting and analytics reads (e.g., "show me all harvests for this property this season") to `wildlife_read`. Route harvest log creation and trail camera updates to `wildlife`.
 
+> **Trigger function name:** the `updated_at` trigger function is **`trigger_set_updated_at()`** (defined in the `..._create_wildlife_extensions_and_trigger` migration), consistent with the rest of the platform. Older revisions of this doc wrote `set_updated_at()` — that name is stale; the DDL below uses `trigger_set_updated_at()`.
+>
+> **Offline capture (`local_record_id`):** `harvest_logs` and `wildlife_sightings` carry a nullable, client-minted `local_record_id` plus a partial unique index `(user_id, local_record_id) WHERE local_record_id IS NOT NULL`. A mobile client mints this UUID when a record is captured offline; on sync the server upserts idempotently on it, so an offline replay produces exactly one row and one quota increment. Server-authored rows leave it NULL (the partial index does not constrain them). `fishing_harvest_logs` follows the same pattern.
+
 ---
 
 ## Tables
@@ -49,6 +53,7 @@ CREATE TABLE harvest_logs (
     is_public             BOOLEAN     NOT NULL DEFAULT false,  -- show in public trophy gallery
     ai_score              NUMERIC(6,2) NULL,   -- AI-computed antler score (feature flag: ai_trophy_scoring)
     ai_scored_at          TIMESTAMPTZ NULL,
+    local_record_id       UUID        NULL,    -- offline capture dedup key (client-minted); see Offline note
     created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at            TIMESTAMPTZ NULL
@@ -62,10 +67,12 @@ CREATE INDEX idx_harvest_logs_harvest_date   ON harvest_logs (harvest_date);
 CREATE INDEX idx_harvest_logs_deleted_at     ON harvest_logs (deleted_at) WHERE deleted_at IS NOT NULL;
 CREATE INDEX idx_harvest_logs_field_photos   ON harvest_logs USING GIN (field_photos)
     WHERE jsonb_array_length(field_photos) > 0;
+CREATE UNIQUE INDEX uq_harvest_logs_user_local_record
+    ON harvest_logs (user_id, local_record_id) WHERE local_record_id IS NOT NULL;
 
 CREATE TRIGGER trg_harvest_logs_updated_at
     BEFORE UPDATE ON harvest_logs
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 ```
 
 **Notes:**
@@ -95,9 +102,10 @@ CREATE TABLE wildlife_sightings (
     sighting_date          DATE        NOT NULL,
     sighting_time          TIME        NULL,
     count                  SMALLINT    NOT NULL DEFAULT 1,
-    location_geospatial_id UUID        NULL,  -- References DB 13 (Geospatial) sighting_locations.id
+    location_geospatial_id UUID        NULL,  -- References DB 13 (Geospatial) harvest_locations.id
     notes                  TEXT        NULL,
     photo_document_ids     JSONB       NOT NULL DEFAULT '[]',  -- array of document_ids from DB 11
+    local_record_id        UUID        NULL,  -- offline capture dedup key (client-minted); see Offline note
     created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at             TIMESTAMPTZ NULL
@@ -109,10 +117,12 @@ CREATE INDEX idx_wildlife_sightings_property_id ON wildlife_sightings (property_
 CREATE INDEX idx_wildlife_sightings_species     ON wildlife_sightings (species_code);
 CREATE INDEX idx_wildlife_sightings_date        ON wildlife_sightings (sighting_date);
 CREATE INDEX idx_wildlife_sightings_deleted_at  ON wildlife_sightings (deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE UNIQUE INDEX uq_wildlife_sightings_user_local_record
+    ON wildlife_sightings (user_id, local_record_id) WHERE local_record_id IS NOT NULL;
 
 CREATE TRIGGER trg_wildlife_sightings_updated_at
     BEFORE UPDATE ON wildlife_sightings
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 ```
 
 ---
@@ -312,8 +322,101 @@ CREATE INDEX idx_population_surveys_year        ON population_surveys (survey_ye
 
 CREATE TRIGGER trg_population_surveys_updated_at
     BEFORE UPDATE ON population_surveys
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 ```
+
+---
+
+### `fishing_harvest_logs`
+
+Fishing catch log — the angler-facing parallel to `harvest_logs` (Phase 6). Same cross-DB / no-RLS / offline-dedup posture; `species_code` is a fish enum and the fishing-specific fields are `length_inches` and `catch_and_release`.
+
+```sql
+CREATE TABLE fishing_harvest_logs (
+    id                     UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    lease_id               UUID        NOT NULL,  -- References DB 3 (Lease) leases.id
+    user_id                UUID        NOT NULL,  -- References DB 1 (Identity) users.id
+    property_id            UUID        NOT NULL,  -- References DB 2 (Property) properties.id
+    species_code           VARCHAR(50) NOT NULL
+                               CHECK (species_code IN (
+                                   'largemouth_bass', 'smallmouth_bass', 'crappie', 'bluegill',
+                                   'catfish', 'trout', 'walleye', 'pike', 'perch', 'carp',
+                                   'striped_bass', 'other'
+                               )),
+    catch_date             DATE        NOT NULL,
+    catch_time             TIME        NULL,
+    location_geospatial_id UUID        NULL,  -- References DB 13 (Geospatial) harvest_locations.id
+    length_inches          NUMERIC(5,2) NULL,
+    weight_lbs             NUMERIC(6,2) NULL,
+    catch_and_release      BOOLEAN     NOT NULL DEFAULT false,
+    field_photos           JSONB       NOT NULL DEFAULT '[]',  -- array of document_ids from DB 11
+    notes                  TEXT        NULL,
+    is_public              BOOLEAN     NOT NULL DEFAULT false,
+    local_record_id        UUID        NULL,  -- offline capture dedup key (client-minted)
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at             TIMESTAMPTZ NULL
+);
+
+-- indexes on lease/user/property/species/catch_date + partial GIN on field_photos
+-- + partial unique uq_fishing_harvest_logs_user_local_record (user_id, local_record_id)
+-- + trg_fishing_harvest_logs_updated_at → trigger_set_updated_at()
+```
+
+---
+
+### `cwd_acknowledgments`
+
+Legal compliance record: the hunter acknowledged a CWD zone's requirements (e.g. mandatory sample submission) for a harvest taken in a `positive`/`surveillance` zone. Append-only by convention — no `updated_at`, no soft delete. Written by `CwdService` and mirrored to the audit log (`cwd.acknowledged`).
+
+```sql
+CREATE TABLE cwd_acknowledgments (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id         UUID        NOT NULL,  -- References DB 1 (Identity) users.id
+    harvest_log_id  UUID        NOT NULL REFERENCES harvest_logs (id) ON DELETE CASCADE,
+    cwd_zone_id     UUID        NOT NULL REFERENCES cwd_zones (id),
+    acknowledged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    audit_event_id  UUID        NULL,  -- References DB 9 (Audit) audit_log.id — correlation ref
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- indexes on user_id / harvest_log_id / cwd_zone_id
+-- + unique uq_cwd_acknowledgments_harvest_zone (harvest_log_id, cwd_zone_id)
+```
+
+**Notes:**
+- `harvest_log_id` and `cwd_zone_id` are **same-DB** FKs (both DB 5) — enforced by the engine. `user_id` and `audit_event_id` are cross-DB UUID refs (no FK).
+
+---
+
+### `trophies`
+
+Formal trophy scoring record under a named system (B&C / P&Y / SCI / Buckmasters), separate from the raw hunter-entered `harvest_logs.antler_score` so a harvest can carry an official, scorer-attributed entry. The public trophy gallery reads score + animal only — never precise location.
+
+```sql
+CREATE TABLE trophies (
+    id              UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    harvest_log_id  UUID         NOT NULL REFERENCES harvest_logs (id) ON DELETE CASCADE,
+    scoring_system  VARCHAR(20)  NOT NULL
+                        CHECK (scoring_system IN ('boone_crockett', 'pope_young', 'sci', 'buckmasters')),
+    gross_score     NUMERIC(6,2) NULL,
+    net_score       NUMERIC(6,2) NULL,
+    is_official     BOOLEAN      NOT NULL DEFAULT false,
+    scored_by       UUID         NULL,  -- References DB 1 (Identity) users.id — official scorer
+    scored_at       TIMESTAMPTZ  NULL,
+    notes           TEXT         NULL,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ  NULL
+);
+
+-- indexes on harvest_log_id / scoring_system / deleted_at
+-- + partial unique uq_trophies_harvest_scoring_system (harvest_log_id, scoring_system) WHERE deleted_at IS NULL
+-- + trg_trophies_updated_at → trigger_set_updated_at()
+```
+
+**Notes:**
+- `harvest_log_id` is a same-DB FK (`ON DELETE CASCADE`). `scored_by` is a cross-DB user ref (no FK).
 
 ---
 

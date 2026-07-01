@@ -3,9 +3,8 @@
 namespace App\Services\Property;
 
 use App\Models\Geospatial\PropertyBoundary;
-use App\Models\Geospatial\StandLocation;
-use App\Models\Geospatial\CwdManagementZone;
 use App\Services\BaseService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -44,12 +43,12 @@ class GeospatialService extends BaseService
             }
 
             return [
-                'type'       => 'Feature',
-                'geometry'   => json_decode($row->geometry, true),
+                'type' => 'Feature',
+                'geometry' => json_decode($row->geometry, true),
                 'properties' => [
                     'property_id' => $propertyId,
-                    'area_acres'  => $row->area_acres,
-                    'source'      => $row->source,
+                    'area_acres' => $row->area_acres,
+                    'source' => $row->source,
                 ],
             ];
         }, ttlMinutes: 30);
@@ -59,7 +58,7 @@ class GeospatialService extends BaseService
      * Store a property boundary from a GeoJSON MultiPolygon string.
      * Always uses the write connection. Invalidates the cached boundary.
      *
-     * @return string  The new boundary UUID
+     * @return string The new boundary UUID
      */
     public function storePropertyBoundary(string $propertyId, string $geoJsonMultiPolygon, string $source = 'manual'): string
     {
@@ -101,7 +100,7 @@ class GeospatialService extends BaseService
     /**
      * Get all stands within a radius of a GPS point, ordered by distance.
      */
-    public function getStandsNearPoint(float $longitude, float $latitude, int $radiusMeters = 500): \Illuminate\Support\Collection
+    public function getStandsNearPoint(float $longitude, float $latitude, int $radiusMeters = 500): Collection
     {
         $rows = DB::connection('geospatial_read')->select(
             'SELECT id, name, stand_type, elevation_ft,
@@ -117,6 +116,7 @@ class GeospatialService extends BaseService
 
         return collect($rows)->map(function ($row) {
             $row->location_geojson = json_decode($row->location_geojson, true);
+
             return $row;
         });
     }
@@ -137,16 +137,16 @@ class GeospatialService extends BaseService
         );
 
         return [
-            'type'     => 'FeatureCollection',
-            'features' => collect($rows)->map(fn($r) => [
-                'type'       => 'Feature',
-                'geometry'   => json_decode($r->geometry, true),
+            'type' => 'FeatureCollection',
+            'features' => collect($rows)->map(fn ($r) => [
+                'type' => 'Feature',
+                'geometry' => json_decode($r->geometry, true),
                 'properties' => [
-                    'id'         => $r->id,
-                    'name'       => $r->name,
+                    'id' => $r->id,
+                    'name' => $r->name,
                     'stand_type' => $r->stand_type,
                     'elevation_ft' => $r->elevation_ft,
-                    'is_active'  => (bool) $r->is_active,
+                    'is_active' => (bool) $r->is_active,
                 ],
             ])->values()->all(),
         ];
@@ -155,7 +155,7 @@ class GeospatialService extends BaseService
     /**
      * Store a stand location from a GeoJSON Point.
      *
-     * @return string  The new stand UUID
+     * @return string The new stand UUID
      */
     public function storeStandLocation(string $propertyId, string $name, string $standType, float $longitude, float $latitude, ?int $elevationFt = null, ?string $leaseId = null): string
     {
@@ -165,6 +165,26 @@ class GeospatialService extends BaseService
             'INSERT INTO stand_locations (id, property_id, lease_id, name, stand_type, location, elevation_ft)
              VALUES (?, ?, ?, ?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326), ?)',
             [$id, $propertyId, $leaseId, $name, $standType, $longitude, $latitude, $elevationFt]
+        );
+
+        return $id;
+    }
+
+    /**
+     * Store the GPS point for a harvest in DB 13 and return its UUID.
+     * The harvest_logs row (DB 5) keeps only this returned id — GPS never leaves
+     * the geospatial database. harvest_locations is immutable (no update/delete).
+     *
+     * @return string The new harvest_locations UUID
+     */
+    public function storeHarvestLocation(string $harvestLogId, float $longitude, float $latitude, ?int $accuracyMeters = null): string
+    {
+        $id = (string) Str::uuid();
+
+        DB::connection('geospatial')->statement(
+            'INSERT INTO harvest_locations (id, harvest_log_id, location, accuracy_meters)
+             VALUES (?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326), ?)',
+            [$id, $harvestLogId, $longitude, $latitude, $accuracyMeters]
         );
 
         return $id;
