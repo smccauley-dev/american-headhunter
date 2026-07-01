@@ -2,25 +2,29 @@
 
 namespace App\Services\Lease;
 
+use App\DTOs\LeaseDetailDTO;
+use App\Jobs\Lease\SendLeaseTerminationDecisionEmail;
 use App\Models\Lease\Club;
 use App\Models\Lease\ClubMember;
 use App\Models\Lease\Lease;
 use App\Models\Lease\LeaseTerminationRequest;
-use App\Jobs\Lease\SendLeaseTerminationDecisionEmail;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
+use App\Services\Billing\BookingDepositService;
+use App\Services\Billing\LeasePaymentService;
+use App\Services\Billing\SecurityDepositService;
 use App\Services\Communications\NotificationService;
-use App\Services\Property\PropertyService;
+use App\Services\Documents\DocumentService;
 use App\Services\Identity\UserService;
-use App\DTOs\LeaseDetailDTO;
+use App\Services\Property\PropertyService;
 use Illuminate\Support\Collection;
 
 class LeaseService extends BaseService
 {
     public function __construct(
         private readonly PropertyService $propertyService,
-        private readonly UserService     $userService,
-        private readonly AuditService    $auditService,
+        private readonly UserService $userService,
+        private readonly AuditService $auditService,
     ) {}
 
     /**
@@ -28,10 +32,13 @@ class LeaseService extends BaseService
      * terminates their lease for a violation. The security deposit is always
      * forfeited separately (a contestable claim) — this governs the rent only.
      */
-    public const RENT_FORFEIT      = 'full_forfeit'; // hunter forfeits all prepaid rent
-    public const RENT_PRORATED     = 'prorated';     // refund the unused (future) portion of the term
-    public const RENT_FULL_REFUND  = 'full_refund';  // refund all prepaid rent (deposit still forfeited)
-    public const RENT_CUSTOM       = 'custom';       // landowner-entered amount (approval-time only; requires a note)
+    public const RENT_FORFEIT = 'full_forfeit'; // hunter forfeits all prepaid rent
+
+    public const RENT_PRORATED = 'prorated';     // refund the unused (future) portion of the term
+
+    public const RENT_FULL_REFUND = 'full_refund';  // refund all prepaid rent (deposit still forfeited)
+
+    public const RENT_CUSTOM = 'custom';       // landowner-entered amount (approval-time only; requires a note)
 
     /** Selectable rent policies (the grandfathered/default set). RENT_CUSTOM is approval-time only. */
     public const RENT_POLICIES = [self::RENT_FORFEIT, self::RENT_PRORATED, self::RENT_FULL_REFUND];
@@ -50,31 +57,37 @@ class LeaseService extends BaseService
 
     private function buildLeaseDetail(string $leaseId): LeaseDetailDTO
     {
-        $lease    = Lease::with(['hunters', 'notes', 'checkIns', 'renewals'])->findOrFail($leaseId);
+        $lease = Lease::with(['hunters', 'notes', 'checkIns', 'renewals'])->findOrFail($leaseId);
         $property = $this->propertyService->find($lease->property_id);
-        $lessee   = $this->userService->findById($lease->lessee_user_id);
-        $lessor   = $this->userService->findById($lease->lessor_user_id);
+        $lessee = $this->userService->findById($lease->lessee_user_id);
+        $lessor = $this->userService->findById($lease->lessor_user_id);
 
         return new LeaseDetailDTO(
-            lease:    $lease,
+            lease: $lease,
             property: $property,
-            lessee:   $lessee,
-            lessor:   $lessor,
+            lessee: $lessee,
+            lessor: $lessor,
         );
     }
 
+    /**
+     * A member's active leases as lessee. Not cached: it is a single indexed
+     * lookup on leases, and a freshly signed lease must appear immediately —
+     * there is no invalidation hook for a per-user active-lease key. Returns
+     * live Lease models; callers read casts (end_date) and pluck property_id.
+     */
     public function getActiveLeasesForLessee(string $userId): Collection
     {
-        return $this->cache("lease:lessee:{$userId}:active", function () use ($userId) {
-            return Lease::active()->where('lessee_user_id', $userId)->get();
-        }, 5);
+        return Lease::active()->where('lessee_user_id', $userId)->get();
     }
 
+    /**
+     * A landowner's active leases as lessor. Not cached — same reasoning as
+     * getActiveLeasesForLessee().
+     */
     public function getActiveLeasesForLessor(string $userId): Collection
     {
-        return $this->cache("lease:lessor:{$userId}:active", function () use ($userId) {
-            return Lease::active()->where('lessor_user_id', $userId)->get();
-        }, 5);
+        return Lease::active()->where('lessor_user_id', $userId)->get();
     }
 
     /**
@@ -103,7 +116,7 @@ class LeaseService extends BaseService
 
         return $leases->map(function (Lease $lease) use ($userId, $esig) {
             $property = rescue(fn () => $this->propertyService->find($lease->property_id), null);
-            $endDate  = $lease->end_date;
+            $endDate = $lease->end_date;
 
             // A lease stays 'pending_signatures' until both parties sign, so the
             // status alone can't tell the lessee whether THEY still owe a
@@ -123,22 +136,22 @@ class LeaseService extends BaseService
             }
 
             return [
-                'id'                 => $lease->id,
-                'status'             => $lease->status,
+                'id' => $lease->id,
+                'status' => $lease->status,
                 'needs_my_signature' => $needsMySignature,
-                'needs_payment'      => $lease->status === 'pending_payment',
-                'start_date'        => $lease->start_date?->format('M j, Y'),
-                'end_date'          => $endDate?->format('M j, Y'),
-                'total_price'       => number_format((float) $lease->total_price, 2),
+                'needs_payment' => $lease->status === 'pending_payment',
+                'start_date' => $lease->start_date?->format('M j, Y'),
+                'end_date' => $endDate?->format('M j, Y'),
+                'total_price' => number_format((float) $lease->total_price, 2),
                 'days_until_expiry' => $endDate
                     ? ($endDate->isPast() ? 0 : (int) $endDate->diffInDays(now()))
                     : null,
                 'property' => $property ? [
-                    'id'     => $property->id,
-                    'title'  => $property->title,
+                    'id' => $property->id,
+                    'title' => $property->title,
                     'county' => $property->county,
-                    'state'  => $property->state_code,
-                    'acres'  => $property->huntable_acres ?? $property->total_acres,
+                    'state' => $property->state_code,
+                    'acres' => $property->huntable_acres ?? $property->total_acres,
                 ] : null,
             ];
         })->values()->all();
@@ -177,11 +190,11 @@ class LeaseService extends BaseService
                 ->orderByDesc('created_at')
                 ->get(['id', 'lessee_user_id', 'lessor_user_id', 'status', 'start_date', 'end_date'])
                 ->map(fn ($l) => [
-                    'id'         => $l->id,
-                    'role'       => $l->lessee_user_id === $userId ? 'Lessee' : 'Lessor',
-                    'status'     => $l->status,
+                    'id' => $l->id,
+                    'role' => $l->lessee_user_id === $userId ? 'Lessee' : 'Lessor',
+                    'status' => $l->status,
                     'start_date' => $l->start_date?->format('M j Y'),
-                    'end_date'   => $l->end_date?->format('M j Y'),
+                    'end_date' => $l->end_date?->format('M j Y'),
                 ])->all();
         }, 5);
     }
@@ -205,8 +218,8 @@ class LeaseService extends BaseService
                 ->with('club')
                 ->get()
                 ->map(fn ($m) => [
-                    'name'   => $m->club?->name ?? '—',
-                    'role'   => ucfirst($m->role),
+                    'name' => $m->club?->name ?? '—',
+                    'role' => ucfirst($m->role),
                     'status' => $m->status,
                 ]);
 
@@ -220,17 +233,17 @@ class LeaseService extends BaseService
     {
         $lease = Lease::create(array_merge($attributes, [
             'application_id' => $applicationId,
-            'status'         => 'pending_signatures',
+            'status' => 'pending_signatures',
         ]));
 
         $this->auditService->log(
-            eventType:      'lease.created',
+            eventType: 'lease.created',
             sourceDatabase: 'ah_lease',
-            tableName:      'leases',
-            recordId:       $lease->id,
-            userId:         $actorUserId,
-            actionSummary:  'Lease created from approved application (pending signatures)',
-            newValues:      ['application_id' => $applicationId, 'status' => 'pending_signatures'],
+            tableName: 'leases',
+            recordId: $lease->id,
+            userId: $actorUserId,
+            actionSummary: 'Lease created from approved application (pending signatures)',
+            newValues: ['application_id' => $applicationId, 'status' => 'pending_signatures'],
         );
 
         return $lease;
@@ -250,12 +263,13 @@ class LeaseService extends BaseService
         $lease = Lease::findOrFail($leaseId);
 
         $balanceDue = rescue(
-            fn () => app(\App\Services\Billing\LeasePaymentService::class)->balanceDueCents($lease),
+            fn () => app(LeasePaymentService::class)->balanceDueCents($lease),
             0,
         );
 
         if ($balanceDue > 0) {
             $this->markPendingPayment($leaseId, $actorUserId);
+
             return;
         }
 
@@ -283,12 +297,12 @@ class LeaseService extends BaseService
         $this->invalidate("lease_detail:{$leaseId}");
 
         $this->auditService->log(
-            eventType:      'lease.pending_payment',
+            eventType: 'lease.pending_payment',
             sourceDatabase: 'ah_lease',
-            tableName:      'leases',
-            recordId:       $leaseId,
-            userId:         $actorUserId,
-            actionSummary:  'Lease fully signed; awaiting balance payment before activation',
+            tableName: 'leases',
+            recordId: $leaseId,
+            userId: $actorUserId,
+            actionSummary: 'Lease fully signed; awaiting balance payment before activation',
         );
     }
 
@@ -312,17 +326,17 @@ class LeaseService extends BaseService
         $this->invalidate("lease_detail:{$leaseId}");
 
         $this->auditService->log(
-            eventType:      'lease.activated',
+            eventType: 'lease.activated',
             sourceDatabase: 'ah_lease',
-            tableName:      'leases',
-            recordId:       $leaseId,
-            userId:         $actorUserId,
-            actionSummary:  'Lease activated',
+            tableName: 'leases',
+            recordId: $leaseId,
+            userId: $actorUserId,
+            actionSummary: 'Lease activated',
         );
 
         // Lease is now executed — ensure the property has a check-in QR (used at
         // the gate). Never let QR setup break activation.
-        rescue(fn () => app(\App\Services\Documents\DocumentService::class)
+        rescue(fn () => app(DocumentService::class)
             ->getOrCreateCheckInQrForProperty($lease->property_id));
 
         // Day-hunt leases reserve their dates on the property calendar so the
@@ -330,25 +344,25 @@ class LeaseService extends BaseService
         // types. Best-effort: a calendar write (including an overlap conflict
         // from the EXCLUDE constraint) must never strand an already-executed
         // lease, mirroring the QR rescue above.
-        rescue(fn () => app(\App\Services\Property\PropertyService::class)->markBooked(
-            listingId:       $lease->listing_id,
-            start:           $lease->start_date,
-            end:             $lease->end_date,
-            hunters:         $lease->hunters()->count(),
-            cost:            (float) $lease->total_price,
-            leaseId:         $lease->id,
+        rescue(fn () => app(PropertyService::class)->markBooked(
+            listingId: $lease->listing_id,
+            start: $lease->start_date,
+            end: $lease->end_date,
+            hunters: $lease->hunters()->count(),
+            cost: (float) $lease->total_price,
+            leaseId: $lease->id,
             createdByUserId: $actorUserId,
         ));
 
         // An exclusive listing was set `pending` at approval; now that the lease
         // is executed, promote it to `leased`. No-op for day-hunt listings.
-        rescue(fn () => app(\App\Services\Property\PropertyService::class)
+        rescue(fn () => app(PropertyService::class)
             ->markExclusiveLeased($lease->listing_id));
 
         // The vet-first booking fee was held on the platform pending this outcome;
         // the lease completed, so release it to the landowner. No-op when there is
         // no held fee. Best-effort — never let disbursement break activation.
-        rescue(fn () => app(\App\Services\Billing\BookingDepositService::class)
+        rescue(fn () => app(BookingDepositService::class)
             ->disburseForLease($lease->id));
     }
 
@@ -360,23 +374,23 @@ class LeaseService extends BaseService
     {
         $lease = Lease::findOrFail($leaseId);
         $lease->update([
-            'status'             => 'cancelled',
-            'terminated_at'      => now(),
+            'status' => 'cancelled',
+            'terminated_at' => now(),
             'termination_reason' => $reason,
         ]);
         $this->invalidate("lease_detail:{$leaseId}");
 
         $this->auditService->log(
-            eventType:      'lease.cancelled',
+            eventType: 'lease.cancelled',
             sourceDatabase: 'ah_lease',
-            tableName:      'leases',
-            recordId:       $leaseId,
-            userId:         $actorUserId,
-            actionSummary:  "Lease cancelled: {$reason}",
+            tableName: 'leases',
+            recordId: $leaseId,
+            userId: $actorUserId,
+            actionSummary: "Lease cancelled: {$reason}",
         );
 
         // Free any day-hunt dates this lease held so they become bookable again.
-        rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
+        rescue(fn () => app(PropertyService::class)->releaseBooking($leaseId));
 
         // Close any open check-in so a forgotten hunter is no longer "in the field".
         rescue(fn () => app(CheckInService::class)->closeOpenForLease($leaseId));
@@ -386,23 +400,23 @@ class LeaseService extends BaseService
     {
         $lease = Lease::findOrFail($leaseId);
         $lease->update([
-            'status'               => 'terminated',
-            'terminated_at'        => now(),
-            'termination_reason'   => $reason,
+            'status' => 'terminated',
+            'terminated_at' => now(),
+            'termination_reason' => $reason,
         ]);
         $this->invalidate("lease_detail:{$leaseId}");
 
         $this->auditService->log(
-            eventType:      'lease.terminated',
+            eventType: 'lease.terminated',
             sourceDatabase: 'ah_lease',
-            tableName:      'leases',
-            recordId:       $leaseId,
-            userId:         $actorUserId,
-            actionSummary:  "Lease terminated: {$reason}",
+            tableName: 'leases',
+            recordId: $leaseId,
+            userId: $actorUserId,
+            actionSummary: "Lease terminated: {$reason}",
         );
 
         // Free any day-hunt dates this lease held so they become bookable again.
-        rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
+        rescue(fn () => app(PropertyService::class)->releaseBooking($leaseId));
 
         // Close any open check-in so a forgotten hunter is no longer "in the field".
         rescue(fn () => app(CheckInService::class)->closeOpenForLease($leaseId));
@@ -421,7 +435,7 @@ class LeaseService extends BaseService
      *       full_forfeit → none refunded · prorated → unused portion · full_refund → all.
      *     The booking fee (a non-refundable commitment) is never touched.
      *
-     * @throws \RuntimeException         when the lease is not active
+     * @throws \RuntimeException when the lease is not active
      * @throws \InvalidArgumentException when $rentDisposition is not a known policy
      */
     public function terminateForViolation(
@@ -442,20 +456,20 @@ class LeaseService extends BaseService
         }
 
         $lease->update([
-            'status'             => 'terminated',
-            'terminated_at'      => now(),
+            'status' => 'terminated',
+            'terminated_at' => now(),
             'termination_reason' => $reason,
         ]);
         $this->invalidate("lease_detail:{$leaseId}");
 
         $this->auditService->log(
-            eventType:      'lease.terminated_for_violation',
+            eventType: 'lease.terminated_for_violation',
             sourceDatabase: 'ah_lease',
-            tableName:      'leases',
-            recordId:       $leaseId,
-            userId:         $actorUserId,
-            actionSummary:  "Lease terminated for violation ({$disposition} prepaid rent): {$reason}",
-            newValues:      ['status' => 'terminated', 'rent_disposition' => $disposition],
+            tableName: 'leases',
+            recordId: $leaseId,
+            userId: $actorUserId,
+            actionSummary: "Lease terminated for violation ({$disposition} prepaid rent): {$reason}",
+            newValues: ['status' => 'terminated', 'rent_disposition' => $disposition],
         );
 
         // Forfeit the deposit as a contestable hunter-fault claim (money stays held).
@@ -465,7 +479,7 @@ class LeaseService extends BaseService
         rescue(fn () => $this->refundPrepaidRent($lease, $disposition, $actorUserId));
 
         // Free the reserved term so the listing returns to the market.
-        rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
+        rescue(fn () => app(PropertyService::class)->releaseBooking($leaseId));
 
         // Close any open check-in so a forgotten hunter is no longer "in the field".
         rescue(fn () => app(CheckInService::class)->closeOpenForLease($leaseId));
@@ -478,8 +492,8 @@ class LeaseService extends BaseService
      */
     private function forfeitDepositForViolation(string $leaseId, string $reason, ?string $actorUserId): void
     {
-        $deposits = app(\App\Services\Billing\SecurityDepositService::class);
-        $deposit  = $deposits->forLease($leaseId);
+        $deposits = app(SecurityDepositService::class);
+        $deposit = $deposits->forLease($leaseId);
         if (! $deposit || $deposit->status !== 'held' || $deposit->forfeit_fault !== null) {
             return;
         }
@@ -494,7 +508,7 @@ class LeaseService extends BaseService
             $remaining,
             $reason,
             $actorUserId,
-            \App\Services\Billing\SecurityDepositService::FAULT_LESSEE,
+            SecurityDepositService::FAULT_LESSEE,
             'rule_violation',
         );
     }
@@ -513,7 +527,7 @@ class LeaseService extends BaseService
             return 0;
         }
 
-        $payments   = app(\App\Services\Billing\LeasePaymentService::class);
+        $payments = app(LeasePaymentService::class);
         $refundable = $payments->collectedFor($lease->id)->where('status', 'collected');
         $totalGross = (int) $refundable->sum('gross_cents');
         if ($totalGross <= 0) {
@@ -522,8 +536,8 @@ class LeaseService extends BaseService
 
         $budget = match ($disposition) {
             self::RENT_FULL_REFUND => $totalGross,
-            self::RENT_CUSTOM      => min(max(0, (int) $customCents), $totalGross),
-            default                => $this->unusedRentCents($lease, $totalGross), // prorated
+            self::RENT_CUSTOM => min(max(0, (int) $customCents), $totalGross),
+            default => $this->unusedRentCents($lease, $totalGross), // prorated
         };
         if ($budget <= 0) {
             return 0;
@@ -534,10 +548,10 @@ class LeaseService extends BaseService
             if ($budget <= 0) {
                 break;
             }
-            $gross  = (int) $payment->gross_cents;
+            $gross = (int) $payment->gross_cents;
             $amount = min($budget, $gross);
             $payments->refund($payment, $amount >= $gross ? null : $amount, $actorUserId);
-            $budget   -= $amount;
+            $budget -= $amount;
             $refunded += $amount;
         }
 
@@ -552,7 +566,7 @@ class LeaseService extends BaseService
     private function unusedRentCents(Lease $lease, int $totalGross): int
     {
         $start = $lease->start_date;
-        $end   = $lease->end_date;
+        $end = $lease->end_date;
         if (! $start || ! $end || ! $end->greaterThan($start)) {
             return 0;
         }
@@ -567,7 +581,7 @@ class LeaseService extends BaseService
 
         // Day-granular: a partial current day counts as not-yet-used (refundable).
         $totalDays = $start->diffInDays($end);
-        $usedDays  = floor($start->diffInDays($now));
+        $usedDays = floor($start->diffInDays($now));
 
         return (int) round($totalGross * (($totalDays - $usedDays) / $totalDays));
     }
@@ -598,20 +612,20 @@ class LeaseService extends BaseService
         }
 
         $request = LeaseTerminationRequest::create([
-            'lease_id'             => $leaseId,
+            'lease_id' => $leaseId,
             'requested_by_user_id' => $requesterUserId,
-            'reason'               => $reason,
-            'status'               => 'pending',
+            'reason' => $reason,
+            'status' => 'pending',
         ]);
         $this->invalidate("lease_detail:{$leaseId}");
 
         $this->auditService->log(
-            eventType:      'lease.early_termination_requested',
+            eventType: 'lease.early_termination_requested',
             sourceDatabase: 'ah_lease',
-            tableName:      'lease_termination_requests',
-            recordId:       $request->id,
-            userId:         $requesterUserId,
-            actionSummary:  "Hunter requested early termination: {$reason}",
+            tableName: 'lease_termination_requests',
+            recordId: $request->id,
+            userId: $requesterUserId,
+            actionSummary: "Hunter requested early termination: {$reason}",
         );
 
         return $request;
@@ -630,14 +644,14 @@ class LeaseService extends BaseService
      * lessor may approve, only while the request is pending and the lease still
      * active.
      *
-     * @throws \RuntimeException         when the user is not the lessor, the request is
-     *                                   not pending, or the lease is no longer active
+     * @throws \RuntimeException when the user is not the lessor, the request is
+     *                           not pending, or the lease is no longer active
      * @throws \InvalidArgumentException when the refund exceeds the held deposit
      */
     public function approveEarlyTermination(string $requestId, ?string $note, string $deciderUserId, ?int $depositRefundCents = null, ?string $rentDisposition = null, ?int $rentRefundCents = null): void
     {
         $request = LeaseTerminationRequest::findOrFail($requestId);
-        $lease   = $this->guardDecision($request, $deciderUserId);
+        $lease = $this->guardDecision($request, $deciderUserId);
 
         $refundCents = max(0, $depositRefundCents ?? 0);
         if ($refundCents > 0 && $refundCents > $this->heldDepositRemainingCents($lease->id)) {
@@ -657,27 +671,27 @@ class LeaseService extends BaseService
         }
 
         $request->update([
-            'status'             => 'approved',
+            'status' => 'approved',
             'decided_by_user_id' => $deciderUserId,
-            'decision_note'      => $note,
-            'decided_at'         => now(),
+            'decision_note' => $note,
+            'decided_at' => now(),
         ]);
 
         $lease->update([
-            'status'             => 'terminated',
-            'terminated_at'      => now(),
+            'status' => 'terminated',
+            'terminated_at' => now(),
             'termination_reason' => 'Early termination requested by hunter — approved by landowner',
         ]);
         $this->invalidate("lease_detail:{$lease->id}");
 
         $this->auditService->log(
-            eventType:      'lease.early_termination_approved',
+            eventType: 'lease.early_termination_approved',
             sourceDatabase: 'ah_lease',
-            tableName:      'lease_termination_requests',
-            recordId:       $requestId,
-            userId:         $deciderUserId,
-            actionSummary:  "Hunter early-termination request approved; lease terminated ({$disposition} prepaid rent)",
-            newValues:      ['lease_id' => $lease->id, 'status' => 'approved', 'rent_disposition' => $disposition],
+            tableName: 'lease_termination_requests',
+            recordId: $requestId,
+            userId: $deciderUserId,
+            actionSummary: "Hunter early-termination request approved; lease terminated ({$disposition} prepaid rent)",
+            newValues: ['lease_id' => $lease->id, 'status' => 'approved', 'rent_disposition' => $disposition],
         );
 
         // Hunter forfeits the deposit as a non-contestable early-exit penalty: an
@@ -693,11 +707,11 @@ class LeaseService extends BaseService
         // after the fact (lease_payments tracks only a refund status, not amounts).
         $request->update([
             'deposit_refunded_cents' => $refundCents,
-            'rent_refunded_cents'    => $rentRefundedCents,
+            'rent_refunded_cents' => $rentRefundedCents,
         ]);
 
         // Free the reserved term so the listing returns to the market.
-        rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($lease->id));
+        rescue(fn () => app(PropertyService::class)->releaseBooking($lease->id));
 
         // Close any open check-in so a forgotten hunter is no longer "in the field".
         rescue(fn () => app(CheckInService::class)->closeOpenForLease($lease->id));
@@ -711,12 +725,12 @@ class LeaseService extends BaseService
         // high-level (no amounts) and link there. System-authored: this runs under
         // db.system (ah_system), so the insert is permitted.
         rescue(fn () => app(NotificationService::class)->notify(
-            userId:    $lease->lessee_user_id,
-            type:      'lease.early_termination_approved',
-            title:     'Early termination approved',
-            body:      'Your request to end your lease early was approved — the lease is now terminated. Open your lease to see any refund details.',
+            userId: $lease->lessee_user_id,
+            type: 'lease.early_termination_approved',
+            title: 'Early termination approved',
+            body: 'Your request to end your lease early was approved — the lease is now terminated. Open your lease to see any refund details.',
             actionUrl: "/member/leases/{$lease->id}",
-            data:      ['lease_id' => $lease->id],
+            data: ['lease_id' => $lease->id],
         ));
     }
 
@@ -730,24 +744,24 @@ class LeaseService extends BaseService
     public function denyEarlyTermination(string $requestId, ?string $note, string $deciderUserId): void
     {
         $request = LeaseTerminationRequest::findOrFail($requestId);
-        $lease   = $this->guardDecision($request, $deciderUserId);
+        $lease = $this->guardDecision($request, $deciderUserId);
 
         $request->update([
-            'status'             => 'denied',
+            'status' => 'denied',
             'decided_by_user_id' => $deciderUserId,
-            'decision_note'      => $note,
-            'decided_at'         => now(),
+            'decision_note' => $note,
+            'decided_at' => now(),
         ]);
         $this->invalidate("lease_detail:{$lease->id}");
 
         $this->auditService->log(
-            eventType:      'lease.early_termination_denied',
+            eventType: 'lease.early_termination_denied',
             sourceDatabase: 'ah_lease',
-            tableName:      'lease_termination_requests',
-            recordId:       $requestId,
-            userId:         $deciderUserId,
-            actionSummary:  'Hunter early-termination request denied',
-            newValues:      ['lease_id' => $lease->id, 'status' => 'denied'],
+            tableName: 'lease_termination_requests',
+            recordId: $requestId,
+            userId: $deciderUserId,
+            actionSummary: 'Hunter early-termination request denied',
+            newValues: ['lease_id' => $lease->id, 'status' => 'denied'],
         );
 
         // Tell the hunter (email) their request was denied and the lease stands.
@@ -757,12 +771,12 @@ class LeaseService extends BaseService
 
         // In-app bell — system-authored (runs under db.system / ah_system).
         rescue(fn () => app(NotificationService::class)->notify(
-            userId:    $lease->lessee_user_id,
-            type:      'lease.early_termination_denied',
-            title:     'Early termination not approved',
-            body:      'Your request to end your lease early was not approved — the lease remains active. You can submit a new request from your lease page.',
+            userId: $lease->lessee_user_id,
+            type: 'lease.early_termination_denied',
+            title: 'Early termination not approved',
+            body: 'Your request to end your lease early was not approved — the lease remains active. You can submit a new request from your lease page.',
             actionUrl: "/member/leases/{$lease->id}",
-            data:      ['lease_id' => $lease->id],
+            data: ['lease_id' => $lease->id],
         ));
     }
 
@@ -800,7 +814,7 @@ class LeaseService extends BaseService
     /** The remaining balance of the lease's held, unclaimed deposit (0 when none). */
     private function heldDepositRemainingCents(string $leaseId): int
     {
-        $deposit = app(\App\Services\Billing\SecurityDepositService::class)->forLease($leaseId);
+        $deposit = app(SecurityDepositService::class)->forLease($leaseId);
         if (! $deposit || $deposit->status !== 'held' || $deposit->forfeit_fault !== null) {
             return 0;
         }
@@ -823,8 +837,8 @@ class LeaseService extends BaseService
      */
     private function forfeitDepositForEarlyExit(string $leaseId, ?string $actorUserId, int $refundCents = 0): void
     {
-        $deposits = app(\App\Services\Billing\SecurityDepositService::class);
-        $deposit  = $deposits->forLease($leaseId);
+        $deposits = app(SecurityDepositService::class);
+        $deposit = $deposits->forLease($leaseId);
         if (! $deposit || $deposit->status !== 'held' || $deposit->forfeit_fault !== null) {
             return;
         }
@@ -850,7 +864,7 @@ class LeaseService extends BaseService
             $remaining - $refundCents,
             'Early termination requested by hunter — deposit forfeited as early-exit penalty',
             $actorUserId,
-            \App\Services\Billing\SecurityDepositService::FAULT_LANDOWNER_INITIATED,
+            SecurityDepositService::FAULT_LANDOWNER_INITIATED,
             'other',
         );
     }
@@ -862,17 +876,17 @@ class LeaseService extends BaseService
         $this->invalidate("lease_detail:{$leaseId}");
 
         $this->auditService->log(
-            eventType:      'lease.expired',
+            eventType: 'lease.expired',
             sourceDatabase: 'ah_lease',
-            tableName:      'leases',
-            recordId:       $leaseId,
-            userId:         $actorUserId,
-            actionSummary:  'Lease expired',
+            tableName: 'leases',
+            recordId: $leaseId,
+            userId: $actorUserId,
+            actionSummary: 'Lease expired',
         );
 
         // Free any reserved dates so an exclusive listing returns to the market
         // and a day-hunt's dates become bookable again.
-        rescue(fn () => app(\App\Services\Property\PropertyService::class)->releaseBooking($leaseId));
+        rescue(fn () => app(PropertyService::class)->releaseBooking($leaseId));
 
         // Close any open check-in so a forgotten hunter is no longer "in the field".
         rescue(fn () => app(CheckInService::class)->closeOpenForLease($leaseId));
