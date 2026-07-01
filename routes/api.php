@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\DropboxSignWebhookController;
@@ -75,6 +76,16 @@ Route::middleware(['auth:sanctum', 'abilities:hunter:checkin', 'throttle:api'])-
     Route::get('/v1/checkins/active', [CheckInController::class, 'active']);
     Route::post('/v1/leases/{lease}/checkin', [CheckInController::class, 'checkIn'])->middleware('throttle:20,1');
     Route::post('/v1/leases/{lease}/checkout', [CheckInController::class, 'checkOut'])->middleware('throttle:20,1');
+});
+
+// Lease applications — mobile API. Runs as the Sanctum member (ah_runtime);
+// every query is scoped to the caller's own applications. The primary hunter is
+// drawn from the caller's saved credentials (roster capture stays on the web).
+Route::middleware(['auth:sanctum', 'abilities:hunter:apply', 'throttle:api'])->group(function () {
+    Route::get('/v1/applications', [ApplicationController::class, 'index']);
+    Route::get('/v1/applications/{application}', [ApplicationController::class, 'show']);
+    Route::post('/v1/listings/{listing}/apply', [ApplicationController::class, 'apply'])->middleware('throttle:10,1');
+    Route::post('/v1/applications/{application}/withdraw', [ApplicationController::class, 'withdraw'])->middleware('throttle:10,1');
 });
 
 // Dropbox Sign webhook — no auth, HMAC-verified internally
