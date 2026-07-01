@@ -1,5 +1,6 @@
 import { Head, router, usePage } from '@inertiajs/react'
 import OfflineQueueBanner from '@/Components/Member/OfflineQueueBanner'
+import MemberTopbar from '@/Components/Member/MemberTopbar'
 
 interface Harvest {
   id: string
@@ -27,29 +28,14 @@ const BLAZE = '#c84c21'
 const MONO = "'JetBrains Mono', Menlo, monospace"
 const DISPLAY = "'Fraunces', Georgia, serif"
 
-function Topbar() {
-  return (
-    <div style={{ background: INK, borderBottom: '1px solid #1a2e28' }}>
-      <div style={{ maxWidth: '640px', margin: '0 auto', padding: '0 16px', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.15em', textTransform: 'uppercase', color: BLAZE, fontWeight: 700 }}>
-          American Headhunter
-        </span>
-        <a href="/member" style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', textDecoration: 'none' }}>
-          Member Portal
-        </a>
-      </div>
-    </div>
-  )
-}
-
 export default function HarvestIndex({ harvests, new_url, quota_url }: Props) {
   const { flash } = usePage<PageProps>().props
 
   return (
     <>
       <Head title="Harvest Log" />
-      <div style={{ minHeight: '100vh', background: '#faf7f2' }}>
-        <Topbar />
+      <div className="topo-bg" style={{ minHeight: '100vh', backgroundColor: '#EDE5D0' }}>
+        <MemberTopbar />
         <div style={{ maxWidth: '640px', margin: '0 auto', padding: '40px 16px 64px' }}>
 
           {flash?.success && (
