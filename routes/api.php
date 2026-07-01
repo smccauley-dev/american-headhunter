@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\DropboxSignWebhookController;
 use App\Http\Controllers\Api\LeaseSigningController;
 use App\Http\Controllers\Api\MfaController;
@@ -66,6 +67,15 @@ Route::prefix('v1/profile')
         Route::get('/avatar', [ProfileController::class, 'serveAvatar']);
         Route::post('/avatar', [ProfileController::class, 'uploadAvatar'])->middleware('throttle:10,1');
     });
+
+// Field check-in / check-out — mobile API. Runs as the Sanctum member
+// (ah_runtime); standing to check in against a lease is enforced inside
+// CheckInService (403 for non-lessee/non-approved-hunter). GPS is advisory.
+Route::middleware(['auth:sanctum', 'abilities:hunter:checkin', 'throttle:api'])->group(function () {
+    Route::get('/v1/checkins/active', [CheckInController::class, 'active']);
+    Route::post('/v1/leases/{lease}/checkin', [CheckInController::class, 'checkIn'])->middleware('throttle:20,1');
+    Route::post('/v1/leases/{lease}/checkout', [CheckInController::class, 'checkOut'])->middleware('throttle:20,1');
+});
 
 // Dropbox Sign webhook — no auth, HMAC-verified internally
 Route::post('/webhooks/dropbox-sign', [DropboxSignWebhookController::class, 'handle'])
