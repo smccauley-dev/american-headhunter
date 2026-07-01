@@ -3,12 +3,16 @@
 namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
+use App\Models\Wildlife\FishingHarvestLog;
 use App\Models\Wildlife\HarvestLog;
 use App\Models\Wildlife\HarvestQuota;
+use App\Models\Wildlife\WildlifeSighting;
 use App\Services\Lease\LeaseService;
 use App\Services\Property\PropertyService;
+use App\Services\Wildlife\FishingHarvestService;
 use App\Services\Wildlife\HarvestService;
 use App\Services\Wildlife\QuotaService;
+use App\Services\Wildlife\SightingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -57,6 +61,25 @@ class WildlifeController extends Controller
         'shotgun' => 'Shotgun',
         'muzzleloader' => 'Muzzleloader',
         'pistol' => 'Pistol',
+        'other' => 'Other',
+    ];
+
+    /** Sighting species — the harvest set plus 'unknown' (wildlife_sightings CHECK). */
+    private const SIGHTING_SPECIES = self::SPECIES + ['unknown' => 'Unknown'];
+
+    /** Fish species — mirrors the fishing_harvest_logs CHECK. code => label. */
+    private const FISH_SPECIES = [
+        'largemouth_bass' => 'Largemouth Bass',
+        'smallmouth_bass' => 'Smallmouth Bass',
+        'crappie' => 'Crappie',
+        'bluegill' => 'Bluegill',
+        'catfish' => 'Catfish',
+        'trout' => 'Trout',
+        'walleye' => 'Walleye',
+        'pike' => 'Pike',
+        'perch' => 'Perch',
+        'carp' => 'Carp',
+        'striped_bass' => 'Striped Bass',
         'other' => 'Other',
     ];
 
@@ -173,6 +196,151 @@ class WildlifeController extends Controller
             'leases' => $groups,
             'harvest_url' => route('member.harvest.index'),
         ]);
+    }
+
+    // ── Sightings ─────────────────────────────────────────────────────────────
+
+    /** The member's own wildlife sightings, newest first. */
+    public function sightingIndex(Request $request, SightingService $sightings, PropertyService $properties): InertiaResponse
+    {
+        $userId = session('auth.user_id');
+
+        $logs = $sightings->listForUser($userId);
+        $titles = $this->propertyTitles($logs->pluck('property_id')->all(), $properties);
+
+        $rows = $logs->map(fn (WildlifeSighting $s) => [
+            'id' => $s->id,
+            'species' => self::SIGHTING_SPECIES[$s->species_code] ?? $s->species_code,
+            'count' => (int) $s->count,
+            'sighting_date' => $s->sighting_date?->format('M j, Y'),
+            'property_title' => $titles[$s->property_id] ?? 'Property',
+            'notes' => $s->notes,
+        ])->all();
+
+        return Inertia::render('Member/Sighting/Index', [
+            'sightings' => $rows,
+            'new_url' => route('member.sighting.new'),
+            'harvest_url' => route('member.harvest.index'),
+        ]);
+    }
+
+    /** The log-a-sighting form: active leases + the sighting species vocab. */
+    public function sightingNew(Request $request, LeaseService $leases, PropertyService $properties): InertiaResponse
+    {
+        return Inertia::render('Member/Sighting/New', [
+            'leases' => $this->activeLeaseOptions($leases, $properties),
+            'species' => $this->options(self::SIGHTING_SPECIES),
+            'store_url' => route('member.sighting.store'),
+            'index_url' => route('member.sighting.index'),
+        ]);
+    }
+
+    /** Log a sighting against a lease the member has standing on. */
+    public function sightingStore(Request $request, SightingService $sightings): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $data = $request->validate([
+            'lease_id' => ['required', 'uuid'],
+            'species_code' => ['required', Rule::in(array_keys(self::SIGHTING_SPECIES))],
+            'sighting_date' => ['required', 'date', 'before_or_equal:today'],
+            'sighting_time' => ['nullable', 'date_format:H:i'],
+            'count' => ['nullable', 'integer', 'min:1', 'max:10000'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        // Standing (403) is the only guard on this write — no quota or CWD — so a
+        // failure here is a genuine deny and is allowed to surface as a 403.
+        $sightings->log($userId, $data['lease_id'], $data);
+
+        return redirect()->route('member.sighting.index')->with('success', 'Sighting logged.');
+    }
+
+    // ── Fishing ───────────────────────────────────────────────────────────────
+
+    /** The member's own fishing catches, newest first. */
+    public function fishingIndex(Request $request, FishingHarvestService $fishing, PropertyService $properties): InertiaResponse
+    {
+        $userId = session('auth.user_id');
+
+        $logs = $fishing->listForUser($userId);
+        $titles = $this->propertyTitles($logs->pluck('property_id')->all(), $properties);
+
+        $rows = $logs->map(fn (FishingHarvestLog $f) => [
+            'id' => $f->id,
+            'species' => self::FISH_SPECIES[$f->species_code] ?? $f->species_code,
+            'catch_date' => $f->catch_date?->format('M j, Y'),
+            'property_title' => $titles[$f->property_id] ?? 'Property',
+            'length_inches' => $f->length_inches,
+            'weight_lbs' => $f->weight_lbs,
+            'catch_and_release' => (bool) $f->catch_and_release,
+            'is_public' => (bool) $f->is_public,
+        ])->all();
+
+        return Inertia::render('Member/Fishing/Index', [
+            'catches' => $rows,
+            'new_url' => route('member.fishing.new'),
+            'harvest_url' => route('member.harvest.index'),
+        ]);
+    }
+
+    /** The log-a-catch form: active leases + the fish species vocab. */
+    public function fishingNew(Request $request, LeaseService $leases, PropertyService $properties): InertiaResponse
+    {
+        return Inertia::render('Member/Fishing/New', [
+            'leases' => $this->activeLeaseOptions($leases, $properties),
+            'species' => $this->options(self::FISH_SPECIES),
+            'store_url' => route('member.fishing.store'),
+            'index_url' => route('member.fishing.index'),
+        ]);
+    }
+
+    /** Log a fishing catch against a lease the member has standing on. */
+    public function fishingStore(Request $request, FishingHarvestService $fishing): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $data = $request->validate([
+            'lease_id' => ['required', 'uuid'],
+            'species_code' => ['required', Rule::in(array_keys(self::FISH_SPECIES))],
+            'catch_date' => ['required', 'date', 'before_or_equal:today'],
+            'catch_time' => ['nullable', 'date_format:H:i'],
+            'length_inches' => ['nullable', 'numeric', 'min:0', 'max:999'],
+            'weight_lbs' => ['nullable', 'numeric', 'min:0', 'max:9999'],
+            'catch_and_release' => ['nullable', 'boolean'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+            'is_public' => ['nullable', 'boolean'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        // Standing (403) is the only guard — no quota or CWD on a fishing catch.
+        $fishing->log($userId, $data['lease_id'], $data);
+
+        return redirect()->route('member.fishing.index')->with('success', 'Catch logged.');
+    }
+
+    /**
+     * The member's active leases shaped as form options ({id, property_title,
+     * end_date}). Shared by the sighting/fishing "new" forms.
+     *
+     * @return array<int,array{id:string,property_title:string,end_date:?string}>
+     */
+    private function activeLeaseOptions(LeaseService $leases, PropertyService $properties): array
+    {
+        $userId = session('auth.user_id');
+        $active = $leases->getActiveLeasesForLessee($userId);
+        $titles = $this->propertyTitles($active->pluck('property_id')->all(), $properties);
+
+        return $active->map(fn ($lease) => [
+            'id' => $lease->id,
+            'property_title' => $titles[$lease->property_id] ?? 'Property',
+            'end_date' => $lease->end_date?->format('M j, Y'),
+        ])->values()->all();
     }
 
     /**

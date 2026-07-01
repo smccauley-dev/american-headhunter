@@ -224,6 +224,16 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/harvest', [WildlifeController::class, 'harvestStore'])->name('harvest.store')->middleware('throttle:30,1');
     Route::get('/quota', [WildlifeController::class, 'quotaIndex'])->name('quota');
 
+    // Secondary field logs — sightings and fishing. Same standing boundary as
+    // harvest, but with no quota or CWD gate, so the store has nothing to catch:
+    // a standing failure is a genuine 403 and is allowed to surface.
+    Route::get('/sightings', [WildlifeController::class, 'sightingIndex'])->name('sighting.index');
+    Route::get('/sightings/new', [WildlifeController::class, 'sightingNew'])->name('sighting.new');
+    Route::post('/sightings', [WildlifeController::class, 'sightingStore'])->name('sighting.store')->middleware('throttle:30,1');
+    Route::get('/fishing', [WildlifeController::class, 'fishingIndex'])->name('fishing.index');
+    Route::get('/fishing/new', [WildlifeController::class, 'fishingNew'])->name('fishing.new');
+    Route::post('/fishing', [WildlifeController::class, 'fishingStore'])->name('fishing.store')->middleware('throttle:30,1');
+
     // In-app notification center (the bell + unread inbox). Reads and mark-read
     // run as the member (ah_runtime); RLS scopes every query to their own rows.
     // Creation is system-authored elsewhere, so there is no create route here.
