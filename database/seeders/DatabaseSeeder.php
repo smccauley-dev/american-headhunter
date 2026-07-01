@@ -2,6 +2,12 @@
 
 namespace Database\Seeders;
 
+use Database\Seeders\Billing\TestSubscriptionSeeder;
+use Database\Seeders\Communications\EmailTemplateSeeder;
+use Database\Seeders\Identity\PermissionSeeder;
+use Database\Seeders\Identity\RoleSeeder;
+use Database\Seeders\Identity\TestUserSeeder;
+use Database\Seeders\Wildlife\WildlifeReferenceSeeder;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
@@ -10,9 +16,9 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             // DB 1 — Identity
-            \Database\Seeders\Identity\RoleSeeder::class,
-            \Database\Seeders\Identity\PermissionSeeder::class,
-            \Database\Seeders\Identity\TestUserSeeder::class,
+            RoleSeeder::class,
+            PermissionSeeder::class,
+            TestUserSeeder::class,
 
             // DB 12 — Platform (feature flags + promos)
             PlatformSeeder::class,
@@ -21,10 +27,13 @@ class DatabaseSeeder extends Seeder
             PropertySeeder::class,
 
             // DB 4 — Billing (dev test subscriptions; needs platform plans + test users)
-            \Database\Seeders\Billing\TestSubscriptionSeeder::class,
+            TestSubscriptionSeeder::class,
 
             // DB 7 — Communications (system email templates)
-            \Database\Seeders\Communications\EmailTemplateSeeder::class,
+            EmailTemplateSeeder::class,
+
+            // DB 5 — Wildlife (hunting seasons + CWD zone reference data)
+            WildlifeReferenceSeeder::class,
         ]);
     }
 }
