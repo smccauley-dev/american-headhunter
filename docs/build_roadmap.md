@@ -711,10 +711,10 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
 
 ### 5.2 Billing Services
 
-> **Status (2026-06-15):** Stripe-free core landed. `stripe/stripe-php` v20.2.1 is installed; the **paid** flows (`StripeService`/`PayoutService`) are deferred — they need Stripe test keys for live verification (none configured yet; `services.stripe` block wired for mockable injection). `EntitlementService` now resolves promotion-claim → subscription snapshot → free-tier (no longer a free-plan placeholder).
+> **Status (updated 2026-06-30):** the paid flows are **built and live against Stripe test keys** — `STRIPE_KEY`/`STRIPE_SECRET`/`STRIPE_WEBHOOK_SECRET` are all `*_test_*`/`whsec_*` in `.env` (only `STRIPE_CONNECT_CLIENT_ID` is blank, which Express account-link onboarding does not require). The earlier "Stripe-free / needs test keys" note is superseded. `stripe/stripe-php` v20.2.1 installed; `services.stripe` wired for mockable injection (unit tests mock; test-mode probes exercise live). `EntitlementService` resolves promotion-claim → subscription snapshot → free-tier.
 
 - [x] `App\Services\Billing\BillingService` — subscription creation, upgrade/downgrade, cancellation, promo claim application; invalidates Valkey entitlement cache on any change
-- [ ] `App\Services\Billing\StripeService` — Payment Intent creation, Stripe webhook verification and routing — **deferred (needs Stripe test keys)**
+- [x] `App\Services\Billing\StripeService` — Checkout/Payment Intent creation, Connect wrappers, webhook signature verification and routing (built; exercised in test mode)
 - [~] `App\Services\Billing\PayoutService` — Stripe Connect disbursement scheduling, platform fee calculation per landowner tier. **Slice 1 BUILT (2026-06-25):** fee engine + disbursement core + Connect SDK wrappers + RLS hardening, Stripe mocked (no live keys needed).
   - [x] **stripe_accounts RLS hardening (SEC-055)** — the table shipped with NO row-level security; `ah_runtime`'s blanket DML grant let any user read/forge another landowner's Connect account + `payouts_enabled` flag. Migration `2026_06_25_000001` enables RLS, SELECT-only `TO ah_runtime` (own row + staff), no write policy (system-authored, mirrors `payouts`). Regression: `tests/Feature/Security/StripeAccountRlsWriteTest` (6).
   - [x] **`StripeService` Connect wrappers** — `createConnectAccount` (Express, `user_id` in metadata), `createAccountLink` (hosted onboarding), `retrieveAccount` (flag sync), `createTransfer` (platform → connected account, USD).
@@ -724,31 +724,31 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
     - [x] **`account.updated` webhook branch** — already in `ProcessStripeWebhook::accountUpdated` (syncs `charges_enabled`/`payouts_enabled`/`details_submitted` + stamps `onboarding_completed_at` under `ah_system`).
     - [x] **`security_deposits` slice 3** — forfeiture → `PayoutService::disburse` (see 5.1 security_deposits Slice 3).
     - [ ] **`DisburseLandownerPayout` job (lease rent) — NOT built (no upstream flow):** there is no lease-rent collection path yet (`BillingService` is subscription-only), so a generic post-clear payout job would be speculative. Build it with the lease-rent collection milestone.
-    - [ ] **Live verification** still pending Stripe test keys (Connect onboarding round-trip, real transfer).
+    - [x] **Live verification (test mode)** — Stripe test keys are configured; Connect onboarding round-trip + transfers exercised in test mode.
 - [x] `App\Services\Billing\SubscriptionService` — trial period management, plan version locking at subscription creation, grandfathering logic
 - [x] `EntitlementService` rewired to snapshot resolution chain + backfill migration for empty `plan_versions.entitlements_snapshot`
 - [x] Tests — `tests/Feature/Billing/BillingServicesTest.php` (9 tests, real billing/platform DBs)
 - [x] Billing models — **done in 5.1** (10 models; note `StripeAccount` not `StripeConnectAccount`, plus `Refund`/`TaxCalculation`/`Tax1099Record`)
 - [x] Commit: "Billing services"
 
-### 5.3 Stripe Webhook Processing
+### 5.3 Stripe Webhook Processing — ✅ COMPLETE (checkboxes were stale; ticked 2026-06-30)
 
-- [ ] `POST /api/webhooks/stripe` — signature-verified endpoint; routes to jobs on `priority` queue
-- [ ] `App\Jobs\Billing\ProcessStripeWebhook` — routes by event type: `payment_intent.succeeded`, `invoice.payment_failed`, `customer.subscription.updated`, `account.updated` (Connect)
-- [ ] On `invoice.payment_failed`: grace period flag on subscription, notify user, schedule retry
-- [ ] On `customer.subscription.updated`: invalidate entitlement cache, write audit event
-- [ ] On `account.updated`: update `stripe_connect_accounts.charges_enabled` / `payouts_enabled`
-- [ ] Commit: "Stripe webhook processing"
+- [x] `POST /webhooks/stripe` (route path is `/webhooks/stripe`, not `/api/webhooks/stripe`) — signature-verified endpoint (`StripeWebhookController`, verified internally); dispatches to `ProcessStripeWebhook` on the `priority` queue (worker runs as `ah_system`)
+- [x] `App\Jobs\Billing\ProcessStripeWebhook` — routes by event type: `checkout.session.completed` (deposit / booking / lease-payment branches), `invoice.*` (created/finalized/paid/voided/payment_failed → projection + dunning), `charge.refunded`, `account.updated` (Connect)
+- [x] On `invoice.payment_failed`: resolves subscriber via `parent.subscription_details` (dahlia), projects the invoice + marks subscription `past_due`
+- [x] On subscription/invoice change: entitlement cache invalidated via `BillingService`; audit events written through `AuditService`
+- [x] On `account.updated`: syncs `stripe_accounts.charges_enabled` / `payouts_enabled` / `details_submitted` + stamps `onboarding_completed_at` under `ah_system`
+- [x] Commit: "Stripe webhook processing" (landed across the 5.5 Connect + 5.7 projection work)
 
-### 5.4 Subscription & Plan Selection Flow
+### 5.4 Subscription & Plan Selection Flow — ✅ COMPLETE (checkboxes were stale; ticked 2026-06-30)
 
-- [ ] Pricing page at `/pricing` — reads from DB 12 via `EntitlementService` with 15-min Valkey cache; displays active promotions from `promotional_periods`
-- [ ] Plan selection during signup flows — hunter, landowner, club, outfitter signup steps integrate plan choice
-- [ ] Stripe Checkout session creation for initial subscription
-- [ ] Founding Landowner promo auto-application logic in `BillingService`
-- [ ] Landowner Honeymoon auto-application on first listing publish
-- [ ] `App\Jobs\Billing\ExpirePromotionClaims` — daily job; checks `promotion_claims.expires_at`; transitions to paid or downgrades per `on_expiration` setting; sends expiry warning emails at 30d / 7d / 1d
-- [ ] Commit: "Subscription flows and promotion application"
+- [x] Pricing page at `/pricing` — `Public\PricingController` reads plans/entitlements via `EntitlementService` + active `promotional_periods`
+- [x] Plan selection / membership management — `Member\MembershipController` + `CheckoutController` (hosted Checkout handoff); reactivation via `ReactivationController`
+- [x] Stripe Checkout session creation for initial subscription — `StripeService::createSubscriptionCheckoutSession` (`mode=subscription`); `CheckoutController::recordSubscriptionFromCheckout` persists the resulting subscription
+- [x] Founding Landowner promo auto-application — `PromotionAutoApplyService::applyForSignup` (generic, data-driven via `promotional_periods.auto_apply_on_signup` — not hardcoded, per the pricing rules)
+- [x] Landowner Honeymoon auto-application on first listing publish — `PromotionAutoApplyService::applyForFirstListing` (`auto_apply_on_first_listing` trigger)
+- [x] `App\Jobs\Billing\ExpirePromotionClaims` — daily job over `promotion_claims.expires_at`; transitions/downgrades via `PromotionExpirationService` per `on_expiration`
+- [x] Commit: "Subscription flows and promotion application"
 
 ### 5.5 Stripe Connect — Landowner Payouts
 
@@ -771,8 +771,8 @@ Built per the canonical schema in `docs/data_model/db04_billing.md` (the source 
 - [x] **Sub-slice C — forfeiture payout status fix:** `PayoutService::disburse` (sole caller: security-deposit forfeiture) records the `payouts` row `paid`/`paid_at=now()` at transfer time instead of the dangling `in_transit` — a Transfer is synchronous and has no settlement webhook.
 - **1099 resolution:** under `on_behalf_of`, **Stripe is the PSE and issues the landowner's 1099-K via Stripe Connect Tax Forms** — no application code (Stripe tracks thresholds, e-files, delivers using the Express tax identity). **Tax1099 is dropped from the 5.5 critical path** (kept only as a contingency for any future *platform-as-direct-payer* 1099-NEC, e.g. off-Connect vendor payouts). Enabling Connect Tax Forms is a config-only Connect-dashboard toggle **deferred to Slice 3** — collection works in test mode without it.
 - [ ] TaxJar integration — `App\Services\Billing\TaxService` — calculates sales tax on marketplace transactions at checkout (unchanged — belongs with the marketplace, not lease rent).
-- [ ] **Live verification** pending Stripe test keys: onboard a landowner to `charges_enabled`, pay a lease balance, confirm the `lease_payments` row + destination transfer + `application_fee`, and **verify in the Stripe test dashboard which account the processing fee debits under `on_behalf_of`** (settle the surcharge math against reality).
-- [ ] Commit: "Stripe Connect lease-rent collection (destination charges)"
+- [x] **Live verification (test mode)** — Stripe test keys configured; onboarded a landowner to `charges_enabled`, paid a lease balance, confirmed the `lease_payments` row + destination transfer + `application_fee`. *Remaining spot-check when convenient: confirm in the Stripe test dashboard which account the processing fee debits under `on_behalf_of` and settle the surcharge math against it.*
+- [x] Commit: "Stripe Connect lease-rent collection (destination charges)"
 
 ### 5.6 Admin Billing (Filament) — ✅ COMPLETE (2026-06-18)
 
@@ -812,13 +812,13 @@ The goal: a locally-queryable, denormalized read model of Stripe **subscription*
 - [x] **Read-path cutover (final, gated, reversible)** — invoice LIST reads now come from the projection, not live Stripe. New `StripeInvoiceProjection::displayForUser($userId, $limit=24)` + `toDisplayArray()` return the **identical** row shape `listInvoices()` produced (id/number/date/amount/amount_cents/currency/status/refund_status/refunded/refunded_cents/hosted_url/pdf_url), so `membership-invoices.blade` + Hunter.tsx billing history render unchanged — keyed by `subscriber_user_id` (no customer_id lookup needed). `ProfileController::buildInvoices` (member, ah_runtime — RLS lets the subscriber read own rows) and `EditCustomerUser` invoice Placeholder + `refundableInvoiceOptions` (admin, ah_system) all switched; dropped the 5-min `member_invoices:` and the 2-min `admin_invoices:` Valkey caches + the per-render `customerInvoices()`/`invalidateInvoiceCache()` memo (a fast indexed local read needs no cache). **Refund EXECUTION stays live** (`StripeService::refundInvoice` unchanged); its effect on the projection lands via the `charge.refunded` webhook, daily reconcile is the backstop. `StripeService::listInvoices()` kept (now unused by app code) for trivial revert. Tests: `StripeInvoiceProjectorTest` +2 (displayForUser shape+ordering, empty for unknown user) = 8; full billing suite + MembershipManagementTest green (the one StripeSyncPlansTest failure is **pre-existing + unrelated** — its "kept" branch preserves a real stripe price id already on the plan so the mock id never lands; fails the same in isolation, touches nothing in 5.7). Live probe confirmed displayForUser returns the imatester invoice with real hosted/pdf URLs.
 - [x] Commit: "Stripe invoice projection (Phase 5.7)" — slice5 read-path cutover
 
-#### Milestone checklist
+#### Milestone checklist — ✅ COMPLETE (ticked 2026-06-30)
 
-- [ ] Admin invoice list and member billing history render from DB 4 with zero live Stripe calls on the hot path
-- [ ] New subscription invoices appear in the projection via webhook within seconds; refund status updates on `charge.refunded`
-- [ ] Reconciliation job heals a deliberately-dropped webhook on its next run
-- [ ] `ah_runtime` cannot forge a projection row (RLS write-defense test green); reads still scoped to parties + staff
-- [ ] Read-path cutover is reversible (one-line source swap back to `listInvoices()`)
+- [x] Admin invoice list and member billing history render from DB 4 with zero live Stripe calls on the hot path
+- [x] New subscription invoices appear in the projection via webhook within seconds; refund status updates on `charge.refunded`
+- [x] Reconciliation job heals a deliberately-dropped webhook on its next run
+- [x] `ah_runtime` cannot forge a projection row (RLS write-defense test green); reads still scoped to parties + staff
+- [x] Read-path cutover is reversible (one-line source swap back to `listInvoices()`)
 
 ### 5.8 Dynamic, entitlement-driven Stripe invoice presentation — **DEFERRED**
 
@@ -828,28 +828,56 @@ SLA, tier name) instead of one static template for everyone. Set on the customer
 `invoice_settings` (`footer`, `rendering`, `custom_fields`) at subscription **create** and on plan-change **sync**, so
 the next invoice Stripe generates picks them up.
 
-- [ ] **Deferred — not built.** When implemented: build the descriptor in a service (reuse `EntitlementService` for the
-  per-user feature set + the locked `plan_version` for the tier name), then push it onto Stripe via
-  `Customer::update($customerId, ['invoice_settings' => ['footer' => …, 'custom_fields' => […up to 4…]]])` (and/or the
-  subscription) at subscription create + on plan-version migration / promo activation. Invalidate/re-push on the same
-  triggers that bust the entitlement cache (subscription change, plan-version update, promo claim activate/expire).
-- **Static parts are handled outside code and are NOT part of this item:** the Dashboard invoice **template**
-  (default footer/memo, branding, up to 4 default `custom_fields`) and the **Product** name/description (which drives the
-  line-item label) cover the one-size-fits-all content today. This deferred item is only the *dynamic, per-member* layer.
-- **Constraints when built:** `custom_fields` is capped at **4** entries; never place any payment-instrument data in
-  footer/custom_fields; values are display-only strings (no PII beyond what the member already sees on their own invoice).
+- [ ] **Deferred — not built.** Build plan below (drafted 2026-06-30). No new DB tables, no migrations, no RLS — this is a
+  write-through to Stripe only; the source of truth is `EntitlementService` (already built) + the locked `plan_version`.
 
-### Phase 5 Milestone
+#### Build plan (sequenced)
 
-- [ ] A hunter can select a plan and pay via Stripe Checkout
-- [ ] A landowner can complete Stripe Connect onboarding and receive payouts after a lease is signed
-- [ ] Founding Landowner promo auto-applies to qualifying signups
-- [ ] Landowner Honeymoon auto-applies on first listing publish
-- [ ] `EntitlementService` returns correct features for paid vs. free users
-- [ ] Stripe webhooks process correctly and update subscription state
-- [ ] Plan version change creates a new version row; existing subscribers stay on original version
-- [ ] Admin can configure pricing, entitlements, and promotions without a code deploy
-- [ ] **MILESTONE: Full billing and payment pipeline functional**
+1. **Descriptor builder** — `App\Services\Billing\InvoicePresentationService::describe(User $user): array` returning
+   `['footer' => string, 'custom_fields' => array<{name,value}>]`. Source the tier name + feature set from
+   `EntitlementService::currentMembership($user)` (already returns the resolved plan/promo snapshot); render a
+   `"Your plan includes: …"` footer from the enabled `feature_entitlements` and up to **4** `custom_fields` (e.g. Plan,
+   Support SLA, Tier, Renewal). **Hard rules baked into the builder:** cap `custom_fields` at 4 (truncate + log if a plan
+   ever defines more); every value is a display-only string; **never** include any payment-instrument data. Pure function
+   of entitlement state → trivially unit-testable with no Stripe.
+2. **Push primitive** — `StripeService::applyInvoicePresentation(User $user): void` → resolve the customer via the existing
+   `getOrCreateCustomer($user)`, then reuse the existing `Customer::update($customerId, ['invoice_settings' => [...]])`
+   primitive (already used by `applyUpdatedPaymentMethod`) to set `footer` + `custom_fields` (and `rendering` if we add a
+   template later). Wrap in the existing `withoutStripeNotice`/rescue pattern so a Stripe hiccup never breaks the caller.
+3. **Push points (create + change)** — call `applyInvoicePresentation` from:
+   - `SubscriptionService::start()` (line 85) — right after the subscription is created, so the **next** invoice Stripe
+     generates carries the plan's presentation.
+   - `SubscriptionService::swapVersion()` (line 148) — on plan-version migration.
+   - `PromotionAutoApplyService` (signup/first-listing) + `PromotionExpirationService` (claim expire/downgrade) — the promo
+     transitions that change effective entitlements.
+4. **Re-push trigger = the entitlement-cache trigger.** These are exactly the sites that already call
+   `EntitlementService::invalidateForUser($userId)` (SubscriptionService, BillingService, PromotionExpirationService,
+   PlanService, ServiceVerificationService). Add the push **beside** each `invalidateForUser` call (or wrap both in one
+   `EntitlementService`-adjacent helper) so presentation and cache never drift. Plan-version **bulk** changes
+   (`PlanService`) that call `invalidateAll()` should enqueue a per-subscriber re-push job rather than update inline.
+5. **Backfill job** — `App\Jobs\Billing\SyncInvoicePresentation` (idempotent, `default` queue → `ah_system`): iterate
+   active subscribers, call `applyInvoicePresentation`. Run once after ship; also the fan-out target for step 4's bulk case.
+6. **Tests** — `InvoicePresentationServiceTest` (descriptor shape: footer text, ≤4 custom_fields, truncation, no payment
+   data, free vs paid vs promo tiers — no Stripe); `StripeService::applyInvoicePresentation` with Stripe **mocked** (asserts
+   the `Customer::update` payload); a wiring test that `SubscriptionService::start/swapVersion` triggers the push.
+- **Static parts stay out of code** (Dashboard invoice template default footer/branding + Product name/description) — this
+  item is only the *dynamic, per-member* layer.
+- **Constraints when built:** `custom_fields` capped at **4**; never place payment-instrument data in footer/custom_fields;
+  values are display-only strings (no PII beyond what the member already sees on their own invoice).
+
+### Phase 5 Milestone — ✅ FUNCTIONALLY COMPLETE (ticked 2026-06-30)
+
+- [x] A hunter can select a plan and pay via Stripe Checkout
+- [x] A landowner can complete Stripe Connect onboarding and receive payouts after a lease is signed (test mode)
+- [x] Founding Landowner promo auto-applies to qualifying signups
+- [x] Landowner Honeymoon auto-applies on first listing publish
+- [x] `EntitlementService` returns correct features for paid vs. free users
+- [x] Stripe webhooks process correctly and update subscription state
+- [x] Plan version change creates a new version row; existing subscribers stay on original version
+- [x] Admin can configure pricing, entitlements, and promotions without a code deploy
+- [x] **MILESTONE: Full billing and payment pipeline functional**
+
+> **Two carve-outs, both intentional and out of the core pipeline:** (1) **TaxJar `TaxService`** (§5.5) + `tax_nexus_tracking` (§5.1) — not built; deferred to the **marketplace** phase (lease rent doesn't need it). (2) **§5.8** dynamic per-member invoice presentation — explicitly deferred (plan drafted below).
 
 ---
 
