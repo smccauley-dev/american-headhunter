@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Resources\Identity\UserResource;
+use App\Jobs\Identity\SendEmailVerificationJob;
 use App\Models\Identity\MfaConfiguration;
 use App\Models\Identity\User;
 use App\Services\Auth\AuthService;
 use App\Services\Auth\MfaService;
 use App\Services\Auth\SessionService;
+use App\Services\Identity\OfacService;
 use App\Services\Identity\UserService;
 use App\Services\Mfa\MfaMethodRegistry;
 use Illuminate\Http\JsonResponse;
@@ -16,18 +19,57 @@ use Illuminate\Http\Request;
 
 class AuthController extends Controller
 {
+    /** Abilities granted to every member mobile token. */
+    private const MEMBER_ABILITIES = ['hunter:read', 'hunter:apply', 'hunter:checkin'];
+
     public function __construct(
-        private readonly AuthService       $authService,
-        private readonly MfaService        $mfaService,
-        private readonly SessionService    $sessionService,
-        private readonly UserService       $userService,
+        private readonly AuthService $authService,
+        private readonly MfaService $mfaService,
+        private readonly SessionService $sessionService,
+        private readonly UserService $userService,
         private readonly MfaMethodRegistry $mfaRegistry,
+        private readonly OfacService $ofacService,
     ) {}
+
+    /**
+     * Mobile registration. Mirrors the web Auth\AuthController::register account
+     * creation (UserService::create → OFAC screen → verification email) but,
+     * instead of opening a web session and routing to Stripe Checkout, issues a
+     * Sanctum token immediately so the app is signed in. A paid plan chosen at
+     * signup is persisted as the user's intended_plan_key and surfaced to the
+     * client to drive checkout; this endpoint never starts a charge. Runs on the
+     * db.system path so the pre-context identity writes are not RLS-denied.
+     */
+    public function register(RegisterRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+
+        $user = $this->userService->create(array_merge($validated, [
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'tos_version' => '2026-01-01',
+        ]));
+
+        // Screen against OFAC — suspends the account internally on a match.
+        $this->ofacService->screen($user);
+
+        SendEmailVerificationJob::dispatch($user->id);
+
+        $token = $this->sessionService->issueToken($user, self::MEMBER_ABILITIES);
+
+        return response()->json([
+            'token' => $token,
+            'user' => new UserResource($user->load('profile')),
+            // Non-null when a paid plan was chosen at signup — the app routes the
+            // user to checkout. Free/unknown plans resolve to null.
+            'intended_plan_key' => $user->intended_plan_key,
+        ], 201);
+    }
 
     public function login(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'email'    => ['required', 'email'],
+            'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
@@ -46,19 +88,17 @@ class AuthController extends Controller
             $challengeToken = $this->sessionService->issueMfaChallengeToken($user, $methods);
 
             return response()->json([
-                'mfa_required'    => true,
+                'mfa_required' => true,
                 'challenge_token' => $challengeToken,
-                'mfa_methods'     => $methods,
+                'mfa_methods' => $methods,
             ]);
         }
 
-        $token = $this->sessionService->issueToken($user, [
-            'hunter:read', 'hunter:apply', 'hunter:checkin',
-        ]);
+        $token = $this->sessionService->issueToken($user, self::MEMBER_ABILITIES);
 
         return response()->json([
             'token' => $token,
-            'user'  => new UserResource($user->load('profile')),
+            'user' => new UserResource($user->load('profile')),
         ]);
     }
 
@@ -80,7 +120,7 @@ class AuthController extends Controller
     {
         $data = $request->validate([
             'challenge_token' => ['required', 'string'],
-            'method'          => ['required', 'string', 'in:sms,email'],
+            'method' => ['required', 'string', 'in:sms,email'],
         ]);
 
         $payload = $this->sessionService->getMfaChallengePayload($data['challenge_token']);
@@ -104,8 +144,8 @@ class AuthController extends Controller
     {
         $data = $request->validate([
             'challenge_token' => ['required', 'string'],
-            'method'          => ['required', 'string', 'in:totp,sms,email'],
-            'code'            => ['required', 'string'],
+            'method' => ['required', 'string', 'in:totp,sms,email'],
+            'code' => ['required', 'string'],
         ]);
 
         // Peek without consuming — challenge stays valid for retries (rate-limited)
@@ -128,13 +168,11 @@ class AuthController extends Controller
         // Consume the challenge token only on success
         $this->sessionService->consumeMfaChallengeToken($data['challenge_token']);
 
-        $token = $this->sessionService->issueToken($user, [
-            'hunter:read', 'hunter:apply', 'hunter:checkin',
-        ]);
+        $token = $this->sessionService->issueToken($user, self::MEMBER_ABILITIES);
 
         return response()->json([
             'token' => $token,
-            'user'  => new UserResource($user->load('profile')),
+            'user' => new UserResource($user->load('profile')),
         ]);
     }
 }
