@@ -1,5 +1,6 @@
 import { Head, router, usePage } from '@inertiajs/react'
 import { useState } from 'react'
+import MemberTopbar from '@/Components/Member/MemberTopbar'
 
 interface Props {
   property: { title: string; county: string; state: string } | null
@@ -66,19 +67,9 @@ export default function CheckIn({ property, lease, open_check_in, check_in_url, 
     <>
       <Head title="Check In" />
 
-      <div style={{ minHeight: '100vh', background: '#fafaf9' }}>
+      <div className="topo-bg" style={{ minHeight: '100vh', backgroundColor: '#EDE5D0' }}>
 
-        {/* Topbar */}
-        <div style={{ background: '#0A1512', borderBottom: '1px solid #1a2e28' }}>
-          <div style={{ maxWidth: '520px', margin: '0 auto', padding: '0 16px', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.15em', textTransform: 'uppercase', color: '#C84C21', fontWeight: 700 }}>
-              American Headhunter
-            </span>
-            <a href="/member" style={{ fontFamily: 'monospace', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', textDecoration: 'none' }}>
-              Member Portal
-            </a>
-          </div>
-        </div>
+        <MemberTopbar maxWidth={520} />
 
         <div style={{ maxWidth: '520px', margin: '0 auto', padding: '40px 16px 64px' }}>
 
