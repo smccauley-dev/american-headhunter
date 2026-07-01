@@ -25,6 +25,7 @@ use App\Http\Controllers\Member\PropertyContactController as MemberPropertyConta
 use App\Http\Controllers\Member\ReactivationController;
 use App\Http\Controllers\Api\MentionController;
 use App\Http\Controllers\Member\SecurityController;
+use App\Http\Controllers\Member\WildlifeController;
 use App\Http\Controllers\Public\HunterPublicProfileController;
 use App\Http\Controllers\Public\PricingController;
 use App\Http\Controllers\Public\PropertyController;
@@ -212,6 +213,16 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::post('/checkin',  [CheckInController::class, 'store'])->name('checkin.store')->middleware('throttle:20,1');
     Route::post('/checkout', [CheckInController::class, 'destroy'])->name('checkin.destroy')->middleware('throttle:20,1');
     Route::post('/leases/{lease}/email-qr', [CheckInController::class, 'emailQr'])->name('leases.email-qr')->middleware('throttle:5,1');
+
+    // Wildlife field ops (web). Runs as the member (ah_runtime); DB 5 has NO RLS,
+    // so the WildlifeAccess standing check inside HarvestService is the whole
+    // authorization boundary — the store re-enforces it on every write. 'new' is
+    // declared before nothing wildcard-shaped, and the store's quota/CWD aborts
+    // are caught in the controller so a 409/422 never reaches Inertia.
+    Route::get('/harvest', [WildlifeController::class, 'harvestIndex'])->name('harvest.index');
+    Route::get('/harvest/new', [WildlifeController::class, 'harvestNew'])->name('harvest.new');
+    Route::post('/harvest', [WildlifeController::class, 'harvestStore'])->name('harvest.store')->middleware('throttle:30,1');
+    Route::get('/quota', [WildlifeController::class, 'quotaIndex'])->name('quota');
 
     // In-app notification center (the bell + unread inbox). Reads and mark-read
     // run as the member (ah_runtime); RLS scopes every query to their own rows.
