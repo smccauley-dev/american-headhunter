@@ -83,6 +83,50 @@ class CheckInController extends Controller
         ]);
     }
 
+    /**
+     * The member-portal check-in landing page. Lists every active lease the
+     * member may check in against (as lessee or approved hunter), each with its
+     * current in-the-field status. Distinct from scan(): that lands from a
+     * physical gate QR for one property; this is the browsable portal entry at
+     * GET /member/checkin.
+     */
+    public function index(
+        Request $request,
+        CheckInService $checkInService,
+        PropertyService $propertyService,
+        DocumentService $documentService,
+    ): InertiaResponse {
+        $userId = $request->session()->get('auth.user_id');
+
+        $leases = $checkInService->eligibleLeasesForUser($userId);
+
+        // Resolve property titles (cross-DB, DB 2) and the gate-QR PNG url once
+        // per property — one QR is shared across a property's leases.
+        $titles = [];
+        $qrUrls = [];
+        foreach ($leases->pluck('property_id')->unique() as $propertyId) {
+            $property = rescue(fn () => $propertyService->find($propertyId), null);
+            $titles[$propertyId] = $property?->title ?? 'Property';
+
+            $qrCode = rescue(fn () => $documentService->getOrCreateCheckInQrForProperty($propertyId), null);
+            $qrUrls[$propertyId] = $qrCode ? route('checkin.qr.png', $qrCode->token) : null;
+        }
+
+        $rows = $leases->map(fn (Lease $lease) => [
+            'lease_id'       => $lease->id,
+            'property_title' => $titles[$lease->property_id] ?? 'Property',
+            'end_date'       => $lease->end_date?->format('F j, Y'),
+            'checked_in_at'  => $checkInService->getOpenForUserLease($lease->id, $userId)?->checked_in_at?->toIso8601String(),
+            'qr_url'         => $qrUrls[$lease->property_id] ?? null,
+        ])->values()->all();
+
+        return Inertia::render('Member/CheckInIndex', [
+            'leases'        => $rows,
+            'check_in_url'  => route('member.checkin.store'),
+            'check_out_url' => route('member.checkin.destroy'),
+        ]);
+    }
+
     public function store(Request $request, CheckInService $checkInService): RedirectResponse
     {
         $userId = $request->session()->get('auth.user_id');

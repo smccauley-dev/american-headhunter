@@ -210,6 +210,7 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     // (lease_payments is system-authored; ah_runtime cannot write it).
     Route::get('/leases/{lease}/lease-payment/return', [MemberController::class, 'leasePaymentReturn'])->name('leases.lease-payment.return')->middleware('db.system');
 
+    Route::get('/checkin',   [CheckInController::class, 'index'])->name('checkin.index');
     Route::post('/checkin',  [CheckInController::class, 'store'])->name('checkin.store')->middleware('throttle:20,1');
     Route::post('/checkout', [CheckInController::class, 'destroy'])->name('checkin.destroy')->middleware('throttle:20,1');
     Route::post('/leases/{lease}/email-qr', [CheckInController::class, 'emailQr'])->name('leases.email-qr')->middleware('throttle:5,1');

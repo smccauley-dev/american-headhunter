@@ -8,12 +8,42 @@ abstract class BaseService
 {
     protected function cache(string $key, \Closure $callback, int $ttlMinutes = 10): mixed
     {
-        return Cache::store('valkey')->remember($key, now()->addMinutes($ttlMinutes), $callback);
+        return $this->remember($key, $callback, $ttlMinutes);
     }
 
     protected function cacheForever(string $key, \Closure $callback): mixed
     {
-        return Cache::store('valkey')->rememberForever($key, $callback);
+        return $this->remember($key, $callback, null);
+    }
+
+    /**
+     * Get-or-compute against Valkey Cluster 2, hardened against poisoned hits.
+     *
+     * A cached *object* (e.g. an Eloquent model or Collection) comes back as
+     * __PHP_Incomplete_Class when config('cache.serializable_classes') is false —
+     * the secure default that refuses to reconstruct arbitrary classes on
+     * unserialize, blocking gadget-chain attacks if APP_KEY leaks. Laravel's
+     * remember() would hand that husk straight back to the caller (blowing return
+     * types like Collection), so we treat it as a miss and recompute, guaranteeing
+     * callers always receive a live value. A genuine cache miss uses a sentinel so
+     * a legitimately-cached null is still served as a hit.
+     */
+    private function remember(string $key, \Closure $callback, ?int $ttlMinutes): mixed
+    {
+        $store = Cache::store('valkey');
+        $miss = "\0ah-cache-miss\0";
+
+        $value = $store->get($key, $miss);
+
+        if ($value === $miss || $value instanceof \__PHP_Incomplete_Class) {
+            $value = $callback();
+
+            $ttlMinutes === null
+                ? $store->forever($key, $value)
+                : $store->put($key, $value, now()->addMinutes($ttlMinutes));
+        }
+
+        return $value;
     }
 
     protected function invalidate(string ...$keys): void

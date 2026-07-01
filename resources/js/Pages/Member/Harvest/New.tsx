@@ -2,6 +2,7 @@ import { Head, useForm } from '@inertiajs/react'
 import { useState } from 'react'
 import { useOfflineSubmit } from '@/offline/useOfflineSubmit'
 import { useOnline } from '@/offline/useOnline'
+import MemberTopbar from '@/Components/Member/MemberTopbar'
 
 interface Option { value: string; label: string }
 interface LeaseOption { id: string; property_title: string; end_date: string | null }
@@ -83,13 +84,8 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
   return (
     <>
       <Head title="Log Harvest" />
-      <div style={{ minHeight: '100vh', background: '#faf7f2' }}>
-        <div style={{ background: INK, borderBottom: '1px solid #1a2e28' }}>
-          <div style={{ maxWidth: '560px', margin: '0 auto', padding: '0 16px', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.15em', textTransform: 'uppercase', color: BLAZE, fontWeight: 700 }}>American Headhunter</span>
-            <a href={index_url} style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b9e8f', textDecoration: 'none' }}>Harvest Log</a>
-          </div>
-        </div>
+      <div className="topo-bg" style={{ minHeight: '100vh', backgroundColor: '#EDE5D0' }}>
+        <MemberTopbar maxWidth={560} rightHref={index_url} rightLabel="← Harvest Log" />
 
         <div style={{ maxWidth: '560px', margin: '0 auto', padding: '40px 16px 64px' }}>
           <div style={{ marginBottom: '24px' }}>
