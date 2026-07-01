@@ -20,7 +20,7 @@ use Illuminate\Http\Request;
 class AuthController extends Controller
 {
     /** Abilities granted to every member mobile token. */
-    private const MEMBER_ABILITIES = ['hunter:read', 'hunter:apply', 'hunter:checkin'];
+    private const MEMBER_ABILITIES = ['hunter:read', 'hunter:apply', 'hunter:checkin', 'hunter:harvest'];
 
     public function __construct(
         private readonly AuthService $authService,

@@ -49,6 +49,21 @@ class CwdService extends BaseService
     }
 
     /**
+     * All CWD zones for a state — public regulatory reference data for the mobile
+     * client to cache and drive the harvest-time acknowledgment prompt offline.
+     * No standing check: this is published state regulation, not tenant data.
+     *
+     * @return Collection<int,CwdZone>
+     */
+    public function zonesForState(string $stateCode): Collection
+    {
+        return CwdZone::on('wildlife')
+            ->where('state_code', strtoupper($stateCode))
+            ->orderBy('zone_name')
+            ->get();
+    }
+
+    /**
      * The zones at a point that legally require an acknowledgment on harvest
      * (positive zones). Empty when no acknowledgment is required.
      *
