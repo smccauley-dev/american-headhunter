@@ -3,7 +3,10 @@
 use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CheckInController;
+use App\Http\Controllers\Api\CwdController;
 use App\Http\Controllers\Api\DropboxSignWebhookController;
+use App\Http\Controllers\Api\FishingController;
+use App\Http\Controllers\Api\HarvestController;
 use App\Http\Controllers\Api\LeaseSigningController;
 use App\Http\Controllers\Api\MfaController;
 use App\Http\Controllers\Api\NotificationController;
@@ -13,7 +16,9 @@ use App\Http\Controllers\Api\PropertyContactController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\PropertyMapController;
 use App\Http\Controllers\Api\RecoveryController;
+use App\Http\Controllers\Api\SightingController;
 use App\Http\Controllers\Api\StripeWebhookController;
+use App\Http\Controllers\Api\TrailCameraController;
 use Illuminate\Support\Facades\Route;
 
 $propertyRoutes = function () {
@@ -87,6 +92,42 @@ Route::middleware(['auth:sanctum', 'abilities:hunter:apply', 'throttle:api'])->g
     Route::post('/v1/listings/{listing}/apply', [ApplicationController::class, 'apply'])->middleware('throttle:10,1');
     Route::post('/v1/applications/{application}/withdraw', [ApplicationController::class, 'withdraw'])->middleware('throttle:10,1');
 });
+
+// Wildlife field operations — mobile API. DB 5 has NO row-level security: the
+// WildlifeAccess standing check inside each service is the entire authorization
+// boundary, and the controllers re-enforce it on every call. Reads use
+// hunter:read; field-log writes use hunter:harvest and are idempotent on a
+// client-minted local_record_id (the offline sync queue) with a sync-friendly
+// throttle for a reconnect flush. Quota (409) and CWD ack (422) are re-checked
+// authoritatively server-side at sync, never trusted from the offline client.
+Route::prefix('v1')
+    ->middleware(['auth:sanctum', 'throttle:api'])
+    ->group(function () {
+        // Harvest logs + quota
+        Route::get('/harvests', [HarvestController::class, 'index'])->middleware('abilities:hunter:read');
+        Route::get('/harvests/{harvest}', [HarvestController::class, 'show'])->middleware('abilities:hunter:read');
+        Route::post('/leases/{lease}/harvests', [HarvestController::class, 'store'])
+            ->middleware(['abilities:hunter:harvest', 'throttle:30,1']);
+        Route::get('/leases/{lease}/quota', [HarvestController::class, 'quota'])->middleware('abilities:hunter:read');
+
+        // CWD reference data (offline cache + ack prompt)
+        Route::get('/cwd/zones', [CwdController::class, 'zones'])->middleware('abilities:hunter:read');
+
+        // Wildlife sightings
+        Route::get('/leases/{lease}/sightings', [SightingController::class, 'index'])->middleware('abilities:hunter:read');
+        Route::post('/leases/{lease}/sightings', [SightingController::class, 'store'])
+            ->middleware(['abilities:hunter:harvest', 'throttle:30,1']);
+
+        // Fishing catches
+        Route::get('/leases/{lease}/fishing', [FishingController::class, 'index'])->middleware('abilities:hunter:read');
+        Route::post('/leases/{lease}/fishing', [FishingController::class, 'store'])
+            ->middleware(['abilities:hunter:harvest', 'throttle:30,1']);
+
+        // Trail cameras — additionally gated on the trail_camera_integration
+        // entitlement inside TrailCameraService (403 when the plan excludes it).
+        Route::get('/properties/{property}/cameras', [TrailCameraController::class, 'index'])->middleware('abilities:hunter:read');
+        Route::get('/cameras/{camera}/photos', [TrailCameraController::class, 'photos'])->middleware('abilities:hunter:read');
+    });
 
 // Dropbox Sign webhook — no auth, HMAC-verified internally
 Route::post('/webhooks/dropbox-sign', [DropboxSignWebhookController::class, 'handle'])
