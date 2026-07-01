@@ -85,6 +85,38 @@ class CheckInService extends BaseService
             ->exists();
     }
 
+    /**
+     * Every active lease the user may check in against — as lessee or as an
+     * approved hunter on someone else's lease. Backs the member check-in
+     * landing page (the portal entry point, distinct from the gate-QR scan).
+     *
+     * @return \Illuminate\Support\Collection<int, Lease>
+     */
+    public function eligibleLeasesForUser(string $userId): \Illuminate\Support\Collection
+    {
+        $asLessee = Lease::on('lease')
+            ->where('lessee_user_id', $userId)
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->get();
+
+        $hunterLeaseIds = LeaseHunter::on('lease')
+            ->where('user_id', $userId)
+            ->where('is_approved', true)
+            ->whereNull('deleted_at')
+            ->pluck('lease_id');
+
+        $asHunter = $hunterLeaseIds->isEmpty()
+            ? collect()
+            : Lease::on('lease')
+                ->whereIn('id', $hunterLeaseIds)
+                ->where('status', 'active')
+                ->whereNull('deleted_at')
+                ->get();
+
+        return $asLessee->merge($asHunter)->unique('id')->values();
+    }
+
     public function getOpenForUserLease(string $leaseId, string $userId): ?CheckIn
     {
         return CheckIn::on('lease')

@@ -83,6 +83,43 @@ class CheckInController extends Controller
         ]);
     }
 
+    /**
+     * The member-portal check-in landing page. Lists every active lease the
+     * member may check in against (as lessee or approved hunter), each with its
+     * current in-the-field status. Distinct from scan(): that lands from a
+     * physical gate QR for one property; this is the browsable portal entry at
+     * GET /member/checkin.
+     */
+    public function index(
+        Request $request,
+        CheckInService $checkInService,
+        PropertyService $propertyService,
+    ): InertiaResponse {
+        $userId = $request->session()->get('auth.user_id');
+
+        $leases = $checkInService->eligibleLeasesForUser($userId);
+
+        // Resolve property titles cross-DB (DB 2) once per property.
+        $titles = [];
+        foreach ($leases->pluck('property_id')->unique() as $propertyId) {
+            $property = rescue(fn () => $propertyService->find($propertyId), null);
+            $titles[$propertyId] = $property?->title ?? 'Property';
+        }
+
+        $rows = $leases->map(fn (Lease $lease) => [
+            'lease_id'       => $lease->id,
+            'property_title' => $titles[$lease->property_id] ?? 'Property',
+            'end_date'       => $lease->end_date?->format('F j, Y'),
+            'checked_in_at'  => $checkInService->getOpenForUserLease($lease->id, $userId)?->checked_in_at?->toIso8601String(),
+        ])->values()->all();
+
+        return Inertia::render('Member/CheckInIndex', [
+            'leases'        => $rows,
+            'check_in_url'  => route('member.checkin.store'),
+            'check_out_url' => route('member.checkin.destroy'),
+        ]);
+    }
+
     public function store(Request $request, CheckInService $checkInService): RedirectResponse
     {
         $userId = $request->session()->get('auth.user_id');
