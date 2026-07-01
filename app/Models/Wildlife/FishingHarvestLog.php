@@ -4,24 +4,23 @@ namespace App\Models\Wildlife;
 
 use App\Models\BaseModelWithSoftDeletes;
 
-class HarvestLog extends BaseModelWithSoftDeletes
+class FishingHarvestLog extends BaseModelWithSoftDeletes
 {
     protected $connection = 'wildlife';
 
-    protected $table = 'harvest_logs';
+    protected $table = 'fishing_harvest_logs';
 
     protected $fillable = [
         'lease_id',
         'user_id',
         'property_id',
         'species_code',
-        'harvest_date',
-        'harvest_time',
+        'catch_date',
+        'catch_time',
         'location_geospatial_id',
-        'weapon_type',
-        'antler_score',
+        'length_inches',
         'weight_lbs',
-        'age_estimate',
+        'catch_and_release',
         'field_photos',
         'notes',
         'is_public',
@@ -31,13 +30,12 @@ class HarvestLog extends BaseModelWithSoftDeletes
     protected function casts(): array
     {
         return array_merge(parent::casts(), [
-            'harvest_date' => 'date',
+            'catch_date' => 'date',
             'field_photos' => 'array',
+            'catch_and_release' => 'boolean',
             'is_public' => 'boolean',
-            'antler_score' => 'decimal:2',
+            'length_inches' => 'decimal:2',
             'weight_lbs' => 'decimal:2',
-            'ai_score' => 'decimal:2',
-            'ai_scored_at' => 'datetime',
         ]);
     }
 }
