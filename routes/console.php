@@ -7,6 +7,7 @@ use App\Jobs\Documents\CleanupStagedUploads;
 use App\Jobs\Documents\CleanupUnattachedDocuments;
 use App\Jobs\Etl\SyncPlatformSnapshot;
 use App\Jobs\ExpireListingsJob;
+use App\Jobs\Wildlife\CheckQuotaAlerts;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -49,6 +50,11 @@ Schedule::job(new ReleaseEndedLeaseDeposits)->dailyAt('05:00');
 // each per its on_expiration mode (downgrade to free / auto-charge to paid / pause).
 // Runs at 06:00 daily, after the deposit release.
 Schedule::job(new ExpirePromotionClaims)->dailyAt('06:00');
+
+// Warn landowners when a species' harvest quota crosses 75% then 90% of its
+// tags — once per band (alert_threshold_notified). Runs at 06:30 daily, after
+// the other maintenance jobs.
+Schedule::job(new CheckQuotaAlerts)->dailyAt('06:30');
 
 // Recompute the platform analytics rollups (DB 8) that feed the admin dashboard
 // and public homepage stats. Hourly; the dashboard "Refresh now" button runs the

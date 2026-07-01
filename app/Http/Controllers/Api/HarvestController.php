@@ -76,6 +76,31 @@ class HarvestController extends Controller
     }
 
     /**
+     * Attach a field photo to one of the caller's harvests. The image is
+     * re-encoded to strip EXIF GPS (SEC-024) and virus-scanned before it is
+     * servable — the returned document sits in 'processing' until the scan clears.
+     */
+    public function storePhoto(Request $request, string $harvest): JsonResponse
+    {
+        $request->validate([
+            'photo' => ['required', 'image', 'mimes:jpeg,png,webp', 'max:15360'],
+        ]);
+
+        $document = $this->harvests->attachFieldPhoto(
+            $request->user()->id,
+            $harvest,
+            $request->file('photo'),
+        );
+
+        return response()->json([
+            'document' => [
+                'id' => $document->id,
+                'status' => $document->status,
+            ],
+        ], 201);
+    }
+
+    /**
      * Remaining tags per species for a lease — the offline quota cache + UI. The
      * standing check runs here (this route does not pass through HarvestService).
      */
