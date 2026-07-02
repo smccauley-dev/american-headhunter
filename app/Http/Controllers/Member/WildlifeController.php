@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
 use App\Models\Documents\Document;
+use App\Models\Identity\ProfilePhoto;
 use App\Models\Wildlife\FishingHarvestLog;
 use App\Models\Wildlife\HarvestLog;
 use App\Models\Wildlife\HarvestQuota;
@@ -11,15 +12,18 @@ use App\Models\Wildlife\WildlifeSighting;
 use App\Services\Lease\LeaseService;
 use App\Services\Property\PropertyService;
 use App\Services\Wildlife\FishingHarvestService;
+use App\Services\Wildlife\HarvestMapService;
 use App\Services\Wildlife\HarvestService;
 use App\Services\Wildlife\QuotaService;
 use App\Services\Wildlife\SightingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
@@ -165,6 +169,7 @@ class WildlifeController extends Controller
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
+            'hide_location_from_members' => ['nullable', 'boolean'],
             'cwd_acknowledged' => ['nullable', 'boolean'],
             'local_record_id' => ['nullable', 'uuid'],
             'photos' => ['nullable', 'array', 'max:6'],
@@ -248,6 +253,7 @@ class WildlifeController extends Controller
                 'age_estimate' => $log->age_estimate,
                 'notes' => $log->notes,
                 'is_public' => (bool) $log->is_public,
+                'hide_location_from_members' => (bool) $log->hide_location_from_members,
                 'has_location' => $log->location_geospatial_id !== null,
                 'photos' => array_values(array_map(fn (string $id) => [
                     'id' => $id,
@@ -284,6 +290,7 @@ class WildlifeController extends Controller
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
             'clear_location' => ['nullable', 'boolean'],
+            'hide_location_from_members' => ['nullable', 'boolean'],
             'cwd_acknowledged' => ['nullable', 'boolean'],
             'photos' => ['nullable', 'array', 'max:6'],
             'photos.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
@@ -322,6 +329,50 @@ class WildlifeController extends Controller
         $harvests->delete(session('auth.user_id'), $harvest);
 
         return redirect()->route('member.harvest.index')->with('success', 'Harvest deleted.');
+    }
+
+    /**
+     * Serve a harvest field photo for the GPS-map popup. Unlike the owner-only
+     * profile serve, this admits co-hunters — gated hard:
+     *   - the document must be a scan-cleared harvest field photo (404 otherwise;
+     *     existence is never disclosed);
+     *   - a non-owner needs past/present standing on the property (or manages it);
+     *   - a non-owner never gets a photo whose harvest hides its spot, nor a file
+     *     that retains location metadata (SEC-061 — kept EXIF GPS would hand them
+     *     the exact coordinates).
+     */
+    public function harvestPhoto(string $document, HarvestMapService $maps): StreamedResponse
+    {
+        $userId = session('auth.user_id');
+
+        $doc = Document::where('id', $document)
+            ->whereNull('deleted_at')
+            ->where('status', 'ready')
+            ->firstOrFail();
+
+        $harvest = HarvestLog::on('wildlife')
+            ->whereRaw('field_photos @> ?::jsonb', [json_encode([$document])])
+            ->whereNull('deleted_at')
+            ->first();
+        abort_unless($harvest !== null, 404);
+
+        if ($harvest->user_id !== $userId) {
+            abort_unless($maps->canView($userId, $harvest->property_id), 404);
+            abort_if((bool) $harvest->hide_location_from_members, 404);
+
+            $retainsLocation = ProfilePhoto::where('document_id', $document)
+                ->where('is_location_private', true)
+                ->exists();
+            abort_if($retainsLocation, 404);
+        }
+
+        abort_unless(Storage::disk('local')->exists($doc->storage_key), 404);
+
+        return Storage::disk('local')->response($doc->storage_key, null, [
+            'Content-Type' => $doc->mime_type ?? 'image/jpeg',
+            'Cache-Control' => 'private, max-age=3600',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     /** Remaining tags per species, grouped by the member's active leases. */
@@ -404,6 +455,7 @@ class WildlifeController extends Controller
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
+            'hide_location_from_members' => ['nullable', 'boolean'],
             'local_record_id' => ['nullable', 'uuid'],
         ]);
 

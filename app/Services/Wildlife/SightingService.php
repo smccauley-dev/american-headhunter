@@ -62,6 +62,7 @@ class SightingService extends BaseService
                 'location_geospatial_id' => $geoId,
                 'notes' => $data['notes'] ?? null,
                 'photo_document_ids' => $data['photo_document_ids'] ?? [],
+                'hide_location_from_members' => $data['hide_location_from_members'] ?? false,
                 'local_record_id' => $localId,
             ]);
         } catch (\Throwable $e) {
