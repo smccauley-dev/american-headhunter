@@ -177,6 +177,43 @@ class GeospatialService extends BaseService
      *
      * @return string The new harvest_locations UUID
      */
+    /**
+     * Batch-read harvest/sighting points by their harvest_locations ids, keyed
+     * by id: ['<uuid>' => ['lng' => ..., 'lat' => ..., 'accuracy_m' => ...]].
+     * One query for a whole map page — the cross-DB zip happens in the caller
+     * (service layer, never SQL across connections). The coordinates are
+     * member-only data (SEC-024); callers gate before handing them out.
+     *
+     * @param  list<string>  $ids
+     * @return array<string, array{lng: float, lat: float, accuracy_m: ?int}>
+     */
+    public function pointsByIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter($ids)));
+        if ($ids === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $rows = DB::connection('geospatial_read')->select(
+            "SELECT id, accuracy_meters, ST_X(location) AS lng, ST_Y(location) AS lat
+             FROM harvest_locations
+             WHERE id IN ({$placeholders})",
+            $ids
+        );
+
+        $points = [];
+        foreach ($rows as $row) {
+            $points[$row->id] = [
+                'lng' => (float) $row->lng,
+                'lat' => (float) $row->lat,
+                'accuracy_m' => $row->accuracy_meters !== null ? (int) $row->accuracy_meters : null,
+            ];
+        }
+
+        return $points;
+    }
+
     public function storeHarvestLocation(string $harvestLogId, float $longitude, float $latitude, ?int $accuracyMeters = null): string
     {
         $id = (string) Str::uuid();

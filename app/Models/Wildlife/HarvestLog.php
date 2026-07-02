@@ -25,6 +25,7 @@ class HarvestLog extends BaseModelWithSoftDeletes
         'field_photos',
         'notes',
         'is_public',
+        'hide_location_from_members',
         'local_record_id',
     ];
 
@@ -34,6 +35,7 @@ class HarvestLog extends BaseModelWithSoftDeletes
             'harvest_date' => 'date',
             'field_photos' => 'array',
             'is_public' => 'boolean',
+            'hide_location_from_members' => 'boolean',
             'antler_score' => 'decimal:2',
             'weight_lbs' => 'decimal:2',
             'ai_score' => 'decimal:2',

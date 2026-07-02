@@ -21,6 +21,7 @@ class WildlifeSighting extends BaseModelWithSoftDeletes
         'location_geospatial_id',
         'notes',
         'photo_document_ids',
+        'hide_location_from_members',
         'local_record_id',
     ];
 
@@ -30,6 +31,7 @@ class WildlifeSighting extends BaseModelWithSoftDeletes
             'sighting_date' => 'date',
             'count' => 'integer',
             'photo_document_ids' => 'array',
+            'hide_location_from_members' => 'boolean',
         ]);
     }
 }

@@ -121,6 +121,7 @@ class HarvestService extends BaseService
                 'field_photos' => $data['field_photos'] ?? [],
                 'notes' => $data['notes'] ?? null,
                 'is_public' => $data['is_public'] ?? false,
+                'hide_location_from_members' => $data['hide_location_from_members'] ?? false,
                 'local_record_id' => $localId,
             ]);
         } catch (\Throwable $e) {
@@ -240,7 +241,7 @@ class HarvestService extends BaseService
                 $harvest->location_geospatial_id = null;
             }
 
-            foreach (['species_code', 'harvest_date', 'harvest_time', 'weapon_type', 'antler_score', 'weight_lbs', 'age_estimate', 'notes', 'is_public'] as $field) {
+            foreach (['species_code', 'harvest_date', 'harvest_time', 'weapon_type', 'antler_score', 'weight_lbs', 'age_estimate', 'notes', 'is_public', 'hide_location_from_members'] as $field) {
                 if (array_key_exists($field, $data)) {
                     $harvest->{$field} = $data[$field];
                 }

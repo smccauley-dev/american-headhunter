@@ -19,6 +19,7 @@ interface HarvestEdit {
   age_estimate: string | null
   notes: string | null
   is_public: boolean
+  hide_location_from_members: boolean
   has_location: boolean
   photos: ExistingPhoto[]
   update_url: string
@@ -70,6 +71,7 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
     longitude: null as number | null,
     gps_accuracy_m: null as number | null,
     clear_location: false as boolean,
+    hide_location_from_members: (harvest?.hide_location_from_members ?? false) as boolean,
     cwd_acknowledged: false as boolean,
     photos: [] as File[],
     keep_photo_location: false as boolean,
@@ -249,6 +251,12 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
                   <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginTop: '10px' }}>
                     <input type="checkbox" checked={data.clear_location} onChange={e => setData('clear_location', e.target.checked)} />
                     <span style={{ fontSize: '12px', color: '#6b5e50' }}>Remove the location from this harvest</span>
+                  </label>
+                )}
+                {(located || (harvest?.has_location && !data.clear_location)) && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginTop: '10px' }}>
+                    <input type="checkbox" checked={data.hide_location_from_members} onChange={e => setData('hide_location_from_members', e.target.checked)} />
+                    <span style={{ fontSize: '12px', color: '#6b5e50' }}>Hide my exact spot from other hunters on the property map <span style={{ color: '#a89874' }}>(you'll still see it)</span></span>
                   </label>
                 )}
               </div>

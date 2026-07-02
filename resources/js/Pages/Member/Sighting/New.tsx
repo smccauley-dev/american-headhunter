@@ -40,6 +40,7 @@ export default function SightingNew({ leases, species, store_url, index_url }: P
     latitude: null as number | null,
     longitude: null as number | null,
     gps_accuracy_m: null as number | null,
+    hide_location_from_members: false as boolean,
   })
 
   function captureGps() {
@@ -148,16 +149,24 @@ export default function SightingNew({ leases, species, store_url, index_url }: P
 
               {/* GPS — advisory. The precise point lives only in DB 13 and is only
                   ever shown back on the member's own map. */}
-              <div style={{ border: '1px dashed #d4c9b0', borderRadius: '3px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                <div>
-                  <div style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b5e50', fontWeight: 700 }}>Location</div>
-                  <div style={{ fontSize: '13px', color: located ? '#15803d' : '#6b5e50', marginTop: '3px' }}>
-                    {located ? `Captured · ±${data.gps_accuracy_m}m` : 'Optional — tags the spot for your own map only.'}
+              <div style={{ border: '1px dashed #d4c9b0', borderRadius: '3px', padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                  <div>
+                    <div style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b5e50', fontWeight: 700 }}>Location</div>
+                    <div style={{ fontSize: '13px', color: located ? '#15803d' : '#6b5e50', marginTop: '3px' }}>
+                      {located ? `Captured · ±${data.gps_accuracy_m}m` : 'Optional — tags the spot for your own map only.'}
+                    </div>
                   </div>
+                  <button type="button" onClick={captureGps} disabled={locating} style={{ fontFamily: MONO, fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK, background: 'transparent', border: '1px solid #d4c9b0', padding: '9px 14px', cursor: locating ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
+                    {locating ? 'Locating…' : located ? 'Recapture' : 'Capture GPS'}
+                  </button>
                 </div>
-                <button type="button" onClick={captureGps} disabled={locating} style={{ fontFamily: MONO, fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK, background: 'transparent', border: '1px solid #d4c9b0', padding: '9px 14px', cursor: locating ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
-                  {locating ? 'Locating…' : located ? 'Recapture' : 'Capture GPS'}
-                </button>
+                {located && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginTop: '10px' }}>
+                    <input type="checkbox" checked={data.hide_location_from_members} onChange={e => setData('hide_location_from_members', e.target.checked)} />
+                    <span style={{ fontSize: '12px', color: '#6b5e50' }}>Hide my exact spot from other hunters on the property map <span style={{ color: '#a89874' }}>(you'll still see it)</span></span>
+                  </label>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>

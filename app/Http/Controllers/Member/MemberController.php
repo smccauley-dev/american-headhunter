@@ -155,6 +155,17 @@ class MemberController extends Controller
             }
         }
 
+        // Interactive GPS map — boundary, stands, landowner markers, and every
+        // co-hunter's harvest/sighting points. Members only (SEC-024): the
+        // service gates on past/present standing (so it also renders on ended
+        // leases, unlike the check-in block) and filters spots hidden by their
+        // hunters. Null when the viewer has no standing or the assembly fails.
+        $harvestMap = rescue(
+            fn () => app(\App\Services\Wildlife\HarvestMapService::class)
+                ->forProperty($userId, $leaseRecord->property_id),
+            null,
+        );
+
         // Communications — the application message thread (landowner ↔ applicant,
         // plus staff). Keyed on the originating application. Sender-name resolution
         // hits the identity DB, which default-denies other users' rows under
@@ -544,6 +555,7 @@ class MemberController extends Controller
             'check_in'     => $checkIn,
             'qr'           => $qr,
             'stand_map'    => $standMap,
+            'harvest_map'  => $harvestMap,
             'email_qr_url' => ($isLessor && $leaseRecord->status === 'active') ? route('member.leases.email-qr', $lease) : null,
             'property'    => $property ? [
                 'id'     => $property->id,
