@@ -10,6 +10,7 @@ interface Harvest {
   property_title: string
   antler_score: string | number | null
   is_public: boolean
+  photo_urls: string[]
 }
 
 interface Props {
@@ -97,6 +98,18 @@ export default function HarvestIndex({ harvests, new_url, quota_url }: Props) {
                     <div style={{ fontSize: '13px', color: '#6b5e50', marginTop: '3px' }}>
                       {h.property_title} · {h.weapon}
                     </div>
+                    {h.photo_urls.length > 0 && (
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                        {h.photo_urls.slice(0, 4).map(url => (
+                          <img key={url} src={url} alt="" style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '3px', border: '1px solid #e5e0d8', display: 'block' }} />
+                        ))}
+                        {h.photo_urls.length > 4 && (
+                          <div style={{ width: '44px', height: '44px', borderRadius: '3px', border: '1px solid #e5e0d8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: MONO, fontSize: '11px', color: '#6b5e50' }}>
+                            +{h.photo_urls.length - 4}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontFamily: MONO, fontSize: '12px', color: '#6b5e50' }}>{h.harvest_date}</div>

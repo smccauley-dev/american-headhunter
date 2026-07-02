@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
+use App\Models\Documents\Document;
 use App\Models\Wildlife\FishingHarvestLog;
 use App\Models\Wildlife\HarvestLog;
 use App\Models\Wildlife\HarvestQuota;
@@ -98,6 +99,7 @@ class WildlifeController extends Controller
 
         $logs = $harvests->listForUser($userId);
         $titles = $this->propertyTitles($logs->pluck('property_id')->all(), $properties);
+        $readyPhotos = $this->readyPhotoIds($logs->flatMap(fn (HarvestLog $h) => $h->field_photos ?? [])->all());
 
         $rows = $logs->map(fn (HarvestLog $h) => [
             'id' => $h->id,
@@ -107,6 +109,10 @@ class WildlifeController extends Controller
             'property_title' => $titles[$h->property_id] ?? 'Property',
             'antler_score' => $h->antler_score,
             'is_public' => (bool) $h->is_public,
+            'photo_urls' => array_values(array_map(
+                fn (string $id) => route('member.profile.photos.serve', $id),
+                array_filter($h->field_photos ?? [], fn (string $id) => isset($readyPhotos[$id])),
+            )),
         ])->all();
 
         return Inertia::render('Member/Harvest/Index', [
@@ -159,6 +165,9 @@ class WildlifeController extends Controller
             'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
             'cwd_acknowledged' => ['nullable', 'boolean'],
             'local_record_id' => ['nullable', 'uuid'],
+            'photos' => ['nullable', 'array', 'max:6'],
+            'photos.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
+            'keep_photo_location' => ['nullable', 'boolean'],
         ]);
 
         try {
@@ -180,6 +189,18 @@ class WildlifeController extends Controller
                 // No standing on the lease — a genuine deny.
                 default => throw $e,
             };
+        }
+
+        // Photos ride the online browser post only (the offline queue cannot hold
+        // files), and attach only to a fresh insert — a dedup replay of the same
+        // local_record_id must not re-attach duplicates. Each photo is EXIF-
+        // stripped unless the member opted to keep location data (SEC-061), then
+        // virus-scanned before it is servable, and mirrored to the profile gallery.
+        if ($harvest->wasRecentlyCreated) {
+            $keepLocation = (bool) ($data['keep_photo_location'] ?? false);
+            foreach ($request->file('photos', []) as $photo) {
+                $harvests->attachFieldPhoto($userId, $harvest->id, $photo, $keepLocation);
+            }
         }
 
         if ($request->expectsJson()) {
@@ -371,6 +392,29 @@ class WildlifeController extends Controller
             'property_title' => $titles[$lease->property_id] ?? 'Property',
             'end_date' => $lease->end_date?->format('M j, Y'),
         ])->values()->all();
+    }
+
+    /**
+     * The subset of the given document ids that have cleared the virus scan
+     * (status='ready'), as an id-keyed set for O(1) lookups. One cross-DB (DB 11)
+     * query for the whole page. Unscanned or quarantined photos never get a URL,
+     * and the serve route itself is owner-only.
+     *
+     * @param  array<int,string>  $documentIds
+     * @return array<string,true>
+     */
+    private function readyPhotoIds(array $documentIds): array
+    {
+        if ($documentIds === []) {
+            return [];
+        }
+
+        return Document::whereIn('id', array_unique($documentIds))
+            ->where('status', 'ready')
+            ->whereNull('deleted_at')
+            ->pluck('id')
+            ->mapWithKeys(fn (string $id) => [$id => true])
+            ->all();
     }
 
     /**

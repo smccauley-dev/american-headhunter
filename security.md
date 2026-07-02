@@ -1204,6 +1204,35 @@ Map featured listings to a curated array in `HomeController` — expose only the
 
 ---
 
+## SEC-061 — Harvest Photos with Retained EXIF GPS ("Keep Location Data") — Standing Guardrail Against Public Serving
+
+| Field | Detail |
+|---|---|
+| **Severity** | Medium if the guardrail is ever dropped (would publish precise on-property harvest coordinates — the exact SEC-024 leak); currently mitigated by design |
+| **Status** | **GUARDRAIL SHIPPED (2026-07-01)** — `profile_photos.is_location_private` flag + owner-only serve path; binding constraint on the future public-gallery feature |
+| **Found** | 2026-07-01 (designed alongside the harvest-photo feature, not discovered as a defect) |
+| **File** | `app/Services/Wildlife/HarvestService.php` (`attachFieldPhoto`, `validateOriginalImage`), `app/Services/Identity/ProfilePhotoService.php` (`createForHarvestPhoto`), `app/Http/Controllers/Member/ProfileController.php` (`servePhoto`), migration `identity/2026_07_01_000001_add_location_privacy_to_profile_photos.php` |
+
+**Description:**
+The harvest form (`/member/harvest/new`) and the mobile API (`POST /v1/harvests/{harvest}/photos`) accept field photos. By default every photo is re-encoded through GD on ingest, which strips all embedded metadata including EXIF GPS (the SEC-024 control). This feature adds an explicit member opt-in — "keep location data on this photo" (`keep_photo_location` on the web form, `keep_location` on the API) — that stores the **original bytes with EXIF GPS intact**, because hunters want their own photos to keep the spot.
+
+Every harvest photo is also mirrored into the member's profile Photos gallery (DB 1 `profile_photos`), and the gallery's visibility setting defaults to **public** (`profile_visibility.photos = 'public'`). Without a guardrail, the future public-profile photo feature (Phase 7+) would serve location-retaining files to anonymous visitors — publishing precise on-property harvest coordinates, the exact leak SEC-024 exists to prevent (trespassing/poaching risk).
+
+**Guardrail (load-bearing, in place now):**
+- `profile_photos.is_location_private BOOLEAN NOT NULL DEFAULT FALSE` — set TRUE whenever the underlying file retains location metadata. The column carries a SQL COMMENT stating the rule.
+- **Binding constraint:** any future public photo list/serve path MUST exclude rows where `is_location_private` is TRUE, regardless of the gallery visibility setting. A code comment at the `servePhoto` gate restates this at the point a future implementer will touch.
+- The only serve path today (`member.profile.photos.serve`) is owner-only (`owner_user_id` match → 403 otherwise).
+- Opt-in originals are still fully decoded through GD as validation (rejects non-image/polyglot bytes), restricted to JPEG/PNG/WebP, size-capped by the validators, and virus-scanned before becoming servable (thumbnails only render for `status='ready'`).
+- EXIF GPS coordinates read into `profile_photos.exif_latitude/exif_longitude` are for the owner's own UI only and are never written to application logs.
+
+**Hardening shipped in the same pass:**
+- `servePhoto` now refuses quarantined documents (`status='quarantined'` / `virus_scan_status='infected'` → 404) — previously it served any owned document regardless of scan outcome — and sends `X-Content-Type-Options: nosniff` (relevant now that opt-in originals are stored un-re-encoded).
+
+**Verification:**
+- `tests/Feature/Member/HarvestPhotoWebTest.php` — default path strips EXIF + mirrors with `is_location_private=false`; keep-location path retains EXIF bytes, sets `is_location_private=true`, captures exif coords; quarantined doc not servable.
+
+---
+
 ## Open / Deferred Items
 
 | ID | Description | Severity | Status | Target Phase |
@@ -1226,6 +1255,7 @@ Map featured listings to a curated array in `HomeController` — expose only the
 | SEC-058 | Payment bypass — payment-mode success-return reconcilers (lease payment / security deposit / booking fee) author paid rows from an attacker-supplied `session_id` without checking `payment_status`; an unpaid-session replay fakes a paid lease balance / held deposit / won booking fee (free lease) | High | **FIXED (2026-06-30)** — `payment_status in ('paid','no_payment_required')` gate added to all three `record*FromCheckout` methods (covers webhook + return); webhook path unaffected; regression tests green (83 passed) | — |
 | SEC-059 | IDOR on public API — `Api\PropertyController::boundary()` serves parcel boundary GeoJSON + acreage for **any** property UUID with no `status`/`deleted_at` gate, reachable unauthenticated on the legacy `GET /properties/{id}/boundary` route; the geometry sibling of SEC-002 that the SEC-002 fix never touched (and the JSON analogue of the SEC-025 boundary-image gate) — leaks precise location/extent of draft/suspended/archived/soft-deleted properties | Medium | **FIXED (2026-06-30)** — `boundary()` now applies the same active-status/`deleted_at` 404 guard as `show()` before serving geometry; regression tests green (14 passed) | — |
 | SEC-060 | Public homepage (`HomeController` → `inertia('Home')`) returns raw `PropertyListing`/`Property` models, leaking `owner_user_id`, precise `center_lat`/`center_lng`, `boundary_geospatial_id`, and internal listing fields (`visibility`, deposit/early-term policy) into the unauthenticated page JSON; the curated `Public\PropertyController` deliberately strips exactly these — homepage analogue of SEC-002/024/025/042/059 | Medium | **FIXED (2026-06-30)** — featured listings curated to an explicit array (mirrors `Public\PropertyController::index`); owner UUID + boundary id + internal fields dropped, coords coarsened to 2 decimals server-side; regression test green (`HomeFeaturedPayloadTest`) | — |
+| SEC-061 | Harvest photos may retain EXIF GPS by explicit member opt-in and are mirrored into the profile gallery, whose visibility defaults to public — a future public photo list/serve that ignores `profile_photos.is_location_private` would publish precise harvest coordinates (the SEC-024 leak) | Medium (if guardrail dropped) | **GUARDRAIL SHIPPED (2026-07-01)** — `is_location_private` flag set on every location-retaining mirror; serve path owner-only + quarantine-gated; **binding constraint on Phase 7+ public galleries: exclude `is_location_private` rows** | Phase 7+ public profiles must honor the flag |
 
 ---
 

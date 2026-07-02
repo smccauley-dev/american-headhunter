@@ -85,6 +85,7 @@ class HarvestPhotoTest extends TestCase
         DB::connection('lease')->table('lease_applications')->where('id', $this->applicationId)->delete();
 
         foreach ([$this->lesseeId, $this->strangerId] as $uid) {
+            DB::connection('identity')->table('profile_photos')->where('user_id', $uid)->delete();
             DB::connection('documents')->table('documents')->where('owner_user_id', $uid)->delete();
             DB::connection('identity')->table('personal_access_tokens')->where('tokenable_id', $uid)->delete();
             DB::connection('identity')->table('user_profiles')->where('user_id', $uid)->delete();

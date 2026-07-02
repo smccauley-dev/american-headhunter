@@ -1,5 +1,5 @@
 import { Head, useForm } from '@inertiajs/react'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useOfflineSubmit } from '@/offline/useOfflineSubmit'
 import { useOnline } from '@/offline/useOnline'
 import MemberTopbar from '@/Components/Member/MemberTopbar'
@@ -47,6 +47,8 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
     longitude: null as number | null,
     gps_accuracy_m: null as number | null,
     cwd_acknowledged: false as boolean,
+    photos: [] as File[],
+    keep_photo_location: false as boolean,
   })
 
   // The store surfaces a required-CWD acknowledgment as a field error on
@@ -71,11 +73,26 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
   const { queue } = useOfflineSubmit('harvest', index_url)
   const online = useOnline()
 
+  // Object-URL previews for the selected photos, revoked when the set changes.
+  const previews = useMemo(() => data.photos.map(f => URL.createObjectURL(f)), [data.photos])
+  useEffect(() => () => { previews.forEach(u => URL.revokeObjectURL(u)) }, [previews])
+
+  const photoError = Object.entries(errors as Record<string, string>)
+    .find(([k]) => k === 'photos' || k.startsWith('photos.'))?.[1]
+
+  function addPhotos(list: FileList | null) {
+    const files = Array.from(list ?? [])
+    if (files.length === 0) return
+    setData('photos', [...data.photos, ...files].slice(0, 6))
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!navigator.onLine) {
       const label = species.find(s => s.value === data.species_code)?.label ?? 'Harvest'
-      void queue(store_url, { ...data }, label)
+      // Files can't sit in the IndexedDB queue — an offline save drops photos.
+      const { photos: _photos, keep_photo_location: _keep, ...rest } = data
+      void queue(store_url, { ...rest }, label)
       return
     }
     post(store_url)
@@ -186,6 +203,60 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
                 <button type="button" onClick={captureGps} disabled={locating} style={{ fontFamily: MONO, fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK, background: 'transparent', border: '1px solid #d4c9b0', padding: '9px 14px', cursor: locating ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
                   {locating ? 'Locating…' : located ? 'Recapture' : 'Capture GPS'}
                 </button>
+              </div>
+
+              {/* Photos — attached to the harvest and mirrored to the profile
+                  Photos gallery. EXIF location data is stripped on ingest unless
+                  the member opts to keep it; kept photos are flagged private and
+                  never publicly served (SEC-024 / SEC-061). */}
+              <div style={{ border: '1px dashed #d4c9b0', borderRadius: '3px', padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                  <div>
+                    <div style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b5e50', fontWeight: 700 }}>Photos <span style={{ color: '#a89874' }}>(opt)</span></div>
+                    <div style={{ fontSize: '13px', color: '#6b5e50', marginTop: '3px' }}>
+                      {data.photos.length > 0 ? `${data.photos.length} of 6 selected` : 'Up to 6 — they also appear on your profile gallery.'}
+                    </div>
+                  </div>
+                  <label style={{ fontFamily: MONO, fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK, background: 'transparent', border: '1px solid #d4c9b0', padding: '9px 14px', cursor: data.photos.length >= 6 ? 'not-allowed' : 'pointer', opacity: data.photos.length >= 6 ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                    Add Photos
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      disabled={data.photos.length >= 6}
+                      style={{ display: 'none' }}
+                      onChange={e => { addPhotos(e.target.files); e.target.value = '' }}
+                    />
+                  </label>
+                </div>
+
+                {previews.length > 0 && (
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }}>
+                    {previews.map((src, i) => (
+                      <div key={src} style={{ position: 'relative' }}>
+                        <img src={src} alt={`Photo ${i + 1}`} style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '3px', border: '1px solid #d4c9b0', display: 'block' }} />
+                        <button type="button" aria-label="Remove photo" onClick={() => setData('photos', data.photos.filter((_, j) => j !== i))} style={{ position: 'absolute', top: '-7px', right: '-7px', width: '18px', height: '18px', borderRadius: '50%', background: INK, color: '#fff', border: 'none', fontSize: '11px', lineHeight: 1, cursor: 'pointer', padding: 0 }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {data.photos.length > 0 && (
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', marginTop: '12px' }}>
+                    <input type="checkbox" checked={data.keep_photo_location} onChange={e => setData('keep_photo_location', e.target.checked)} style={{ marginTop: '2px' }} />
+                    <span style={{ fontSize: '12px', color: '#6b5e50', lineHeight: 1.5 }}>
+                      Keep location data on these photos. <span style={{ color: '#a89874' }}>Kept photos stay private — they are never shown on your public gallery.</span>
+                    </span>
+                  </label>
+                )}
+
+                {photoError && <div style={errStyle}>{photoError}</div>}
+
+                {!online && data.photos.length > 0 && (
+                  <div style={{ fontFamily: MONO, fontSize: '11px', color: '#9a4a1e', marginTop: '10px' }}>
+                    Photos can't be included in an offline save — they'll be skipped.
+                  </div>
+                )}
               </div>
 
               <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>

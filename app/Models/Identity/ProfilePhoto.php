@@ -20,6 +20,7 @@ class ProfilePhoto extends BaseModelWithSoftDeletes
         'location_name',
         'exif_latitude',
         'exif_longitude',
+        'is_location_private',
         'sort_order',
     ];
 
@@ -31,6 +32,7 @@ class ProfilePhoto extends BaseModelWithSoftDeletes
             'longitude'      => 'float',
             'exif_latitude'  => 'float',
             'exif_longitude' => 'float',
+            'is_location_private' => 'boolean',
             'sort_order'     => 'integer',
         ]);
     }
