@@ -6,6 +6,24 @@ import MemberTopbar from '@/Components/Member/MemberTopbar'
 
 interface Option { value: string; label: string }
 interface LeaseOption { id: string; property_title: string; end_date: string | null }
+interface ExistingPhoto { id: string; url: string | null }
+
+interface HarvestEdit {
+  id: string
+  species_code: string
+  weapon_type: string
+  harvest_date: string
+  harvest_time: string
+  antler_score: string | number | null
+  weight_lbs: string | number | null
+  age_estimate: string | null
+  notes: string | null
+  is_public: boolean
+  has_location: boolean
+  photos: ExistingPhoto[]
+  update_url: string
+  destroy_url: string
+}
 
 interface Props {
   leases: LeaseOption[]
@@ -13,6 +31,7 @@ interface Props {
   weapons: Option[]
   store_url: string
   index_url: string
+  harvest?: HarvestEdit
 }
 
 const INK = '#0a1512'
@@ -28,27 +47,33 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-export default function HarvestNew({ leases, species, weapons, store_url, index_url }: Props) {
+export default function HarvestNew({ leases, species, weapons, store_url, index_url, harvest }: Props) {
+  const editing = Boolean(harvest)
   const [locating, setLocating] = useState(false)
   const [located, setLocated] = useState(false)
 
   const { data, setData, post, processing, errors } = useForm({
+    // Update posts as multipart (new photos), which PHP can't parse on a real
+    // PUT — Laravel's _method spoof carries the verb instead.
+    _method: editing ? 'put' : 'post',
     lease_id: leases[0]?.id ?? '',
-    species_code: '',
-    weapon_type: '',
-    harvest_date: today(),
-    harvest_time: '',
-    antler_score: '',
-    weight_lbs: '',
-    age_estimate: '',
-    notes: '',
-    is_public: false as boolean,
+    species_code: harvest?.species_code ?? '',
+    weapon_type: harvest?.weapon_type ?? '',
+    harvest_date: harvest?.harvest_date ?? today(),
+    harvest_time: harvest?.harvest_time ?? '',
+    antler_score: harvest?.antler_score != null ? String(harvest.antler_score) : '',
+    weight_lbs: harvest?.weight_lbs != null ? String(harvest.weight_lbs) : '',
+    age_estimate: harvest?.age_estimate ?? '',
+    notes: harvest?.notes ?? '',
+    is_public: (harvest?.is_public ?? false) as boolean,
     latitude: null as number | null,
     longitude: null as number | null,
     gps_accuracy_m: null as number | null,
+    clear_location: false as boolean,
     cwd_acknowledged: false as boolean,
     photos: [] as File[],
     keep_photo_location: false as boolean,
+    remove_photo_ids: [] as string[],
   })
 
   // The store surfaces a required-CWD acknowledgment as a field error on
@@ -88,10 +113,15 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (harvest) {
+      // Edits re-run quota + CWD checks server-side and never queue offline.
+      post(harvest.update_url)
+      return
+    }
     if (!navigator.onLine) {
       const label = species.find(s => s.value === data.species_code)?.label ?? 'Harvest'
       // Files can't sit in the IndexedDB queue — an offline save drops photos.
-      const { photos: _photos, keep_photo_location: _keep, ...rest } = data
+      const { photos: _photos, keep_photo_location: _keep, remove_photo_ids: _rm, _method: _m, ...rest } = data
       void queue(store_url, { ...rest }, label)
       return
     }
@@ -100,14 +130,14 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
 
   return (
     <>
-      <Head title="Log Harvest" />
+      <Head title={editing ? 'Edit Harvest' : 'Log Harvest'} />
       <div className="topo-bg" style={{ minHeight: '100vh', backgroundColor: '#EDE5D0' }}>
         <MemberTopbar maxWidth={560} rightHref={index_url} rightLabel="← Harvest Log" />
 
         <div style={{ maxWidth: '560px', margin: '0 auto', padding: '40px 16px 64px' }}>
           <div style={{ marginBottom: '24px' }}>
             <div style={{ fontFamily: MONO, fontSize: '11px', letterSpacing: '.14em', textTransform: 'uppercase', color: '#a89874', marginBottom: '6px' }}>Field Log</div>
-            <h1 style={{ fontFamily: DISPLAY, fontSize: '28px', fontWeight: 400, color: INK, margin: 0, lineHeight: 1.1 }}>Log a Harvest</h1>
+            <h1 style={{ fontFamily: DISPLAY, fontSize: '28px', fontWeight: 400, color: INK, margin: 0, lineHeight: 1.1 }}>{editing ? 'Edit Harvest' : 'Log a Harvest'}</h1>
           </div>
 
           {leases.length === 0 ? (
@@ -121,15 +151,21 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
           ) : (
             <form onSubmit={submit} style={{ background: '#fff', border: '1px solid #e5e0d8', borderRadius: '4px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
 
-              {!online && (
+              {!online && !editing && (
                 <div style={{ background: '#fef6ee', border: '1px solid #f0c9a8', borderRadius: '3px', padding: '11px 14px', fontFamily: MONO, fontSize: '11px', color: '#9a4a1e', lineHeight: 1.5 }}>
                   You're offline. This harvest will be saved on your device and synced when you're back on signal. Quota and CWD-zone checks run at sync — if either blocks it, you'll see it flagged in your pending list.
                 </div>
               )}
 
+              {!online && editing && (
+                <div style={{ background: '#fef6ee', border: '1px solid #f0c9a8', borderRadius: '3px', padding: '11px 14px', fontFamily: MONO, fontSize: '11px', color: '#9a4a1e', lineHeight: 1.5 }}>
+                  You're offline. Editing a harvest needs a connection — quota and CWD checks re-run on the server.
+                </div>
+              )}
+
               <div>
                 <label style={labelStyle}>Lease / Property</label>
-                <select value={data.lease_id} onChange={e => setData('lease_id', e.target.value)} style={inputStyle}>
+                <select value={data.lease_id} onChange={e => setData('lease_id', e.target.value)} style={{ ...inputStyle, ...(editing ? { background: '#faf8f4', color: '#6b5e50' } : {}) }} disabled={editing}>
                   {leases.map(l => <option key={l.id} value={l.id}>{l.property_title}</option>)}
                 </select>
                 {errors.lease_id && <div style={errStyle}>{errors.lease_id}</div>}
@@ -193,16 +229,28 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
 
               {/* GPS — advisory. The precise point lives only in DB 13; it is never
                   shown back on the public gallery (SEC-024). */}
-              <div style={{ border: '1px dashed #d4c9b0', borderRadius: '3px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                <div>
-                  <div style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b5e50', fontWeight: 700 }}>Location</div>
-                  <div style={{ fontSize: '13px', color: located ? '#15803d' : '#6b5e50', marginTop: '3px' }}>
-                    {located ? `Captured · ±${data.gps_accuracy_m}m` : 'Optional — tags the spot for your own map only.'}
+              <div style={{ border: '1px dashed #d4c9b0', borderRadius: '3px', padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                  <div>
+                    <div style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b5e50', fontWeight: 700 }}>Location</div>
+                    <div style={{ fontSize: '13px', color: located ? '#15803d' : '#6b5e50', marginTop: '3px' }}>
+                      {located
+                        ? `Captured · ±${data.gps_accuracy_m}m`
+                        : harvest?.has_location && !data.clear_location
+                          ? 'On file — captured when this harvest was logged.'
+                          : 'Optional — tags the spot for your own map only.'}
+                    </div>
                   </div>
+                  <button type="button" onClick={captureGps} disabled={locating} style={{ fontFamily: MONO, fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK, background: 'transparent', border: '1px solid #d4c9b0', padding: '9px 14px', cursor: locating ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
+                    {locating ? 'Locating…' : located ? 'Recapture' : harvest?.has_location ? 'Replace GPS' : 'Capture GPS'}
+                  </button>
                 </div>
-                <button type="button" onClick={captureGps} disabled={locating} style={{ fontFamily: MONO, fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK, background: 'transparent', border: '1px solid #d4c9b0', padding: '9px 14px', cursor: locating ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
-                  {locating ? 'Locating…' : located ? 'Recapture' : 'Capture GPS'}
-                </button>
+                {harvest?.has_location && !located && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginTop: '10px' }}>
+                    <input type="checkbox" checked={data.clear_location} onChange={e => setData('clear_location', e.target.checked)} />
+                    <span style={{ fontSize: '12px', color: '#6b5e50' }}>Remove the location from this harvest</span>
+                  </label>
+                )}
               </div>
 
               {/* Photos — attached to the harvest and mirrored to the profile
@@ -214,7 +262,11 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
                   <div>
                     <div style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#6b5e50', fontWeight: 700 }}>Photos <span style={{ color: '#a89874' }}>(opt)</span></div>
                     <div style={{ fontSize: '13px', color: '#6b5e50', marginTop: '3px' }}>
-                      {data.photos.length > 0 ? `${data.photos.length} of 6 selected` : 'Up to 6 — they also appear on your profile gallery.'}
+                      {data.photos.length > 0
+                        ? `${data.photos.length} of 6 selected`
+                        : editing
+                          ? 'Add more or remove existing — they also appear on your profile gallery.'
+                          : 'Up to 6 — they also appear on your profile gallery.'}
                     </div>
                   </div>
                   <label style={{ fontFamily: MONO, fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK, background: 'transparent', border: '1px solid #d4c9b0', padding: '9px 14px', cursor: data.photos.length >= 6 ? 'not-allowed' : 'pointer', opacity: data.photos.length >= 6 ? 0.5 : 1, whiteSpace: 'nowrap' }}>
@@ -229,6 +281,31 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
                     />
                   </label>
                 </div>
+
+                {harvest && harvest.photos.length > 0 && (
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }}>
+                    {harvest.photos.map(p => {
+                      const removing = data.remove_photo_ids.includes(p.id)
+                      return (
+                        <div key={p.id} style={{ position: 'relative', opacity: removing ? 0.35 : 1 }}>
+                          {p.url ? (
+                            <img src={p.url} alt="" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '3px', border: '1px solid #d4c9b0', display: 'block' }} />
+                          ) : (
+                            <div style={{ width: '64px', height: '64px', borderRadius: '3px', border: '1px dashed #d4c9b0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: MONO, fontSize: '9px', color: '#a89874', textAlign: 'center' }}>Scan<br />pending</div>
+                          )}
+                          <button
+                            type="button"
+                            aria-label={removing ? 'Keep photo' : 'Remove photo'}
+                            onClick={() => setData('remove_photo_ids', removing ? data.remove_photo_ids.filter(id => id !== p.id) : [...data.remove_photo_ids, p.id])}
+                            style={{ position: 'absolute', top: '-7px', right: '-7px', width: '18px', height: '18px', borderRadius: '50%', background: removing ? '#6b7856' : INK, color: '#fff', border: 'none', fontSize: '11px', lineHeight: 1, cursor: 'pointer', padding: 0 }}
+                          >
+                            {removing ? '↺' : '×'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
 
                 {previews.length > 0 && (
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }}>
@@ -276,8 +353,10 @@ export default function HarvestNew({ leases, species, weapons, store_url, index_
               )}
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-                <button type="submit" disabled={processing} style={{ flex: 1, padding: '14px', background: BLAZE, color: '#fff', border: 'none', borderRadius: '3px', fontFamily: MONO, fontSize: '13px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', cursor: processing ? 'not-allowed' : 'pointer', opacity: processing ? 0.7 : 1 }}>
-                  {processing ? 'Logging…' : online ? 'Log Harvest' : 'Save Offline'}
+                <button type="submit" disabled={processing || (editing && !online)} style={{ flex: 1, padding: '14px', background: BLAZE, color: '#fff', border: 'none', borderRadius: '3px', fontFamily: MONO, fontSize: '13px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', cursor: processing || (editing && !online) ? 'not-allowed' : 'pointer', opacity: processing || (editing && !online) ? 0.7 : 1 }}>
+                  {editing
+                    ? (processing ? 'Saving…' : 'Save Changes')
+                    : (processing ? 'Logging…' : online ? 'Log Harvest' : 'Save Offline')}
                 </button>
                 <a href={index_url} style={{ padding: '14px 18px', color: INK, border: '1px solid #d4c9b0', borderRadius: '3px', fontFamily: MONO, fontSize: '13px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
                   Cancel

@@ -113,6 +113,8 @@ class WildlifeController extends Controller
                 fn (string $id) => route('member.profile.photos.serve', $id),
                 array_filter($h->field_photos ?? [], fn (string $id) => isset($readyPhotos[$id])),
             )),
+            'edit_url' => route('member.harvest.edit', $h->id),
+            'destroy_url' => route('member.harvest.destroy', $h->id),
         ])->all();
 
         return Inertia::render('Member/Harvest/Index', [
@@ -208,6 +210,118 @@ class WildlifeController extends Controller
         }
 
         return redirect()->route('member.harvest.index')->with('success', 'Harvest logged.');
+    }
+
+    /**
+     * The edit form for one of the member's OWN harvests. Renders the same page
+     * component as "new" with a `harvest` prop; the lease is fixed (a harvest
+     * never moves between leases).
+     */
+    public function harvestEdit(Request $request, string $harvest, HarvestService $harvests, PropertyService $properties): InertiaResponse
+    {
+        $userId = session('auth.user_id');
+
+        $log = $harvests->findForUser($userId, $harvest);
+        abort_unless($log->user_id === $userId, 403);
+
+        $titles = $this->propertyTitles([$log->property_id], $properties);
+        $readyPhotos = $this->readyPhotoIds($log->field_photos ?? []);
+
+        return Inertia::render('Member/Harvest/New', [
+            'leases' => [[
+                'id' => $log->lease_id,
+                'property_title' => $titles[$log->property_id] ?? 'Property',
+                'end_date' => null,
+            ]],
+            'species' => $this->options(self::SPECIES),
+            'weapons' => $this->options(self::WEAPONS),
+            'store_url' => route('member.harvest.store'),
+            'index_url' => route('member.harvest.index'),
+            'harvest' => [
+                'id' => $log->id,
+                'species_code' => $log->species_code,
+                'weapon_type' => $log->weapon_type,
+                'harvest_date' => $log->harvest_date?->toDateString(),
+                'harvest_time' => $log->harvest_time ? substr($log->harvest_time, 0, 5) : '',
+                'antler_score' => $log->antler_score,
+                'weight_lbs' => $log->weight_lbs,
+                'age_estimate' => $log->age_estimate,
+                'notes' => $log->notes,
+                'is_public' => (bool) $log->is_public,
+                'has_location' => $log->location_geospatial_id !== null,
+                'photos' => array_values(array_map(fn (string $id) => [
+                    'id' => $id,
+                    'url' => isset($readyPhotos[$id]) ? route('member.profile.photos.serve', $id) : null,
+                ], $log->field_photos ?? [])),
+                'update_url' => route('member.harvest.update', $log->id),
+                'destroy_url' => route('member.harvest.destroy', $log->id),
+            ],
+        ]);
+    }
+
+    /**
+     * Full edit of one of the member's OWN harvests. The service re-runs the
+     * quota accounting (species/season change moves the tag atomically) and the
+     * CWD gate (when a new location is captured); the same 409/422 → flash/field
+     * translation as the store applies. Photo changes ride the same request:
+     * removals detach + soft-delete, additions go through attachFieldPhoto.
+     */
+    public function harvestUpdate(Request $request, string $harvest, HarvestService $harvests): RedirectResponse
+    {
+        $userId = session('auth.user_id');
+
+        $data = $request->validate([
+            'species_code' => ['required', Rule::in(array_keys(self::SPECIES))],
+            'weapon_type' => ['required', Rule::in(array_keys(self::WEAPONS))],
+            'harvest_date' => ['required', 'date', 'before_or_equal:today'],
+            'harvest_time' => ['nullable', 'date_format:H:i'],
+            'antler_score' => ['nullable', 'numeric', 'min:0'],
+            'weight_lbs' => ['nullable', 'numeric', 'min:0'],
+            'age_estimate' => ['nullable', 'string', 'max:40'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+            'is_public' => ['nullable', 'boolean'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
+            'clear_location' => ['nullable', 'boolean'],
+            'cwd_acknowledged' => ['nullable', 'boolean'],
+            'photos' => ['nullable', 'array', 'max:6'],
+            'photos.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
+            'keep_photo_location' => ['nullable', 'boolean'],
+            'remove_photo_ids' => ['nullable', 'array'],
+            'remove_photo_ids.*' => ['uuid'],
+        ]);
+
+        try {
+            $harvests->update($userId, $harvest, $data);
+        } catch (HttpException $e) {
+            return match ($e->getStatusCode()) {
+                // Target species/season quota is full — the old tag is untouched.
+                409 => back()->withInput()->with('error', $e->getMessage()),
+                // The new location sits in a CWD zone — reveal the ack checkbox.
+                422 => back()->withInput()->withErrors(['cwd_acknowledged' => $e->getMessage()]),
+                default => throw $e,
+            };
+        }
+
+        foreach ($data['remove_photo_ids'] ?? [] as $documentId) {
+            $harvests->removeFieldPhoto($userId, $harvest, $documentId);
+        }
+
+        $keepLocation = (bool) ($data['keep_photo_location'] ?? false);
+        foreach ($request->file('photos', []) as $photo) {
+            $harvests->attachFieldPhoto($userId, $harvest, $photo, $keepLocation);
+        }
+
+        return redirect()->route('member.harvest.index')->with('success', 'Harvest updated.');
+    }
+
+    /** Soft-delete one of the member's OWN harvests; its quota tag is released. */
+    public function harvestDestroy(Request $request, string $harvest, HarvestService $harvests): RedirectResponse
+    {
+        $harvests->delete(session('auth.user_id'), $harvest);
+
+        return redirect()->route('member.harvest.index')->with('success', 'Harvest deleted.');
     }
 
     /** Remaining tags per species, grouped by the member's active leases. */
