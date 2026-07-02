@@ -223,6 +223,16 @@ Route::middleware('auth.session')->prefix('member')->name('member.')->group(func
     Route::get('/harvest', [WildlifeController::class, 'harvestIndex'])->name('harvest.index');
     Route::get('/harvest/new', [WildlifeController::class, 'harvestNew'])->name('harvest.new');
     Route::post('/harvest', [WildlifeController::class, 'harvestStore'])->name('harvest.store')->middleware('throttle:30,1');
+    // Edit/delete are owner-only (author, not just standing) — enforced in the
+    // service. Update is a POST with _method=PUT because PHP cannot parse
+    // multipart bodies (new photos) on a real PUT.
+    Route::get('/harvest/{harvest}/edit', [WildlifeController::class, 'harvestEdit'])->name('harvest.edit')->whereUuid('harvest');
+    Route::put('/harvest/{harvest}', [WildlifeController::class, 'harvestUpdate'])->name('harvest.update')->middleware('throttle:30,1')->whereUuid('harvest');
+    Route::delete('/harvest/{harvest}', [WildlifeController::class, 'harvestDestroy'])->name('harvest.destroy')->middleware('throttle:30,1')->whereUuid('harvest');
+    // Serve a harvest field photo to a member with past/present standing on the
+    // property (the GPS-map popup). Standing-gated in the controller; hidden
+    // spots and location-retaining files (SEC-061) are owner-only.
+    Route::get('/harvest-photos/{document}', [WildlifeController::class, 'harvestPhoto'])->name('harvest-photos.show')->whereUuid('document');
     Route::get('/quota', [WildlifeController::class, 'quotaIndex'])->name('quota');
 
     // Secondary field logs — sightings and fishing. Same standing boundary as

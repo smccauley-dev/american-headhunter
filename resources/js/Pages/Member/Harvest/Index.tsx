@@ -11,6 +11,8 @@ interface Harvest {
   antler_score: string | number | null
   is_public: boolean
   photo_urls: string[]
+  edit_url: string
+  destroy_url: string
 }
 
 interface Props {
@@ -118,6 +120,18 @@ export default function HarvestIndex({ harvests, new_url, quota_url }: Props) {
                         Public
                       </div>
                     )}
+                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '8px' }}>
+                      <a href={h.edit_url} style={{ fontFamily: MONO, fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK, textDecoration: 'none' }}>
+                        Edit
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => { if (window.confirm(`Delete this ${h.species} harvest? Its quota tag will be released.`)) router.delete(h.destroy_url) }}
+                        style={{ fontFamily: MONO, fontSize: '10px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#b91c1c', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

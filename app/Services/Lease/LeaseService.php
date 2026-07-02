@@ -7,6 +7,7 @@ use App\Jobs\Lease\SendLeaseTerminationDecisionEmail;
 use App\Models\Lease\Club;
 use App\Models\Lease\ClubMember;
 use App\Models\Lease\Lease;
+use App\Models\Lease\LeaseHunter;
 use App\Models\Lease\LeaseTerminationRequest;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
@@ -174,6 +175,44 @@ class LeaseService extends BaseService
             ->where(fn ($q) => $q
                 ->where('lessee_user_id', $userId)
                 ->orWhere('lessor_user_id', $userId))
+            ->exists();
+    }
+
+    /**
+     * Whether the user is a PAST or PRESENT hunter of the property: lessee on
+     * any of its leases (any status — active, expired, terminated) or an
+     * approved lease hunter on one. This is the gate for member-only property
+     * views like the harvest GPS map (SEC-024): precise field data is shared
+     * only among the people who have actually hunted the ground, never publicly.
+     * Note it deliberately does NOT include the lessor — landowner access is the
+     * caller's separate userCanManageProperty check.
+     */
+    public function userHasOrHadStandingOnProperty(string $userId, string $propertyId): bool
+    {
+        $asLessee = Lease::on('lease')
+            ->where('property_id', $propertyId)
+            ->where('lessee_user_id', $userId)
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if ($asLessee) {
+            return true;
+        }
+
+        $leaseIds = Lease::on('lease')
+            ->where('property_id', $propertyId)
+            ->whereNull('deleted_at')
+            ->pluck('id');
+
+        if ($leaseIds->isEmpty()) {
+            return false;
+        }
+
+        return LeaseHunter::on('lease')
+            ->whereIn('lease_id', $leaseIds)
+            ->where('user_id', $userId)
+            ->where('is_approved', true)
+            ->whereNull('deleted_at')
             ->exists();
     }
 

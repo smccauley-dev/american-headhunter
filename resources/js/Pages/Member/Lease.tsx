@@ -1,10 +1,14 @@
 import { Head, useForm, router, usePage } from '@inertiajs/react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
+import type { HarvestMapData } from '@/Components/Member/HarvestMap'
 import { formatPhone, telHref } from '@/lib/phone'
 import FilePondUploader from '@/Components/FilePondUploader'
 import LandownerFinance, { type LandownerFinanceData } from '@/Components/Member/LandownerFinance'
 import NotificationBell from '@/Components/Member/NotificationBell'
+
+// mapbox-gl is heavy — load it only when the GPS map modal actually opens.
+const HarvestMap = lazy(() => import('@/Components/Member/HarvestMap'))
 
 interface Signer {
   name: string
@@ -246,6 +250,7 @@ interface Props {
   } | null
   qr: { png_url: string } | null
   stand_map: StandMap | null
+  harvest_map: HarvestMapData | null
   email_qr_url: string | null
   communications: Communications | null
 }
@@ -1613,6 +1618,93 @@ function IncidentsSection({ data }: { data: NonNullable<Props['incidents']> }) {
   )
 }
 
+function GpsMapSection({ map, propertyTitle }: { map: HarvestMapData; propertyTitle: string }) {
+  const [open, setOpen] = useState(false)
+  const points = map.features.length
+
+  return (
+    <Section title="GPS Map">
+      <p style={{ fontFamily: 'var(--body)', fontSize: '14px', color: OLIVE, margin: '0 0 12px', lineHeight: 1.5 }}>
+        Interactive satellite map of the property — the boundary, stands, and the harvest and
+        sighting pins logged by you and your fellow hunters. Visible only to this property's
+        hunters and landowner.
+      </p>
+      <button onClick={() => setOpen(true)} style={btnGhost}>
+        View GPS Map{points > 0 ? ` · ${points} pin${points !== 1 ? 's' : ''}` : ''}
+      </button>
+      {open && <GpsMapModal map={map} propertyTitle={propertyTitle} onClose={() => setOpen(false)} />}
+    </Section>
+  )
+}
+
+function GpsMapModal({ map, propertyTitle, onClose }: { map: HarvestMapData; propertyTitle: string; onClose: () => void }) {
+  // Same full-screen portal chrome as StandMapModal — one banner, escapes the
+  // lease page's stacking contexts. The map itself is lazy-loaded on open.
+  return createPortal(
+    <div
+      className="topo-bg"
+      style={{ ...themeVars, position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: '#EDE5D0', display: 'flex', flexDirection: 'column' }}
+    >
+      <div style={{ flexShrink: 0, background: INK, borderBottom: `1px solid ${BRASS}` }}>
+        <div style={{ maxWidth: '1160px', width: '100%', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ position: 'relative', width: '42px', height: '42px', flexShrink: 0, margin: '5px' }}>
+              <div style={{ position: 'absolute', top: -5, left: -5, width: 9, height: 9, borderTop: `1.5px solid ${TAN}`, borderLeft: `1.5px solid ${TAN}` }} />
+              <div style={{ position: 'absolute', bottom: -5, right: -5, width: 9, height: 9, borderBottom: `1.5px solid ${TAN}`, borderRight: `1.5px solid ${TAN}` }} />
+              <div style={{ width: '42px', height: '42px', border: `1px solid ${TAN}`, display: 'flex', alignItems: 'center', justifyContent: 'center', background: INK }}>
+                <span style={{ fontFamily: 'var(--display)', fontSize: '15px', fontWeight: 500, color: '#F4ECDC', letterSpacing: '.05em' }}>AH</span>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '17px', fontWeight: 400, color: '#F4ECDC', letterSpacing: '.01em', lineHeight: 1.1 }}>
+                American Headhunter
+              </div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.22em', textTransform: 'uppercase', color: '#6b9e8f', marginTop: '3px' }}>
+                Member Portal
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close GPS map"
+            style={{ background: 'transparent', border: 'none', fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, cursor: 'pointer', padding: 0 }}
+          >
+            ← Back to Lease
+          </button>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <div style={{ maxWidth: '1160px', width: '100%', margin: '0 auto', padding: '32px 24px 56px' }}>
+          <div style={{ marginBottom: '18px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, letterSpacing: '.2em', textTransform: 'uppercase', color: ACCENT, marginBottom: '4px' }}>
+              GPS Map
+            </div>
+            <h1 style={{ fontFamily: 'var(--display)', fontSize: '28px', fontWeight: 400, color: INK, margin: 0 }}>
+              {propertyTitle}
+            </h1>
+            <p style={{ fontFamily: 'var(--body)', fontSize: '13px', color: OLIVE, margin: '8px 0 0', lineHeight: 1.5 }}>
+              Shared with this property's hunters only. Pins marked as hidden by their hunters
+              never appear here for anyone else.
+            </p>
+          </div>
+
+          <Suspense
+            fallback={
+              <div style={{ padding: '48px 24px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', letterSpacing: '.1em', textTransform: 'uppercase', color: TAN, border: `1px dashed ${FIELD_BORDER}` }}>
+                Loading map…
+              </div>
+            }
+          >
+            <HarvestMap map={map} />
+          </Suspense>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 function StandMapModal({ map, propertyTitle, onClose }: { map: StandMap; propertyTitle: string; onClose: () => void }) {
   const [active, setActive] = useState<string | null>(null)
   const count = map.markers.length
@@ -2045,7 +2137,7 @@ function CommunicationsSection({ data, isLessor }: { data: Communications; isLes
   )
 }
 
-export default function Lease({ lease, property, access_info, deposit, landowner_deposit, violation_termination, early_termination, booking_deposit, lease_payment, landowner_finance, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, email_qr_url, communications, damage_claims, incidents }: Props) {
+export default function Lease({ lease, property, access_info, deposit, landowner_deposit, violation_termination, early_termination, booking_deposit, lease_payment, landowner_finance, contacts, signers, sign_url, signed_lease_url, is_lessor, documents, document_tags, upload_url, check_in, qr, stand_map, harvest_map, email_qr_url, communications, damage_claims, incidents }: Props) {
   const { flash } = usePage<{ flash: { success: string | null; error: string | null } }>().props
   const statusColor = STATUS_COLOR[lease.status] ?? TAN
   const statusLabel = STATUS_LABEL[lease.status] ?? lease.status
@@ -2149,6 +2241,13 @@ export default function Lease({ lease, property, access_info, deposit, landowner
               propertyTitle={property?.title ?? 'Property'}
               emailQrUrl={email_qr_url}
             />
+          )}
+
+          {/* Interactive GPS map — boundary + hunter/landowner pins. Renders on
+              any lease status: past hunters keep their map (SEC-024 standing
+              gate is server-side; the prop is null without it). */}
+          {harvest_map && (
+            <GpsMapSection map={harvest_map} propertyTitle={property?.title ?? 'Property'} />
           )}
 
           {/* Sign CTA — only when pending and user hasn't signed */}

@@ -121,6 +121,7 @@ class HarvestService extends BaseService
                 'field_photos' => $data['field_photos'] ?? [],
                 'notes' => $data['notes'] ?? null,
                 'is_public' => $data['is_public'] ?? false,
+                'hide_location_from_members' => $data['hide_location_from_members'] ?? false,
                 'local_record_id' => $localId,
             ]);
         } catch (\Throwable $e) {
@@ -163,6 +164,167 @@ class HarvestService extends BaseService
         // is created with no photos.
 
         return $harvest;
+    }
+
+    /**
+     * Full edit of the caller's OWN harvest — co-hunters and managers may read a
+     * record, but only its author may change it (403; a stranger still 404s via
+     * findForUser, never disclosing existence).
+     *
+     * Mirrors log()'s guard ordering so a rejection leaves the record untouched:
+     *   1. owner check.
+     *   2. CWD gate for a NEW location — before any side effect (422, safe retry).
+     *   3. quota bucket move — species or season-year changes release the old tag
+     *      only AFTER the new one is atomically claimed; a full new bucket is a
+     *      409 with the old tag intact.
+     *   4. location: harvest_locations (DB 13) is immutable, so a changed spot
+     *      writes a NEW point and repoints location_geospatial_id (the old row
+     *      stays, by design). clear_location detaches the reference.
+     *   5. persist + CWD acks for the new point + audit.
+     *
+     * @param  array<string,mixed>  $data  any of: species_code, harvest_date,
+     *                                     harvest_time, weapon_type, antler_score, weight_lbs, age_estimate, notes,
+     *                                     is_public; latitude+longitude (+gps_accuracy_m) for a new point;
+     *                                     clear_location; cwd_acknowledged.
+     */
+    public function update(string $userId, string $harvestId, array $data): HarvestLog
+    {
+        $harvest = $this->findForUser($userId, $harvestId);
+        abort_unless($harvest->user_id === $userId, 403, 'Only the hunter who logged this harvest can edit it.');
+
+        $propertyId = $harvest->property_id;
+        $leaseId = $harvest->lease_id;
+
+        $oldSpecies = $harvest->species_code;
+        $oldYear = $harvest->harvest_date->year;
+        $newSpecies = $data['species_code'] ?? $oldSpecies;
+        $newYear = isset($data['harvest_date']) ? Carbon::parse($data['harvest_date'])->year : $oldYear;
+
+        $lat = isset($data['latitude']) ? (float) $data['latitude'] : null;
+        $lng = isset($data['longitude']) ? (float) $data['longitude'] : null;
+        $hasNewPoint = $lat !== null && $lng !== null;
+
+        // CWD compliance gate for the new spot — before any side effect.
+        $requiredZones = $hasNewPoint
+            ? $this->cwd->zonesRequiringAcknowledgment($lng, $lat)
+            : collect();
+
+        if ($requiredZones->isNotEmpty() && ! ($data['cwd_acknowledged'] ?? false)) {
+            abort(422, 'CWD acknowledgment required: '.$requiredZones->pluck('zone_name')->join(', '));
+        }
+
+        // Quota bucket move — claim the new tag before releasing the old one so a
+        // rejected edit never loses the original claim.
+        $bucketChanged = $newSpecies !== $oldSpecies || $newYear !== $oldYear;
+        if ($bucketChanged) {
+            if (! $this->quotas->tryConsume($propertyId, $leaseId, $newSpecies, $newYear)) {
+                $this->audit->log(
+                    eventType: 'harvest.quota_exhausted',
+                    sourceDatabase: 'wildlife',
+                    tableName: 'harvest_quotas',
+                    recordId: $leaseId,
+                    userId: $userId,
+                    actionSummary: "Rejected harvest edit to {$newSpecies}: season {$newYear} quota exhausted",
+                );
+
+                abort(409, 'Harvest quota for that species is already full for the season.');
+            }
+            $this->quotas->release($propertyId, $leaseId, $oldSpecies, $oldYear);
+        }
+
+        try {
+            if ($hasNewPoint) {
+                $harvest->location_geospatial_id = $this->geo->storeHarvestLocation(
+                    $harvest->id, $lng, $lat, $data['gps_accuracy_m'] ?? null,
+                );
+            } elseif ($data['clear_location'] ?? false) {
+                $harvest->location_geospatial_id = null;
+            }
+
+            foreach (['species_code', 'harvest_date', 'harvest_time', 'weapon_type', 'antler_score', 'weight_lbs', 'age_estimate', 'notes', 'is_public', 'hide_location_from_members'] as $field) {
+                if (array_key_exists($field, $data)) {
+                    $harvest->{$field} = $data[$field];
+                }
+            }
+
+            $harvest->save();
+        } catch (\Throwable $e) {
+            // Reverse the bucket move so the counts stay honest (best-effort: the
+            // old bucket may have been re-claimed by someone else meanwhile).
+            if ($bucketChanged) {
+                $this->quotas->release($propertyId, $leaseId, $newSpecies, $newYear);
+                $this->quotas->tryConsume($propertyId, $leaseId, $oldSpecies, $oldYear);
+            }
+
+            throw $e;
+        }
+
+        foreach ($requiredZones as $zone) {
+            $this->cwd->acknowledge($userId, $harvest->id, $zone->id);
+        }
+
+        $this->audit->log(
+            eventType: 'harvest.updated',
+            sourceDatabase: 'wildlife',
+            tableName: 'harvest_logs',
+            recordId: $harvest->id,
+            userId: $userId,
+            actionSummary: "Updated harvest of {$newSpecies} on lease ".strtoupper(substr($leaseId, 0, 8)),
+        );
+
+        return $harvest;
+    }
+
+    /**
+     * Soft-delete the caller's OWN harvest and release its quota tag so the
+     * season count stays honest. The DB 13 location point is immutable and stays;
+     * attached photos keep their documents and gallery entries.
+     */
+    public function delete(string $userId, string $harvestId): void
+    {
+        $harvest = $this->findForUser($userId, $harvestId);
+        abort_unless($harvest->user_id === $userId, 403, 'Only the hunter who logged this harvest can delete it.');
+
+        $this->quotas->release($harvest->property_id, $harvest->lease_id, $harvest->species_code, $harvest->harvest_date->year);
+
+        $harvest->delete();
+
+        $this->audit->log(
+            eventType: 'harvest.deleted',
+            sourceDatabase: 'wildlife',
+            tableName: 'harvest_logs',
+            recordId: $harvest->id,
+            userId: $userId,
+            actionSummary: "Deleted harvest of {$harvest->species_code} on lease ".strtoupper(substr($harvest->lease_id, 0, 8)),
+        );
+    }
+
+    /**
+     * Detach one field photo from the caller's OWN harvest and soft-delete its
+     * document + profile-gallery mirror (both owner-scoped in ProfilePhotoService).
+     */
+    public function removeFieldPhoto(string $userId, string $harvestId, string $documentId): void
+    {
+        $harvest = $this->findForUser($userId, $harvestId);
+        abort_unless($harvest->user_id === $userId, 403, 'Only the hunter who logged this harvest can edit it.');
+        abort_unless(in_array($documentId, $harvest->field_photos ?? [], true), 404);
+
+        $harvest->field_photos = array_values(array_filter(
+            $harvest->field_photos ?? [],
+            fn (string $id) => $id !== $documentId,
+        ));
+        $harvest->save();
+
+        $this->profilePhotos->delete($userId, $documentId);
+
+        $this->audit->log(
+            eventType: 'harvest.photo_removed',
+            sourceDatabase: 'wildlife',
+            tableName: 'harvest_logs',
+            recordId: $harvestId,
+            userId: $userId,
+            actionSummary: 'Removed a field photo from harvest '.strtoupper(substr($harvestId, 0, 8)),
+        );
     }
 
     /**

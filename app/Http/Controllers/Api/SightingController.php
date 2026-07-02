@@ -51,6 +51,7 @@ class SightingController extends Controller
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'gps_accuracy_m' => ['nullable', 'numeric', 'min:0'],
+            'hide_location_from_members' => ['nullable', 'boolean'],
             'local_record_id' => ['nullable', 'uuid'],
         ]);
 
