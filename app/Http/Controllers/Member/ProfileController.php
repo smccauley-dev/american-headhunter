@@ -437,8 +437,16 @@ class ProfileController extends Controller
         $doc = Document::where('id', $documentId)->whereNull('deleted_at')->firstOrFail();
 
         // Public photo viewing is Phase 7+ (public profiles). Owner-only for now.
+        // When that lands it must ALSO exclude gallery rows flagged
+        // is_location_private — those files retain EXIF GPS (SEC-061 / SEC-024).
         if ($doc->owner_user_id !== $requestingUser) {
             abort(403);
+        }
+
+        // Never serve a file the virus scan flagged. The scan runs async, so a
+        // gallery row can exist for a document that later quarantines.
+        if ($doc->status === 'quarantined' || $doc->virus_scan_status === 'infected') {
+            abort(404);
         }
 
         if (! Storage::disk('local')->exists($doc->storage_key)) {
@@ -448,6 +456,7 @@ class ProfileController extends Controller
         return Storage::disk('local')->response($doc->storage_key, null, [
             'Content-Type'  => $doc->mime_type ?? 'image/jpeg',
             'Cache-Control' => 'private, max-age=3600',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 

@@ -79,17 +79,24 @@ class HarvestController extends Controller
      * Attach a field photo to one of the caller's harvests. The image is
      * re-encoded to strip EXIF GPS (SEC-024) and virus-scanned before it is
      * servable — the returned document sits in 'processing' until the scan clears.
+     * The photo is also mirrored into the caller's profile Photos gallery.
+     *
+     * keep_location opts out of the EXIF strip: the original bytes are stored
+     * (still validated + scanned) and the gallery mirror is flagged
+     * is_location_private so it is never publicly servable (SEC-061).
      */
     public function storePhoto(Request $request, string $harvest): JsonResponse
     {
         $request->validate([
             'photo' => ['required', 'image', 'mimes:jpeg,png,webp', 'max:15360'],
+            'keep_location' => ['nullable', 'boolean'],
         ]);
 
         $document = $this->harvests->attachFieldPhoto(
             $request->user()->id,
             $harvest,
             $request->file('photo'),
+            $request->boolean('keep_location'),
         );
 
         return response()->json([

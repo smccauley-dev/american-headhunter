@@ -19,6 +19,26 @@ use Illuminate\Support\Facades\Storage;
  */
 class ProfilePhotoService
 {
+    /**
+     * Harvest species_code (DB 5 vocabulary) → controlled photo tag. Codes with
+     * no gallery-vocabulary equivalent (antelope, other) map to no tag.
+     */
+    private const HARVEST_SPECIES_TAGS = [
+        'whitetail_deer' => 'whitetail',
+        'mule_deer'      => 'mule_deer',
+        'elk'            => 'elk',
+        'turkey'         => 'turkey',
+        'hog'            => 'hog',
+        'bear'           => 'black_bear',
+        'waterfowl'      => 'waterfowl',
+        'dove'           => 'dove',
+        'quail'          => 'quail',
+        'pheasant'       => 'pheasant',
+        'rabbit'         => 'small_game',
+        'squirrel'       => 'small_game',
+        'coyote'         => 'coyote',
+    ];
+
     public function __construct(private readonly AuditService $audit) {}
 
     /**
@@ -52,6 +72,51 @@ class ProfilePhotoService
     }
 
     /**
+     * Mirror a harvest field photo into the profile gallery. The document
+     * already exists (DB 11, document_type='photo', queued for the virus scan) —
+     * this only creates the gallery metadata row, auto-tagged with the species
+     * and captioned from it.
+     *
+     * When the hunter chose to keep the photo's location data, the stored bytes
+     * retain their EXIF GPS, so the row is flagged is_location_private: it must
+     * never be publicly servable regardless of the gallery visibility setting
+     * (SEC-061 / SEC-024). The coordinates are read into the exif_* columns for
+     * the owner's own use only and are never logged.
+     */
+    public function createForHarvestPhoto(
+        string $userId,
+        Document $document,
+        bool $keepLocation = false,
+        ?string $speciesCode = null,
+        ?string $exifSourcePath = null,
+    ): ProfilePhoto {
+        $tag  = self::HARVEST_SPECIES_TAGS[$speciesCode] ?? null;
+        $exif = ($keepLocation && $exifSourcePath !== null) ? $this->extractExifGps($exifSourcePath) : null;
+
+        $photo = ProfilePhoto::create([
+            'user_id'        => $userId,
+            'document_id'    => $document->id,
+            'caption'        => $this->harvestCaption($speciesCode),
+            'tags'           => PhotoTagVocabulary::sanitize($tag !== null ? [$tag] : []),
+            'sort_order'     => $this->nextSortOrder($userId),
+            'exif_latitude'  => $exif['lat'] ?? null,
+            'exif_longitude' => $exif['lng'] ?? null,
+            'is_location_private' => $keepLocation,
+        ]);
+
+        $this->audit->log(
+            eventType:     'profile_photo.uploaded',
+            sourceDatabase: 'identity',
+            tableName:     'profile_photos',
+            recordId:      $photo->id,
+            userId:        $userId,
+            actionSummary: 'Harvest field photo mirrored to profile gallery',
+        );
+
+        return $photo;
+    }
+
+    /**
      * Shaped gallery for the client, in display order. Each entry carries the
      * serve URL plus all editable metadata and a flag for whether unapplied EXIF
      * GPS is available to offer an opt-in prompt.
@@ -76,6 +141,7 @@ class ProfilePhotoService
                 'has_exif_gps'   => $p->exif_latitude !== null && $p->exif_longitude !== null,
                 'exif_latitude'  => $p->exif_latitude,
                 'exif_longitude' => $p->exif_longitude,
+                'is_location_private' => (bool) $p->is_location_private,
             ])
             ->values()
             ->all();
@@ -213,6 +279,15 @@ class ProfilePhotoService
         $max = ProfilePhoto::where('user_id', $userId)->max('sort_order');
 
         return $max === null ? 0 : (int) $max + 1;
+    }
+
+    private function harvestCaption(?string $speciesCode): string
+    {
+        if ($speciesCode === null || $speciesCode === 'other') {
+            return 'Harvest';
+        }
+
+        return ucwords(str_replace('_', ' ', $speciesCode)) . ' harvest';
     }
 
     private function nullableString(mixed $value, ?int $max = null): ?string

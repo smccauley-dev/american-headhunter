@@ -7,6 +7,7 @@ use App\Models\Wildlife\HarvestLog;
 use App\Services\Audit\AuditService;
 use App\Services\BaseService;
 use App\Services\Documents\DocumentService;
+use App\Services\Identity\ProfilePhotoService;
 use App\Services\Property\GeospatialService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -38,6 +39,7 @@ class HarvestService extends BaseService
         private readonly GeospatialService $geo,
         private readonly AuditService $audit,
         private readonly DocumentService $documents,
+        private readonly ProfilePhotoService $profilePhotos,
     ) {}
 
     /**
@@ -155,9 +157,10 @@ class HarvestService extends BaseService
         );
 
         // Field photos are attached after the fact via attachFieldPhoto(): each is
-        // EXIF-stripped and handed to DocumentService, which virus-scans it (the
-        // existing ScanDocumentForViruses job) before it becomes servable. A fresh
-        // harvest is created with no photos.
+        // EXIF-stripped (unless the hunter opts to keep location data — SEC-061)
+        // and handed to DocumentService, which virus-scans it (the existing
+        // ScanDocumentForViruses job) before it becomes servable. A fresh harvest
+        // is created with no photos.
 
         return $harvest;
     }
@@ -199,21 +202,39 @@ class HarvestService extends BaseService
      *
      * The photo is untrusted input and is handled defensively:
      *   1. standing is re-enforced (findForUser 404s an unrelated caller).
-     *   2. the image is re-encoded through GD, which drops all embedded metadata
-     *      — critically the EXIF GPS tag, which would otherwise leak the precise
-     *      harvest location the platform deliberately keeps only in DB 13 (SEC-024).
-     *   3. the sanitized bytes go to DocumentService, which stores them in
-     *      'processing' and queues the existing ScanDocumentForViruses job. The
-     *      document id is appended to field_photos, but the photo is not servable
-     *      until the scan marks it 'ready'.
+     *   2. by default the image is re-encoded through GD, which drops all embedded
+     *      metadata — critically the EXIF GPS tag, which would otherwise leak the
+     *      precise harvest location the platform deliberately keeps only in
+     *      DB 13 (SEC-024). When the hunter explicitly opts to keep the photo's
+     *      location data ($keepLocation), the original bytes are stored instead —
+     *      still fully decoded/validated as an image — and the mirrored gallery
+     *      row is flagged is_location_private so it can never be served publicly
+     *      (SEC-061).
+     *   3. the bytes go to DocumentService, which stores them in 'processing' and
+     *      queues the existing ScanDocumentForViruses job. The document id is
+     *      appended to field_photos, but the photo is not servable until the scan
+     *      marks it 'ready'.
+     *   4. the photo is mirrored into the member's profile Photos gallery (DB 1),
+     *      auto-tagged with the species. The mirror is best-effort: a gallery
+     *      failure never voids the harvest attachment.
      */
-    public function attachFieldPhoto(string $userId, string $harvestId, UploadedFile $file): Document
+    public function attachFieldPhoto(string $userId, string $harvestId, UploadedFile $file, bool $keepLocation = false): Document
     {
         $harvest = $this->findForUser($userId, $harvestId);
 
-        [$bytes, $mimeType, $filename] = $this->sanitizeImage($file);
+        [$bytes, $mimeType, $filename] = $keepLocation
+            ? $this->validateOriginalImage($file)
+            : $this->sanitizeImage($file);
 
         $document = $this->documents->storeRawBytes($bytes, $userId, 'photo', $filename, $mimeType);
+
+        rescue(fn () => $this->profilePhotos->createForHarvestPhoto(
+            $userId,
+            $document,
+            $keepLocation,
+            $harvest->species_code,
+            $keepLocation ? ($file->getRealPath() ?: null) : null,
+        ));
 
         $harvest->field_photos = array_values(array_merge($harvest->field_photos ?? [], [$document->id]));
         $harvest->save();
@@ -271,5 +292,40 @@ class HarvestService extends BaseService
         imagedestroy($image);
 
         return [$bytes, $mimeType, "{$base}.{$ext}"];
+    }
+
+    /**
+     * Validate an upload as a real, fully-decodable image WITHOUT re-encoding —
+     * used only when the hunter explicitly opted to keep the photo's location
+     * data, so the original bytes (EXIF GPS included) are stored as-is. Only the
+     * three formats the validators accept are allowed, the bytes must decode
+     * through GD (rejects polyglot/corrupt files), and the file is still
+     * virus-scanned before it becomes servable. Returns [bytes, mimeType, filename].
+     *
+     * @return array{0:string,1:string,2:string}
+     */
+    private function validateOriginalImage(UploadedFile $file): array
+    {
+        $raw = (string) file_get_contents($file->getRealPath());
+
+        if (@imagecreatefromstring($raw) === false) {
+            abort(422, 'The photo could not be read as a valid image.');
+        }
+
+        $allowed = [
+            IMAGETYPE_JPEG => ['image/jpeg', 'jpg'],
+            IMAGETYPE_PNG => ['image/png', 'png'],
+            IMAGETYPE_WEBP => ['image/webp', 'webp'],
+        ];
+        $type = getimagesizefromstring($raw)[2] ?? null;
+
+        if (! isset($allowed[$type])) {
+            abort(422, 'Only JPEG, PNG, or WebP photos are supported.');
+        }
+
+        [$mimeType, $ext] = $allowed[$type];
+        $base = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME) ?: 'harvest-photo';
+
+        return [$raw, $mimeType, "{$base}.{$ext}"];
     }
 }
